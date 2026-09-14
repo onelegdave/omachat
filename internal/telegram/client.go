@@ -621,6 +621,9 @@ func (g *GotdClient) SendVoice(ctx context.Context, conversationID int64, path, 
 func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 	out := Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out}
 	if photo, ok := m.Media.(*tg.MessageMediaPhoto); ok {
+		if photo.TTLSeconds > 0 {
+			return out
+		}
 		if p, ok := photo.Photo.(*tg.Photo); ok {
 			for _, raw := range p.Sizes {
 				if s, ok := raw.(*tg.PhotoSize); ok {
@@ -633,6 +636,9 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 		}
 	}
 	if document, ok := m.Media.(*tg.MessageMediaDocument); ok {
+		if document.TTLSeconds > 0 {
+			return out
+		}
 		if d, ok := document.Document.(*tg.Document); ok {
 			isAudio := false
 			isSticker := false
