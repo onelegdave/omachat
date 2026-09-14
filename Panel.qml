@@ -47,7 +47,7 @@ Panel {
 
   function refresh() {
     if (service && service.refreshConversations) service.refreshConversations()
-    if (bodyLoader.item && bodyLoader.item.loadMessages) bodyLoader.item.loadMessages()
+    if (inboxLoader.item) inboxLoader.item.refreshThread()
   }
 
   function loadConfig() {
@@ -63,7 +63,7 @@ Panel {
     if (!opened || !service) return
     loadConfig()
     if (needsPair) service.loadProfiles()
-    service.refreshConversations()
+    service.loadConversations()
   }
 
   onServiceChanged: loadConfig()
@@ -82,7 +82,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: bodyLoader.item && (bodyLoader.item.composerFocus === true || bodyLoader.item.linkConfirmOpen === true)
+      blocked: inboxLoader.visible && inboxLoader.item && (inboxLoader.item.composerFocus === true || inboxLoader.item.linkConfirmOpen === true)
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
@@ -225,8 +225,24 @@ Panel {
         foreground: root.foreground
       }
 
+      // Retain drafts and selection while Settings or another tab is shown.
+      // Unpairing or losing the helper destroys this view and its account data.
+      Loader {
+        id: inboxLoader
+        objectName: "inboxLoader"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: headerSep.bottom
+        anchors.bottom: parent.bottom
+        anchors.topMargin: Style.space(10)
+        active: root.service && root.service.connected && !root.needsPair
+        visible: active && root.serviceLive && !root.settingsOpen
+        sourceComponent: inboxView
+      }
+
       Loader {
         id: bodyLoader
+        objectName: "bodyLoader"
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: headerSep.bottom
@@ -238,7 +254,7 @@ Panel {
           if (!root.service) return missingServiceView
           if (!root.service.connected) return helperView
           if (root.needsPair) return pairingView
-          return inboxView
+          return null
         }
       }
     }
@@ -366,6 +382,7 @@ Panel {
 
           Button {
             visible: canBuild || (root.service && root.service.building)
+            objectName: "buildHelperButton"
             text: root.service && root.service.building ? "Building" : "Build helper"
             bordered: true
             enabled: root.service && !root.service.building && root.service.goPresent
@@ -408,6 +425,7 @@ Panel {
       foreground: root.foreground
       fontFamily: root.fontFamily
       host: root
+      viewActive: inboxLoader.visible
       settings: root.settings
       networkLabel: "Google Messages"
       uiScale: root.uiScale

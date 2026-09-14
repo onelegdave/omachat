@@ -1,7 +1,7 @@
 PLUGIN_ID := onelegdave.omachat
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: helper test lint validate clean
+.PHONY: helper test test-ui lint validate clean
 
 helper:
 	mkdir -p bin
@@ -9,6 +9,10 @@ helper:
 
 test:
 	go test -mod=vendor ./...
+
+test-ui:
+	node --test tests/model.test.cjs
+	python3 tests/run-qml.py
 
 lint:
 	go vet -mod=vendor ./...

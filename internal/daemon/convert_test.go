@@ -29,7 +29,7 @@ func TestInitials(t *testing.T) {
 }
 
 func TestStatusClassification(t *testing.T) {
-	// Direction is derived from the enum name, so an unrecognised OUTGOING_*
+	// Direction is derived from the enum name, so an unrecognized OUTGOING_*
 	// value must still classify as outgoing.
 	if !isOutgoingStatus(gmproto.MessageStatusType_OUTGOING_DELIVERED) {
 		t.Error("OUTGOING_DELIVERED should be outgoing")
@@ -51,6 +51,7 @@ func TestStatusClassification(t *testing.T) {
 func TestConvertMessageJoinsPartsAndMedia(t *testing.T) {
 	msg := &gmproto.Message{
 		MessageID:      "m1",
+		TmpID:          "local-send-1",
 		ConversationID: "c1",
 		Timestamp:      1700000000000000,
 		MessageStatus:  &gmproto.MessageStatus{Status: gmproto.MessageStatusType_OUTGOING_COMPLETE},
@@ -70,6 +71,9 @@ func TestConvertMessageJoinsPartsAndMedia(t *testing.T) {
 	}
 
 	got := convertMessage(msg, "Ada")
+	if got.TmpID != msg.TmpID || got.Provisional {
+		t.Errorf("server event lost its transaction ID or became provisional: %+v", got)
+	}
 	if got.Text != "hello\nworld" {
 		t.Errorf("text = %q, want %q", got.Text, "hello\nworld")
 	}

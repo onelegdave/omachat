@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"go.mau.fi/mautrix-gmessages/pkg/libgm"
 )
@@ -16,9 +17,10 @@ const appDir = "omachat"
 // Paths resolves every directory the daemon writes to, honouring the XDG
 // variables when set.
 type Paths struct {
-	Data    string
-	Cache   string
-	Runtime string
+	sessionMu sync.Mutex
+	Data      string
+	Cache     string
+	Runtime   string
 }
 
 func xdg(env, fallback string) (string, error) {
@@ -100,27 +102,50 @@ func IsPaired(auth *libgm.AuthData) bool {
 
 // SaveSession persists auth data atomically at mode 0600.
 func (p *Paths) SaveSession(auth *libgm.AuthData) error {
-	tmp := p.SessionFile() + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if auth == nil {
+		return errors.New("auth data is nil")
+	}
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+	// Cookies rotate on HTTP responses. Encode while holding the same lock
+	// as their writers, then release it before touching the filesystem.
+	auth.CookiesLock.RLock()
+	data, err := json.Marshal(auth)
+	auth.CookiesLock.RUnlock()
 	if err != nil {
 		return err
 	}
-	if err := json.NewEncoder(f).Encode(auth); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, p.SessionFile())
+	return writePrivateJSON(p.SessionFile(), data)
+
 }
 
 // ClearSession removes stored credentials, returning the daemon to unpaired.
 func (p *Paths) ClearSession() error {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
 	if err := os.Remove(p.SessionFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.RemoveAll(p.MediaDir())
+	if err := os.RemoveAll(p.MediaDir()); err != nil {
+		return err
+	}
+	return os.MkdirAll(p.MediaDir(), 0o700)
+}
+
+// writePrivateJSON uses a unique private temporary file in the destination
+// directory. Readers see either the old complete document or the new one.
+func writePrivateJSON(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".omachat-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.Write(append(data, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }

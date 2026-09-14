@@ -136,16 +136,66 @@ function safeHttpUrl(raw) {
 }
 
 function linkify(raw) {
-  var e = escapeHtml(raw)
-  return e.replace(/https?:\/\/[^\s<&]+/gi, function(m) {
-    var trail = ""
-    while (m.length && ".,;:!?)".indexOf(m.charAt(m.length - 1)) >= 0) {
-      trail = m.charAt(m.length - 1) + trail
-      m = m.substring(0, m.length - 1)
+  var text = String(raw || "")
+  var re = /https?:\/\/[^\s<>"']+/gi
+  var out = "", last = 0, match
+  while ((match = re.exec(text)) !== null) {
+    var url = match[0], trail = ""
+    while (url.length && ".,;:!?)".indexOf(url.charAt(url.length - 1)) >= 0) {
+      trail = url.charAt(url.length - 1) + trail
+      url = url.substring(0, url.length - 1)
     }
-    if (!safeHttpUrl(m)) return m + trail
-    return '<a href="' + m + '">' + m + "</a>" + trail
+    out += escapeHtml(text.substring(last, match.index))
+    var escaped = escapeHtml(url)
+    out += safeHttpUrl(url) ? '<a href="' + escaped + '">' + escaped + '</a>' : escaped
+    out += escapeHtml(trail)
+    last = match.index + match[0].length
+  }
+  return out + escapeHtml(text.substring(last))
+}
+
+// A transaction ID is carried through the request, acknowledgement, and
+// Google's message event. Identical text never identifies a send.
+function transactionID() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
+    var r = Math.floor(Math.random() * 16)
+    return (c === "x" ? r : (r & 3) | 8).toString(16)
   })
+}
+
+function sameMessage(a, b) {
+  if (a.conversationID !== b.conversationID || !!a.fromMe !== !!b.fromMe) return false
+  return (!!a.id && a.id === b.id) || (a.fromMe && !!a.tmpID && a.tmpID === b.tmpID)
+}
+
+function mergeMessage(messages, message) {
+  var out = [], merged = message
+  for (var i = 0; i < messages.length; i++) {
+    var old = messages[i]
+    if (!sameMessage(old, message)) { out.push(old); continue }
+    // A delayed send acknowledgement cannot replace a real phone event.
+    if (message.provisional && !old.provisional) merged = old
+    else if (!merged.tmpID && old.tmpID) merged = Object.assign({}, merged, { tmpID: old.tmpID })
+  }
+  out.push(merged)
+  out.sort(function(a, b) { return (a.timestamp || 0) - (b.timestamp || 0) })
+  return out
+}
+
+function failSend(messages, tmpID) {
+  return messages.map(function(m) {
+    return m.tmpID === tmpID && m.provisional
+      ? Object.assign({}, m, { pending: false, failed: true }) : m
+  })
+}
+
+// Keep local sends until the server history can identify them by transaction ID.
+function refreshMessages(current, fetched) {
+  var out = fetched.slice()
+  for (var i = 0; i < current.length; i++) {
+    if (current[i].provisional) out = mergeMessage(out, current[i])
+  }
+  return out
 }
 
 function isGif(mime, name, path) {

@@ -208,6 +208,7 @@ Flickable {
       width: parent.width
       TextField {
         id: keyField
+        objectName: "keyField"
         width: parent.width - saveBtn.implicitWidth - Style.space(6)
         placeholderText: root.giphyKeySet ? "Replacement key" : "Paste API key"
         foreground: root.foreground

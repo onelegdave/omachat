@@ -8,6 +8,7 @@
 package browser
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha1"
@@ -117,8 +118,8 @@ func modTime(path string) time.Time {
 
 // decryptionKey derives the AES key Chromium uses for cookie values. v11 values
 // are encrypted with a key from the login keyring; v10 with a fixed fallback.
-func decryptionKey(p Profile) (v11, v10 []byte) {
-	pw, err := exec.Command("secret-tool", "lookup", "application", p.KeyringApp).Output()
+func decryptionKey(ctx context.Context, p Profile) (v11, v10 []byte) {
+	pw, err := exec.CommandContext(ctx, "secret-tool", "lookup", "application", p.KeyringApp).Output()
 	if err == nil && len(pw) > 0 {
 		v11 = pbkdf2.Key(pw, []byte("saltysalt"), 1, 16, sha1.New)
 	}
@@ -188,6 +189,13 @@ func isPrintable(b []byte) bool {
 // ExtractGoogleCookies reads and decrypts the Google cookies from a profile.
 // It returns what it found; the caller decides whether that is enough.
 func ExtractGoogleCookies(p Profile) (map[string]string, error) {
+	return ExtractGoogleCookiesContext(context.Background(), p)
+}
+
+func ExtractGoogleCookiesContext(ctx context.Context, p Profile) (map[string]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if _, err := exec.LookPath("sqlite3"); err != nil {
 		return nil, fmt.Errorf("sqlite3 is required to read the browser cookie database: %w", err)
 	}
@@ -211,12 +219,15 @@ func ExtractGoogleCookies(p Profile) (map[string]string, error) {
 
 	// hex() keeps the binary blob intact across the CLI boundary.
 	const query = `SELECT name || '|' || host_key || '|' || hex(encrypted_value) FROM cookies WHERE host_key LIKE '%google.com';`
-	out, err := exec.Command("sqlite3", "-readonly", tmpPath, query).Output()
+	out, err := exec.CommandContext(ctx, "sqlite3", "-readonly", tmpPath, query).Output()
 	if err != nil {
 		return nil, fmt.Errorf("query cookie database: %w", err)
 	}
 
-	keyV11, keyV10 := decryptionKey(p)
+	keyV11, keyV10 := decryptionKey(ctx, p)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	cookies := make(map[string]string)
 
 	for _, line := range strings.Split(string(out), "\n") {

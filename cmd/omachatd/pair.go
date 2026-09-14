@@ -22,9 +22,9 @@ Pairs this machine with your Google account.
 Newer Google Messages builds have removed the QR scanner; the phone only
 offers "sign in to the same Google Account". That flow needs the cookies from
 a signed-in browser session. Most of them are HttpOnly, so they cannot be read
-by page script — they have to be copied off a real request:
+by page script: they have to be copied off a real request:
 
-The easy way — read them straight out of your browser profile:
+The easy way: read them straight out of your browser profile:
 
        omachatd pair --from-browser
 
@@ -86,7 +86,7 @@ func runPair(args []string) error {
 
 	default:
 		fmt.Print(pairUsage)
-		return fmt.Errorf("unrecognised arguments")
+		return fmt.Errorf("unrecognized arguments")
 	}
 
 	cookies, err := wire.ParseCookies(input)

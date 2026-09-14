@@ -392,6 +392,9 @@ func (c *Client) diffVersionFormat(curr *gmproto.ConfigVersion, latest *gmproto.
 }
 
 func (c *Client) updateTachyonAuthToken(data *gmproto.TokenData) {
+	// OmaChat: serialize token writes with session encoding as well as cookies.
+	c.AuthData.CookiesLock.Lock()
+	defer c.AuthData.CookiesLock.Unlock()
 	c.AuthData.TachyonAuthToken = data.GetTachyonAuthToken()
 	validForDuration := time.Duration(data.GetTTL()) * time.Microsecond
 	if validForDuration == 0 {

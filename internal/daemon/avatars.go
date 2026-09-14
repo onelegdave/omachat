@@ -110,9 +110,15 @@ func (d *Daemon) fetchAvatars(ctx context.Context, convs []*gmproto.Conversation
 			continue
 		}
 
+		d.sessionMu.Lock()
+		if ctx.Err() != nil {
+			d.sessionMu.Unlock()
+			return
+		}
 		path := d.avatars.pathFor(convID)
 		if err := os.WriteFile(path, data, 0o600); err != nil {
 			d.log.Debug().Err(err).Msg("Could not cache avatar")
+			d.sessionMu.Unlock()
 			continue
 		}
 		d.avatars.store(convID, path)
@@ -127,6 +133,8 @@ func (d *Daemon) fetchAvatars(ctx context.Context, convs []*gmproto.Conversation
 		if exists {
 			d.publish(wire.EventConversation, w)
 		}
+
+		d.sessionMu.Unlock()
 
 		// Space the requests out; this is background decoration and must not
 		// compete with the user's actual reads and sends.
@@ -155,4 +163,11 @@ func (d *Daemon) fetchOneAvatar(ctx context.Context, src avatarSource) ([]byte, 
 		return nil, nil
 	}
 	return thumbs[0].GetData().GetImageBuffer(), nil
+}
+
+func (a *avatarStore) reset() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	clear(a.tried)
+	clear(a.paths)
 }

@@ -67,7 +67,7 @@ func (d *Daemon) SetProfile(name string) error {
 
 	// Adopt the newly chosen profile's cookies immediately: the user picked it
 	// precisely because the current ones are not working.
-	d.refreshBrowserCookies()
+	d.refreshBrowserCookies(d.sessionContext())
 	return nil
 }
 

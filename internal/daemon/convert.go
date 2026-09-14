@@ -141,6 +141,7 @@ func convertMessage(msg *gmproto.Message, senderName string) wire.Message {
 	status := msg.GetMessageStatus().GetStatus()
 	out := wire.Message{
 		ID:             msg.GetMessageID(),
+		TmpID:          msg.GetTmpID(),
 		ConversationID: msg.GetConversationID(),
 		Text:           strings.Join(texts, "\n"),
 		Timestamp:      msg.GetTimestamp(),

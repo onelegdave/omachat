@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"sync"
@@ -73,7 +74,10 @@ func isAuthError(err error) bool {
 
 // refreshBrowserCookies re-reads Google cookies from the browser and installs
 // them on the live client. Returns true when something was actually updated.
-func (d *Daemon) refreshBrowserCookies() bool {
+func (d *Daemon) refreshBrowserCookies(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	d.cookies.mu.Lock()
 	if time.Since(d.cookies.last) < cookieRefreshInterval {
 		d.cookies.mu.Unlock()
@@ -83,19 +87,29 @@ func (d *Daemon) refreshBrowserCookies() bool {
 	d.cookies.mu.Unlock()
 
 	for _, p := range d.candidateProfiles() {
-		cookies, err := browser.ExtractGoogleCookies(p)
+		if ctx.Err() != nil {
+			return false
+		}
+		cookies, err := browser.ExtractGoogleCookiesContext(ctx, p)
 		if err != nil || len(wire.MissingGaiaCookies(cookies)) > 0 {
 			continue
+		}
+		d.sessionMu.Lock()
+		if ctx.Err() != nil {
+			d.sessionMu.Unlock()
+			return false
 		}
 		d.mu.RLock()
 		auth := d.auth
 		d.mu.RUnlock()
 		if auth == nil {
+			d.sessionMu.Unlock()
 			return false
 		}
 		changed := changedCookies(auth, cookies)
 		auth.SetCookies(cookies)
-		d.saveSession()
+		d.saveSessionLocked()
+		d.sessionMu.Unlock()
 		d.log.Info().
 			Str("profile", p.Name).
 			Strs("updated", changed).
@@ -104,15 +118,20 @@ func (d *Daemon) refreshBrowserCookies() bool {
 	}
 
 	d.log.Warn().Msg("Could not refresh cookies from any browser profile")
-	d.setState(wire.StateError,
-		"Google sign-in expired. Open messages.google.com/web in your browser to refresh it.")
+	d.inSession(ctx, func() {
+		d.setState(wire.StateError,
+			"Google sign-in expired. Open messages.google.com/web in your browser to refresh it.")
+	})
 	return false
 }
 
 // repairSession re-runs Gaia pairing to replace a session Google has
 // invalidated. Once the account already trusts this device the phone does not
 // prompt again, so this is usually invisible.
-func (d *Daemon) repairSession() bool {
+func (d *Daemon) repairSession(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	d.cookies.mu.Lock()
 	if time.Since(d.cookies.lastRepair) < repairInterval {
 		d.cookies.mu.Unlock()
@@ -127,7 +146,10 @@ func (d *Daemon) repairSession() bool {
 	before := d.pairGeneration
 	d.mu.RUnlock()
 
-	if err := d.PairFromBrowser(); err != nil {
+	if ctx.Err() != nil {
+		return false
+	}
+	if err := d.pairFromBrowser(ctx, true); err != nil {
 		d.log.Error().Err(err).Msg("Automatic re-pair failed")
 		return false
 	}
@@ -136,7 +158,9 @@ func (d *Daemon) repairSession() bool {
 	// to look healthy: the long poll recovering on its own would otherwise be
 	// mistaken for success while the phone is still being asked to confirm.
 	for i := 0; i < 90; i++ {
-		time.Sleep(time.Second)
+		if !waitContext(ctx, time.Second) {
+			return false
+		}
 
 		d.mu.RLock()
 		now := d.pairGeneration
@@ -160,7 +184,11 @@ func (d *Daemon) repairSession() bool {
 // withAuthRetry runs op and, on an authentication failure, tries to restore
 // access before giving up: fresh cookies first, then a full re-pair when the
 // session itself has been torn down.
-func withAuthRetry[T any](d *Daemon, op func() (T, error)) (T, error) {
+func withAuthRetry[T any](ctx context.Context, d *Daemon, op func() (T, error)) (T, error) {
+	if err := ctx.Err(); err != nil {
+		var zero T
+		return zero, err
+	}
 	result, err := op()
 	if !isAuthError(err) {
 		return result, err
@@ -169,14 +197,18 @@ func withAuthRetry[T any](d *Daemon, op func() (T, error)) (T, error) {
 	// A dead session cannot be revived with cookies, so skip straight to
 	// re-pairing rather than burning a round trip.
 	if isSessionInvalid(err) {
-		if !d.repairSession() {
+		if !d.repairSession(ctx) {
 			return result, err
+		}
+		if err := ctx.Err(); err != nil {
+			var zero T
+			return zero, err
 		}
 		return op()
 	}
 
 	d.log.Warn().Err(err).Msg("Request failed authentication; refreshing cookies")
-	if !d.refreshBrowserCookies() {
+	if !d.refreshBrowserCookies(ctx) {
 		return result, err
 	}
 
@@ -186,8 +218,12 @@ func withAuthRetry[T any](d *Daemon, op func() (T, error)) (T, error) {
 	}
 
 	// Fresh cookies were not enough; the session is gone.
-	if !d.repairSession() {
+	if !d.repairSession(ctx) {
 		return result, err
+	}
+	if err := ctx.Err(); err != nil {
+		var zero T
+		return zero, err
 	}
 	return op()
 }

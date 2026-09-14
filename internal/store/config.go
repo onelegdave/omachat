@@ -66,16 +66,16 @@ func (c *ConfigStore) Get() Config {
 func (c *ConfigStore) SetBrowserProfile(name string) error {
 	c.mu.Lock()
 	c.loaded.BrowserProfile = name
-	c.mu.Unlock()
-	return c.save()
+	defer c.mu.Unlock()
+	return c.saveLocked()
 }
 
 // SetGiphyAPIKey stores the GIF search key.
 func (c *ConfigStore) SetGiphyAPIKey(key string) error {
 	c.mu.Lock()
 	c.loaded.GiphyAPIKey = key
-	c.mu.Unlock()
-	return c.save()
+	defer c.mu.Unlock()
+	return c.saveLocked()
 }
 
 // SetUiScale persists the panel type scale, clamped to a usable range.
@@ -88,28 +88,15 @@ func (c *ConfigStore) SetUiScale(scale float64) error {
 	}
 	c.mu.Lock()
 	c.loaded.UiScale = scale
-	c.mu.Unlock()
-	return c.save()
+	defer c.mu.Unlock()
+	return c.saveLocked()
 }
 
-func (c *ConfigStore) save() error {
-	c.mu.RLock()
-	current := c.loaded
-	c.mu.RUnlock()
-
-	tmp := c.path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+// Caller holds mu so updates and their on-disk order agree.
+func (c *ConfigStore) saveLocked() error {
+	data, err := json.Marshal(&c.loaded)
 	if err != nil {
 		return err
 	}
-	if err := json.NewEncoder(f).Encode(&current); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, c.path)
+	return writePrivateJSON(c.path, data)
 }

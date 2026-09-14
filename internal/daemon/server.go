@@ -196,9 +196,25 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		return wire.Response{ID: req.ID, OK: true, Result: result}
 	}
 
+	// A request must not outlive the account it was issued against.
+	session := d.sessionContext()
+	ctx, sessionCancel := context.WithCancel(ctx)
+	stopSession := func() bool { return true }
+	if req.Method != wire.MethodUnpair {
+		stopSession = context.AfterFunc(session, sessionCancel)
+	}
+	defer stopSession()
+	defer sessionCancel()
+	if req.Method != wire.MethodUnpair && session.Err() != nil {
+		sessionCancel()
+	}
+
 	// Network calls must not hang the UI forever.
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
+	if req.Method != wire.MethodUnpair {
+		ctx = sessionBoundContext{Context: ctx, session: session}
+	}
 
 	switch req.Method {
 	case wire.MethodStatus:
@@ -282,13 +298,13 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		if err != nil {
 			return fail(err)
 		}
-		if err := d.StartGaiaPairing(p.Cookies); err != nil {
+		if err := d.startGaiaPairing(ctx, p.Cookies, false); err != nil {
 			return fail(err)
 		}
 		return ok(nil)
 
 	case wire.MethodPairFromBrowser:
-		if err := d.PairFromBrowser(); err != nil {
+		if err := d.pairFromBrowser(ctx, false); err != nil {
 			return fail(err)
 		}
 		return ok(nil)

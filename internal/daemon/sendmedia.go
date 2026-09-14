@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
@@ -23,7 +24,7 @@ const maxUploadBytes = 25 << 20
 
 // SendMedia uploads a local file and sends it to a conversation, optionally
 // with a caption.
-func (d *Daemon) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.Message, error) {
+func (d *Daemon) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.SendMediaResult, error) {
 	c, err := d.requireClient()
 	if err != nil {
 		return nil, err
@@ -42,6 +43,10 @@ func (d *Daemon) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.M
 		return nil, errors.New("conversation is read-only")
 	}
 
+	tmpID, err := messageTransactionID(p.TmpID)
+	if err != nil {
+		return nil, err
+	}
 	info, err := os.Stat(p.Path)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -76,46 +81,20 @@ func (d *Daemon) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.M
 	fileName := filepath.Base(p.Path)
 	mime := detectMime(data, fileName)
 
-	media, err := withAuthRetry(d, func() (*gmproto.MediaContent, error) {
+	media, err := withAuthRetry(ctx, d, func() (*gmproto.MediaContent, error) {
 		return c.UploadMedia(data, fileName, mime)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upload: %w", err)
 	}
 
-	tmpID := uuid.NewString()
-	parts := []*gmproto.MessageInfo{{
-		Data: &gmproto.MessageInfo_MediaContent{MediaContent: media},
-	}}
-	caption := strings.TrimSpace(p.Caption)
-	if caption != "" {
-		parts = append(parts, &gmproto.MessageInfo{
-			Data: &gmproto.MessageInfo_MessageContent{
-				MessageContent: &gmproto.MessageContent{Content: caption},
-			},
+	result, err := sendMediaMessages(ctx, p, conv.OutgoingID, tmpID, media, func(ctx context.Context, req *gmproto.SendMessageRequest) (*gmproto.SendMessageResponse, error) {
+		return withAuthRetry(ctx, d, func() (*gmproto.SendMessageResponse, error) {
+			return c.SendMessage(ctx, req)
 		})
-	}
-
-	req := &gmproto.SendMessageRequest{
-		ConversationID: p.ConversationID,
-		TmpID:          tmpID,
-		MessagePayload: &gmproto.MessagePayload{
-			TmpID:          tmpID,
-			TmpID2:         tmpID,
-			ConversationID: p.ConversationID,
-			ParticipantID:  conv.OutgoingID,
-			MessageInfo:    parts,
-		},
-	}
-
-	resp, err := withAuthRetry(d, func() (*gmproto.SendMessageResponse, error) {
-		return c.SendMessage(ctx, req)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("send: %w", err)
-	}
-	if status := resp.GetStatus(); status != gmproto.SendMessageResponse_SUCCESS {
-		return nil, fmt.Errorf("send rejected: %s", status)
+		return nil, err
 	}
 
 	// A capture that has been sent has done its job. Without this every voice
@@ -129,24 +108,81 @@ func (d *Daemon) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.M
 		Str("conversation", p.ConversationID).
 		Str("mime", mime).
 		Int("bytes", len(data)).
-		Msg("Sent media")
+		Msg("Submitted media")
+	return result, nil
+}
 
-	return &wire.Message{
+// The phone accepts a media+text MessageInfo list but can silently discard
+// the media and deliver only the text. Match Messages for web by submitting
+// one part per request. Submit the attachment first so its failure cannot
+// leave an orphan caption, and report any later caption failure separately.
+func sendMediaMessages(ctx context.Context, p wire.SendMediaParams, participantID, tmpID string, media *gmproto.MediaContent,
+	send func(context.Context, *gmproto.SendMessageRequest) (*gmproto.SendMessageResponse, error),
+) (*wire.SendMediaResult, error) {
+	submit := func(id string, part *gmproto.MessageInfo) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		resp, err := send(ctx, &gmproto.SendMessageRequest{
+			ConversationID: p.ConversationID,
+			TmpID:          id,
+			MessagePayload: &gmproto.MessagePayload{
+				TmpID: id, TmpID2: id, ConversationID: p.ConversationID,
+				ParticipantID: participantID, MessageInfo: []*gmproto.MessageInfo{part},
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("send: %w", err)
+		}
+		if status := resp.GetStatus(); status != gmproto.SendMessageResponse_SUCCESS {
+			return fmt.Errorf("send rejected: %s", status)
+		}
+		return nil
+	}
+	if err := submit(tmpID, &gmproto.MessageInfo{
+		Data: &gmproto.MessageInfo_MediaContent{MediaContent: media},
+	}); err != nil {
+		return nil, err
+	}
+	message := &wire.Message{
 		ID:             tmpID,
+		TmpID:          tmpID,
+		Provisional:    true,
+		Timestamp:      time.Now().UnixMicro(),
 		ConversationID: p.ConversationID,
-		Text:           caption,
 		FromMe:         true,
 		Pending:        true,
 		Attachments: []wire.Attachment{{
 			Key:      media.GetMediaID(),
 			MediaID:  media.GetMediaID(),
-			Name:     fileName,
-			MimeType: mime,
-			Size:     int64(len(data)),
-			IsImage:  strings.HasPrefix(mime, "image/"),
-			IsAudio:  strings.HasPrefix(mime, "audio/"),
+			Name:     media.GetMediaName(),
+			MimeType: media.GetMimeType(),
+			Size:     media.GetSize(),
+			IsImage:  isImageMime(media.GetMimeType()),
+			IsGif:    isGifMime(media.GetMimeType(), media.GetMediaName()),
+			IsAudio:  isAudioMime(media.GetMimeType()),
+			IsVideo:  isVideoMime(media.GetMimeType()),
 		}},
-	}, nil
+	}
+	result := &wire.SendMediaResult{Message: message}
+	caption := strings.TrimSpace(p.Caption)
+	if caption == "" {
+		return result, nil
+	}
+	// Keep retries of one attachment tied to one independent caption identity.
+	captionID := uuid.NewSHA1(uuid.NameSpaceOID, []byte("omachat-caption:"+tmpID)).String()
+	if err := submit(captionID, &gmproto.MessageInfo{
+		Data: &gmproto.MessageInfo_MessageContent{MessageContent: &gmproto.MessageContent{Content: caption}},
+	}); err != nil {
+		result.CaptionError = err.Error()
+		return result, nil
+	}
+	result.CaptionMessage = &wire.Message{
+		ID: captionID, TmpID: captionID, ConversationID: p.ConversationID,
+		Text: caption, Timestamp: time.Now().UnixMicro(),
+		FromMe: true, Pending: true, Provisional: true,
+	}
+	return result, nil
 }
 
 // audioMimeByExt covers the container formats libgm knows how to type. The

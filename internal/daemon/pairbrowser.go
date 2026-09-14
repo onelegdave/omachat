@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -17,9 +18,13 @@ import (
 // "missing OSID" is meaningless on its own, but "sign in to Messages in
 // Chrome / Profile 1" is something a person can act on.
 func (d *Daemon) PairFromBrowser() error {
+	return d.pairFromBrowser(d.sessionContext(), false)
+}
+
+func (d *Daemon) pairFromBrowser(ctx context.Context, recovery bool) error {
 	profiles := d.candidateProfiles()
 	if len(profiles) == 0 {
-		d.setPairError("No browser profile found",
+		d.setPairErrorFor(ctx, "No browser profile found",
 			"Install or sign in to Chrome, Chromium, or Brave, then try again.")
 		return fmt.Errorf("no browser profile found")
 	}
@@ -32,7 +37,10 @@ func (d *Daemon) PairFromBrowser() error {
 	)
 
 	for _, p := range profiles {
-		cookies, err := browser.ExtractGoogleCookies(p)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		cookies, err := browser.ExtractGoogleCookiesContext(ctx, p)
 		if err != nil {
 			readErrs = append(readErrs, p.Name+": "+err.Error())
 			continue
@@ -40,10 +48,12 @@ func (d *Daemon) PairFromBrowser() error {
 		missing := wire.MissingGaiaCookies(cookies)
 		if len(missing) == 0 {
 			d.log.Info().Str("profile", p.Name).Msg("Using browser profile for pairing")
-			d.mu.Lock()
-			d.status.Profile = p.Name
-			d.mu.Unlock()
-			return d.StartGaiaPairing(cookies)
+			d.inSession(ctx, func() {
+				d.mu.Lock()
+				d.status.Profile = p.Name
+				d.mu.Unlock()
+			})
+			return d.startGaiaPairing(ctx, cookies, recovery)
 		}
 		// Track the closest profile so the hint can name it.
 		if bestCookies == nil || len(missing) < len(bestMissing) {
@@ -53,7 +63,7 @@ func (d *Daemon) PairFromBrowser() error {
 
 	if bestCookies == nil {
 		detail := strings.Join(readErrs, "; ")
-		d.setPairError("Could not read browser cookies",
+		d.setPairErrorFor(ctx, "Could not read browser cookies",
 			"Make sure your login keyring is unlocked. "+detail)
 		return fmt.Errorf("could not read cookies: %s", detail)
 	}
@@ -66,11 +76,16 @@ func (d *Daemon) PairFromBrowser() error {
 		hint = fmt.Sprintf("You're signed in to Google in %s but not to Messages. "+
 			"Open messages.google.com/web there, let your conversations load, then try again.", bestProfile)
 	}
-	d.setPairError("Not signed in to Google Messages", hint)
+	d.setPairErrorFor(ctx, "Not signed in to Google Messages", hint)
 	return fmt.Errorf("missing cookies: %s", strings.Join(bestMissing, ", "))
 }
 
-func (d *Daemon) setPairError(msg, hint string) {
+func (d *Daemon) setPairErrorFor(ctx context.Context, msg, hint string) {
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
 	d.mu.Lock()
 	d.status.State = wire.StateError
 	d.status.Error = msg

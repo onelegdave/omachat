@@ -25,9 +25,8 @@ BarWidget {
   }
 
   function refresh() {
-    if (root.chat && root.chat.refreshConversations)
-      root.chat.refreshConversations()
     if (panelLoader.item && panelLoader.item.refresh) panelLoader.item.refresh()
+    else if (root.chat && root.chat.refreshConversations) root.chat.refreshConversations()
   }
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false

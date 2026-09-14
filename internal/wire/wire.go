@@ -154,6 +154,8 @@ type Attachment struct {
 
 // Message is a flattened gmproto.Message.
 type Message struct {
+	TmpID          string `json:"tmpID,omitempty"`
+	Provisional    bool   `json:"provisional,omitempty"`
 	ID             string `json:"id"`
 	ConversationID string `json:"conversationID"`
 	Text           string `json:"text"`
@@ -237,6 +239,7 @@ type MessagesResult struct {
 }
 
 type SendParams struct {
+	TmpID          string `json:"tmpID,omitempty"`
 	ConversationID string `json:"conversationID"`
 	Text           string `json:"text"`
 	ReplyToID      string `json:"replyToID,omitempty"`
@@ -255,9 +258,18 @@ var RequiredGaiaCookies = []string{"SID", "HSID", "OSID", "SSID", "APISID", "SAP
 
 // SendMediaParams sends a local file to a conversation.
 type SendMediaParams struct {
+	TmpID          string `json:"tmpID,omitempty"`
 	ConversationID string `json:"conversationID"`
 	Path           string `json:"path"`
 	Caption        string `json:"caption,omitempty"`
+}
+
+// SendMediaResult reports the independently submitted attachment and caption.
+// A caption failure must not turn an accepted attachment into a retryable send.
+type SendMediaResult struct {
+	Message        *Message `json:"message"`
+	CaptionMessage *Message `json:"captionMessage,omitempty"`
+	CaptionError   string   `json:"captionError,omitempty"`
 }
 
 // BrowserProfile describes one browser profile the daemon can read Google

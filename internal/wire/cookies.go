@@ -35,7 +35,7 @@ func ParseCookies(input string) (map[string]string, error) {
 		return cookies, nil
 	}
 
-	return nil, fmt.Errorf("could not find any cookies — paste a JSON object, a Cookie: header, or a 'Copy as cURL' command")
+	return nil, fmt.Errorf("could not find any cookies. paste a JSON object, a Cookie: header, or a 'Copy as cURL' command")
 }
 
 // curlCookieRe matches the cookie header however devtools happens to quote it:

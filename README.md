@@ -1,6 +1,8 @@
 # OmaChat
 
-Chat from the Omarchy bar. Google Messages first, with room for more networks later: an unread badge, a conversation list, full thread history, inline images, and a composer.
+Version **0.1.1**. See [release notes](https://github.com/onelegdave/omachat/releases/tag/v0.1.1).
+
+Chat from the Omarchy bar. Google Messages first, with room for more networks later: an unread badge, a conversation list, the latest 60 messages per conversation, inline images, and a composer.
 
 ![OmaChat inbox with fake demo contacts](preview.png)
 
@@ -79,6 +81,10 @@ Middle-click the bar icon to refresh. The badge is unread conversations, not a t
 
 Right-click a bubble to copy it.
 
+Attachment captions appear as a separate message after the attachment. If the
+caption cannot be confirmed, OmaChat reports that separately so you can check
+the conversation before retrying the text.
+
 ## Files
 
 | Path | Contents |
@@ -102,7 +108,7 @@ Also revoke the device on your phone under **Messages → Device pairing**.
 - Reverse-engineered protocol (`libgm`). Google can break it without notice.
 - Pairing uses one Messages-for-web device slot.
 - RCS and end-to-end chats relay through your phone. The phone has to stay online.
-- Inbox of 50 conversations. This is a bar popup, not an archive browser.
+- Inbox of 50 conversations, with the latest 60 messages in each thread. Older-history pagination is not implemented.
 - Incoming GIFs play in the thread. Pick a GIF to send the same way as a photo. Optional GIPHY search needs a personal API key in OmaChat Settings (gear in the header). Get a free key at developers.giphy.com, create an app, paste the key. It is stored in ~/.local/share/omachat/config.json, never shown back to the panel.
 - Voice notes: tap Rec to record (ffmpeg, not QtMultimedia), Play to preview, then send. Incoming voice plays with ffplay. Received video opens in the default player. Video calling is not in this release.
 
@@ -125,7 +131,7 @@ printf '{"id":"1","method":"status"}\n' | socat - UNIX-CONNECT:/tmp/gm.sock
 
 Protocol work is the [mautrix](https://github.com/mautrix/gmessages) project's. The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin) (MIT). The Omarchy service lifecycle and panel are mine.
 
-AI tools were used to assist with the development and documentation of this project. AI assistance is acknowledged here; authorship and maintenance remain with the human project contributors.
+OneLegDave is the project owner and human maintainer. Codex (OpenAI) is an AI development lead and contributor, working under OneLegDave's direction. agy assisted with focused reviews and regression tests. AI assistance does not imply OpenAI endorsement or change the upstream authorship and license notices.
 
 ## License
 

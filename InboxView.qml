@@ -31,7 +31,8 @@ Item {
   readonly property color selectedMeta: Model.metaInk(selectedInk, selectedFill)
   readonly property bool pendingIsGif: Model.isGif("", "", pendingAttachment)
   readonly property bool pendingIsVoice: pendingAttachment.indexOf("/voice-") >= 0 && pendingAttachment.indexOf(".m4a") >= 0
-  readonly property bool panelOpen: host && host.opened === true
+  property bool viewActive: true
+  readonly property bool panelOpen: viewActive && host && host.opened === true
   onPanelOpenChanged: {
     if (panelOpen) return
     if (recording) stopRecording(false)
@@ -54,13 +55,17 @@ Item {
   readonly property var conversations: service ? (service.conversations || []) : []
   property string searchQuery: ""
   property string selectedConvID: ""
+  property var drafts: ({})
+  property int selectionGeneration: 0
   property var messages: []
   property var grouped: []
   property bool loadingMessages: false
   property string threadError: ""
   property var mediaPaths: ({})
+  property var mediaRequests: ({})
   property string pendingAttachment: ""
   property bool sendingMedia: false
+  onPendingAttachmentChanged: attachCaption.text = ""
   property bool emojiPickerOpen: false
   property bool emojiPickerForReact: false
   property bool gifPickerOpen: false
@@ -118,7 +123,7 @@ Item {
     interval: 600
     running: root.service && root.service.state === "connected" && root.conversations.length === 0
     repeat: true
-    onTriggered: if (root.service && root.service.refreshConversations) root.service.refreshConversations()
+    onTriggered: if (root.service && root.service.loadConversations) root.service.loadConversations()
   }
 
   function setting(key, fallback) {
@@ -127,7 +132,11 @@ Item {
   }
 
   function selectConversation(id) {
-    if (id === selectedConvID) return
+    if (id === selectedConvID || sendingMedia) return
+    var saved = Object.assign({}, drafts)
+    if (selectedConvID) saved[selectedConvID] = composer.text
+    drafts = saved
+    selectionGeneration++
     stopPlayback()
     if (recording) stopRecording(false)
     discardPendingCapture()
@@ -136,9 +145,19 @@ Item {
     reactingTo = ""
     pendingAttachment = ""
     selectedConvID = id
+    composer.text = drafts[id] || ""
+    attachCaption.text = ""
+    pendingVoiceSeconds = 0
     messages = []
     grouped = []
     threadError = ""
+    loadMessages()
+  }
+
+  function refreshThread() {
+    mediaRequests = ({})
+    mediaRetry.queue = []
+    mediaRetry.stop()
     loadMessages()
   }
 
@@ -146,12 +165,13 @@ Item {
     if (selectedConvID === "" || !service) return
     loadingMessages = true
     var target = selectedConvID
+    var generation = selectionGeneration
     service.call("messages", { conversationID: target, count: 60 }, function(ok, res) {
-      if (target !== selectedConvID) return
+      if (target !== selectedConvID || generation !== selectionGeneration) return
       loadingMessages = false
       if (!ok) { threadError = String(res); return }
       threadError = ""
-      messages = res.messages || []
+      messages = Model.refreshMessages(messages, res.messages || [])
       grouped = Model.groupMessages(messages)
       Qt.callLater(function() { root.scrollRequested() })
       markThreadRead()
@@ -159,9 +179,12 @@ Item {
   }
 
   function markThreadRead() {
-    if (!service || selectedConvID === "" || messages.length === 0) return
-    var last = messages[messages.length - 1]
-    if (!last || !last.id) return
+    if (!panelOpen || !service || selectedConvID === "" || messages.length === 0) return
+    var last = null
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].id && !messages[i].provisional) { last = messages[i]; break }
+    }
+    if (!last) return
     service.call("markRead", { conversationID: selectedConvID, messageID: last.id }, null)
   }
 
@@ -169,27 +192,24 @@ Item {
     var text = (rawText || "").trim()
     if (text === "" || selectedConvID === "" || !service) return
     var convID = selectedConvID
-    var list = messages.slice()
-    list.push({
-      id: "pending-" + Date.now(), conversationID: convID, text: text,
-      timestamp: Date.now() * 1000, fromMe: true, pending: true, failed: false
+    var tmpID = Model.transactionID()
+    mergeMessage({
+      id: tmpID, tmpID: tmpID, conversationID: convID, text: text,
+      timestamp: Date.now() * 1000, fromMe: true, pending: true, provisional: true, failed: false
     })
-    messages = list
-    grouped = Model.groupMessages(list)
-    Qt.callLater(function() { root.scrollRequested() })
-    service.call("send", { conversationID: convID, text: text }, function(ok, res) {
-      if (ok || convID !== selectedConvID) return
-      var l = messages.slice()
-      for (var i = l.length - 1; i >= 0; i--) {
-        if (l[i].pending && l[i].text === text) {
-          l[i] = Object.assign({}, l[i], { pending: false, failed: true })
-          break
-        }
-      }
-      messages = l
-      grouped = Model.groupMessages(l)
+    service.call("send", { conversationID: convID, text: text, tmpID: tmpID }, function(ok, res) {
+      if (convID !== selectedConvID) return
+      if (ok) { mergeMessage(res); return }
+      messages = Model.failSend(messages, tmpID)
+      grouped = Model.groupMessages(messages)
       threadError = String(res)
     })
+  }
+
+  function mergeMessage(msg) {
+    messages = Model.mergeMessage(messages, msg)
+    grouped = Model.groupMessages(messages)
+    Qt.callLater(function() { root.scrollRequested() })
   }
 
   function _withMedia(mediaID, value) {
@@ -199,18 +219,28 @@ Item {
     mediaPaths = next
   }
 
+  function setMediaRequest(key, state) {
+    var next = Object.assign({}, mediaRequests)
+    next[key] = state
+    mediaRequests = next
+  }
+
   function requestMedia(key, attempt) {
     if (!key || !service) return
     var tries = attempt === undefined ? 0 : attempt
-    if (tries === 0 && mediaPaths[key] !== undefined) return
-    if (tries === 0) _withMedia(key, "")
+    if (tries === 0 && (mediaRequests[key] === "loading" || mediaRequests[key] === "ready")) return
+    setMediaRequest(key, "loading")
     service.call("media", { key: key }, function(ok, res) {
-      if (ok && res && res.path) {
-        _withMedia(key, res.path)
-        if (res.thumbnail && tries < 6) mediaRetry.schedule(key, tries + 1)
+      if (ok && res && res.path) _withMedia(key, res.path)
+      if (ok && res && res.path && !res.thumbnail) {
+        setMediaRequest(key, "ready")
         return
       }
-      if (ok && res && res.pending && tries < 6) mediaRetry.schedule(key, tries + 1)
+      if (ok && res && (res.pending || res.thumbnail) && tries < 6) {
+        mediaRetry.schedule(key, tries + 1)
+        return
+      }
+      setMediaRequest(key, "failed")
     })
   }
 
@@ -257,7 +287,9 @@ Item {
   function pickGif(item) {
     if (!service || !item || !item.sendURL) return
     gifError = ""
+    var generation = selectionGeneration
     service.call("gifFetch", { url: item.sendURL, id: item.id || "" }, function(ok, res) {
+      if (generation !== selectionGeneration) return
       if (!ok) { gifError = String(res); return }
       gifPickerOpen = false
       if (res && res.path) pendingAttachment = res.path
@@ -291,30 +323,34 @@ Item {
   function attachFromDisk() {
     if (!service) return
     threadError = ""
+    var generation = selectionGeneration
     service.call("pickImage", null, function(ok, res) {
+      if (generation !== selectionGeneration) return
       if (!ok) { threadError = String(res); return }
       if (res && res.path) pendingAttachment = res.path
     })
   }
 
   function sendAttachment(caption) {
-    if (!service || pendingAttachment === "" || selectedConvID === "") return
+    if (!service || sendingMedia || pendingAttachment === "" || selectedConvID === "") return
     stopPlayback()
+    threadError = ""
     var path = pendingAttachment
     var convID = selectedConvID
+    var tmpID = Model.transactionID()
     sendingMedia = true
-    service.call("sendMedia", { conversationID: convID, path: path, caption: caption || "" },
+    service.call("sendMedia", { conversationID: convID, path: path, caption: caption || "", tmpID: tmpID },
       function(ok, res) {
         sendingMedia = false
+        if (convID !== selectedConvID) return
         if (!ok) { threadError = String(res); return }
-        pendingAttachment = ""
+        if (pendingAttachment === path) pendingAttachment = ""
         pendingVoiceSeconds = 0
-        if (convID === selectedConvID) {
-          var list = messages.slice()
-          list.push(res)
-          messages = list
-          grouped = Model.groupMessages(list)
-          Qt.callLater(function() { root.scrollRequested() })
+        mergeMessage(res.message)
+        if (res.captionMessage) mergeMessage(res.captionMessage)
+        if (res.captionError) {
+          if (composer.text === "") composer.text = String(caption || "").trim()
+          threadError = "Attachment submitted, but the caption could not be confirmed. Check the conversation before retrying. " + String(res.captionError)
         }
       })
   }
@@ -453,12 +489,13 @@ Item {
   function react(messageID, emoji) {
     reactingTo = ""
     if (!service || selectedConvID === "" || !messageID) return
+    var generation = selectionGeneration
     service.call("react", {
       conversationID: selectedConvID,
       messageID: messageID,
       emoji: emoji || ""
     }, function(ok, res) {
-      if (!ok) threadError = String(res)
+      if (!ok && generation === selectionGeneration) threadError = String(res)
     })
   }
 
@@ -478,23 +515,11 @@ Item {
     target: root.service
     function onMessageReceived(msg) {
       if (msg.conversationID !== root.selectedConvID) return
-      var list = root.messages.slice()
-      var replaced = false
-      for (var i = list.length - 1; i >= 0; i--) {
-        if (list[i].pending && list[i].fromMe && list[i].text === msg.text) {
-          list[i] = msg
-          replaced = true
-          break
-        }
-        if (list[i].id === msg.id) { list[i] = msg; replaced = true; break }
-      }
-      if (!replaced) list.push(msg)
-      root.messages = list
-      root.grouped = Model.groupMessages(list)
-      if (root.host && root.host.opened && !msg.fromMe) root.markThreadRead()
+      root.mergeMessage(msg)
+      if (root.panelOpen && !msg.fromMe) root.markThreadRead()
       Qt.callLater(function() { root.scrollRequested() })
     }
-    function onPaired() { root.selectedConvID = "" }
+    function onPaired() { root.selectedConvID = ""; root.drafts = ({}) }
   }
 
   Timer {
@@ -641,6 +666,7 @@ Item {
 
     TextField {
       id: searchField
+        objectName: "searchField"
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: inboxHeader.bottom
@@ -1306,6 +1332,7 @@ Item {
 
       TextField {
         id: attachCaption
+        objectName: "attachCaption"
         visible: !root.pendingIsVoice
         anchors.left: attachPreview.right
         anchors.leftMargin: Style.space(10)
@@ -1437,6 +1464,7 @@ Item {
 
       TextField {
         id: composer
+        objectName: "composer"
         anchors.left: emojiButton.right
         anchors.leftMargin: Style.space(4)
         anchors.right: sendButton.left
@@ -1478,6 +1506,7 @@ Item {
 
         TextField {
           id: gifSearchField
+        objectName: "gifSearchField"
           width: parent.width
           visible: !root.gifNeedsKey
           placeholderText: "Search GIPHY"
@@ -1625,12 +1654,13 @@ Item {
     }
 
     Text {
+      objectName: "threadErrorLabel"
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.bottom: composerRow.top
       anchors.bottomMargin: Style.space(4)
-      visible: root.threadError !== "" && !attachmentBar.visible
-      text: root.threadError
+      visible: text !== "" && !attachmentBar.visible
+      text: root.threadError || (root.service ? root.service.refreshError : "")
       color: Color.urgent
       wrapMode: Text.WordWrap
       font.family: root.fontFamily

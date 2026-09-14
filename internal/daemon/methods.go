@@ -62,13 +62,18 @@ func (d *Daemon) Messages(ctx context.Context, p wire.MessagesParams) (*wire.Mes
 	if p.CursorID != "" {
 		cursor = &gmproto.Cursor{LastItemID: p.CursorID, LastItemTimestamp: p.CursorTime}
 	}
-	resp, err := withAuthRetry(d, func() (*gmproto.ListMessagesResponse, error) {
+	resp, err := withAuthRetry(ctx, d, func() (*gmproto.ListMessagesResponse, error) {
 		return c.FetchMessages(ctx, p.ConversationID, p.Count, cursor)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("fetch messages: %w", err)
 	}
 
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	msgs := resp.GetMessages()
 	out := &wire.MessagesResult{
 		ConversationID: p.ConversationID,
@@ -110,7 +115,10 @@ func (d *Daemon) Send(ctx context.Context, p wire.SendParams) (*wire.Message, er
 		return nil, errors.New("conversation is read-only")
 	}
 
-	tmpID := uuid.NewString()
+	tmpID, err := messageTransactionID(p.TmpID)
+	if err != nil {
+		return nil, err
+	}
 	req := &gmproto.SendMessageRequest{
 		ConversationID: p.ConversationID,
 		TmpID:          tmpID,
@@ -130,7 +138,7 @@ func (d *Daemon) Send(ctx context.Context, p wire.SendParams) (*wire.Message, er
 		req.Reply = &gmproto.ReplyPayload{MessageID: p.ReplyToID}
 	}
 
-	resp, err := withAuthRetry(d, func() (*gmproto.SendMessageResponse, error) {
+	resp, err := withAuthRetry(ctx, d, func() (*gmproto.SendMessageResponse, error) {
 		return c.SendMessage(ctx, req)
 	})
 	if err != nil {
@@ -142,6 +150,9 @@ func (d *Daemon) Send(ctx context.Context, p wire.SendParams) (*wire.Message, er
 
 	return &wire.Message{
 		ID:             tmpID,
+		TmpID:          tmpID,
+		Provisional:    true,
+		Timestamp:      time.Now().UnixMicro(),
 		ConversationID: p.ConversationID,
 		Text:           p.Text,
 		FromMe:         true,
@@ -158,6 +169,11 @@ func (d *Daemon) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 	}
 	if err := c.MarkRead(ctx, p.ConversationID, p.MessageID); err != nil {
 		return fmt.Errorf("mark read: %w", err)
+	}
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	d.mu.Lock()
 	if conv, ok := d.convs[p.ConversationID]; ok && conv.Unread {
@@ -191,11 +207,16 @@ func (d *Daemon) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp, err := withAuthRetry(d, func() (*gmproto.ListConversationsResponse, error) {
+	resp, err := withAuthRetry(ctx, d, func() (*gmproto.ListConversationsResponse, error) {
 		return c.ListConversations(ctx, convListLimit, gmproto.ListConversationsRequest_INBOX)
 	})
 	if err != nil {
 		return fmt.Errorf("list conversations: %w", err)
+	}
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	d.replaceConversations(resp.GetConversations())
 	d.publishStatus()
@@ -216,13 +237,29 @@ const qrMaxRefreshes = 20
 // plugin to render. Scanning it in Messages > Device pairing completes it, and
 // the PairSuccessful event persists the session.
 func (d *Daemon) StartPairing() (string, error) {
+	parent := d.sessionContext()
+	d.sessionMu.Lock()
+	if parent.Err() != nil || d.gaiaActive {
+		d.sessionMu.Unlock()
+		return "", errors.New("pairing is not available")
+	}
+	d.stopPairRefresh()
+	d.mu.Lock()
+	d.paired = false
+	d.mu.Unlock()
+	d.sessionMu.Unlock()
 	d.mu.RLock()
 	c := d.client
 	d.mu.RUnlock()
 	if c == nil {
-		return "", errors.New("client not initialised")
+		return "", errors.New("client not initialized")
 	}
 	qr, err := c.StartLogin()
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	if parent.Err() != nil {
+		return "", parent.Err()
+	}
 	if err != nil {
 		d.setState(wire.StateError, err.Error())
 		return "", fmt.Errorf("start pairing: %w", err)
@@ -245,7 +282,7 @@ func (d *Daemon) StartPairing() (string, error) {
 func (d *Daemon) startPairRefresh() {
 	d.stopPairRefresh()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(d.sessionContext())
 	d.mu.Lock()
 	d.pairCancel = cancel
 	c := d.client
@@ -264,16 +301,25 @@ func (d *Daemon) startPairRefresh() {
 			}
 
 			qr, err := c.RefreshPhoneRelay()
+			if ctx.Err() != nil {
+				return
+			}
 			if err != nil {
 				d.log.Warn().Err(err).Msg("Failed to refresh pairing QR")
-				d.setState(wire.StateError, "pairing code expired: "+err.Error())
+				d.inSession(ctx, func() { d.setState(wire.StateError, "pairing code expired: "+err.Error()) })
 				return
 			}
 
+			d.sessionMu.Lock()
+			if ctx.Err() != nil {
+				d.sessionMu.Unlock()
+				return
+			}
 			d.mu.Lock()
 			// Another state change (paired, unpaired, cancelled) won the race.
 			if d.status.State != wire.StatePairing {
 				d.mu.Unlock()
+				d.sessionMu.Unlock()
 				return
 			}
 			d.status.QRURL = qr
@@ -283,9 +329,10 @@ func (d *Daemon) startPairRefresh() {
 			d.log.Debug().Int("round", i+1).Msg("Refreshed pairing QR")
 			d.publish(wire.EventStatus, st)
 			d.publish(wire.EventQR, map[string]string{"url": qr})
+			d.sessionMu.Unlock()
 		}
 
-		d.setState(wire.StateUnpaired, "pairing timed out")
+		d.inSession(ctx, func() { d.setState(wire.StateUnpaired, "pairing timed out") })
 	}()
 }
 
@@ -301,23 +348,25 @@ func (d *Daemon) stopPairRefresh() {
 
 // Unpair revokes the pairing and clears local credentials and cache.
 func (d *Daemon) Unpair(ctx context.Context) error {
-	d.stopPairRefresh()
-	d.mu.RLock()
-	c := d.client
-	d.mu.RUnlock()
-	if c != nil {
-		if err := c.Unpair(ctx); err != nil {
-			d.log.Warn().Err(err).Msg("Unpair call failed; clearing local session anyway")
+	d.sessionMu.Lock()
+	old, err := d.resetSessionLocked()
+	d.sessionMu.Unlock()
+	if old != nil {
+		if unpairErr := old.Unpair(ctx); unpairErr != nil {
+			d.log.Warn().Err(unpairErr).Msg("Unpair call failed; local session has been cleared")
 		}
-		c.Disconnect()
+		old.Disconnect()
 	}
-	if err := d.paths.ClearSession(); err != nil {
-		return err
+	return err
+}
+
+func messageTransactionID(value string) (string, error) {
+	if value == "" {
+		return uuid.NewString(), nil
 	}
-	d.mu.Lock()
-	d.convs = make(map[string]wire.Conversation)
-	d.order = nil
-	d.mu.Unlock()
-	d.setState(wire.StateUnpaired, "")
-	return nil
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return "", errors.New("invalid message transaction ID")
+	}
+	return id.String(), nil
 }

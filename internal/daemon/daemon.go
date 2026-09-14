@@ -27,6 +27,15 @@ type Daemon struct {
 	log   zerolog.Logger
 	paths *store.Paths
 
+	// sessionMu orders account resets, event handling, and persistence.
+	sessionMu     sync.Mutex
+	sessionCtx    context.Context
+	sessionCancel context.CancelFunc
+	maintCancel   context.CancelFunc
+	gaiaCancel    context.CancelFunc
+	gaiaCtx       context.Context
+	gaiaActive    bool
+
 	mu      sync.RWMutex
 	client  *libgm.Client
 	auth    *libgm.AuthData
@@ -104,7 +113,8 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 func (d *Daemon) Start(ctx context.Context) error {
 	// Held so maintenance started later (after pairing) still stops with the
 	// daemon instead of outliving it.
-	d.maintCtx = ctx
+	d.maintCtx, d.maintCancel = context.WithCancel(ctx)
+	d.sessionCtx, d.sessionCancel = context.WithCancel(d.maintCtx)
 
 	auth, paired, err := d.paths.LoadSession()
 	if err != nil {
@@ -113,7 +123,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.mu.Lock()
 	d.auth = auth
 	d.client = libgm.NewClient(auth, nil, d.log.With().Str("component", "libgm").Logger())
-	d.client.SetEventHandler(d.handleEvent)
+	d.bindClient(d.client, d.sessionCtx)
 	d.mu.Unlock()
 
 	if !paired {
@@ -135,7 +145,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.log.Warn().Err(err).Msg("Initial connect failed")
 		return nil
 	}
-	go d.initialSync()
+	go d.initialSync(d.sessionContext())
 	d.startMaintenance()
 	return nil
 }
@@ -157,52 +167,75 @@ func (d *Daemon) startMaintenance() {
 // only shows up as ListenRecovered — so nothing else pulls the conversation
 // list on start. Without this the panel shows "No conversations yet" until the
 // user hits refresh, which reads exactly like a broken pairing.
-func (d *Daemon) initialSync() {
+func (d *Daemon) initialSync(parent context.Context) {
 	// Give the long poll a moment to establish; a fetch issued before the
 	// phone is reachable just burns one of the attempts below.
-	time.Sleep(3 * time.Second)
-	d.setState(wire.StateConnected, "")
+	if !waitContext(parent, 3*time.Second) {
+		return
+	}
+	if !d.inSession(parent, func() { d.setState(wire.StateConnected, "") }) {
+		return
+	}
 
 	for attempt := 1; attempt <= 3; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		ctx, cancel := context.WithTimeout(parent, 45*time.Second)
 		err := d.Refresh(ctx)
 		cancel()
 		if err == nil {
-			d.mu.Lock()
-			// The phone just answered a request, so it is demonstrably alive.
-			d.status.PhoneOK = true
-			n := len(d.convs)
-			d.mu.Unlock()
-			d.publishStatus()
-			d.log.Info().Int("conversations", n).Msg("Initial sync complete")
+			if !d.inSession(parent, func() {
+				d.mu.Lock()
+				// The phone just answered a request, so it is demonstrably alive.
+				d.status.PhoneOK = true
+				n := len(d.convs)
+				d.mu.Unlock()
+				d.publishStatus()
+				d.log.Info().Int("conversations", n).Msg("Initial sync complete")
+			}) {
+				return
+			}
 			return
 		}
 		d.log.Warn().Err(err).Int("attempt", attempt).Msg("Initial conversation fetch failed")
-		time.Sleep(time.Duration(attempt*5) * time.Second)
+		if !waitContext(parent, time.Duration(attempt*5)*time.Second) {
+			return
+		}
 	}
 }
 
 // Stop disconnects cleanly and persists the session.
 func (d *Daemon) Stop() {
+	d.sessionMu.Lock()
+	if d.maintCancel != nil {
+		d.maintCancel()
+	}
+	if d.sessionCancel != nil {
+		d.sessionCancel()
+	}
+	if d.gaiaCancel != nil {
+		d.gaiaCancel()
+	}
+	d.stopPairRefresh()
 	d.mu.RLock()
 	c := d.client
 	d.mu.RUnlock()
+	d.saveSessionLocked()
+	d.sessionMu.Unlock()
 	if c != nil {
 		c.Disconnect()
 	}
-	d.saveSession()
 }
 
 func (d *Daemon) saveSession() {
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	d.saveSessionLocked()
+}
+
+func (d *Daemon) saveSessionLocked() {
 	d.mu.RLock()
-	auth := d.auth
-	paired := d.paired
+	auth, paired := d.auth, d.paired
 	d.mu.RUnlock()
-	if auth == nil {
-		return
-	}
-	if !paired {
-		d.log.Debug().Msg("Not persisting session: pairing has not completed")
+	if auth == nil || !paired {
 		return
 	}
 	if err := d.paths.SaveSession(auth); err != nil {
@@ -292,6 +325,9 @@ func (d *Daemon) handleEvent(raw any) {
 		d.setState(wire.StateConnected, "")
 
 	case *events.PairSuccessful:
+		if d.gaiaActive && d.gaiaCtx != nil && d.gaiaCtx.Err() != nil {
+			return
+		}
 		d.log.Info().Msg("Pairing successful")
 		d.stopPairRefresh()
 		d.mu.Lock()
@@ -299,12 +335,12 @@ func (d *Daemon) handleEvent(raw any) {
 		d.pairGeneration++
 		d.mu.Unlock()
 		d.startMaintenance()
-		d.saveSession()
+		d.saveSessionLocked()
 		d.publish(wire.EventPaired, nil)
 		d.setState(wire.StateConnected, "")
 
 	case *events.AuthTokenRefreshed:
-		d.saveSession()
+		d.saveSessionLocked()
 
 	case *gmproto.Conversation:
 		d.upsertConversation(evt)
@@ -337,10 +373,14 @@ func (d *Daemon) handleEvent(raw any) {
 		d.setState(wire.StateDisconnected, "connection interrupted")
 
 	case *events.ListenRecovered:
+		if d.gaiaActive {
+			return
+		}
 		d.setState(wire.StateConnected, "")
 		// Anything that arrived during the outage was missed, so re-pull.
+		parent := d.sessionContext()
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			ctx, cancel := context.WithTimeout(parent, 45*time.Second)
 			defer cancel()
 			if err := d.Refresh(ctx); err != nil {
 				d.log.Debug().Err(err).Msg("Re-sync after recovery failed")
@@ -351,11 +391,14 @@ func (d *Daemon) handleEvent(raw any) {
 		// The long poll runs inside libgm, outside withAuthRetry, so an
 		// invalidated session shows up here rather than as a failed request.
 		if isAuthError(evt.Error) {
+			parent := d.sessionContext()
 			go func() {
-				if d.repairSession() {
+				if d.repairSession(parent) {
 					return
 				}
-				d.setState(wire.StateError, "Google sign-in expired. Open messages.google.com/web, then reopen this panel.")
+				d.inSession(parent, func() {
+					d.setState(wire.StateError, "Google sign-in expired. Open messages.google.com/web, then reopen this panel.")
+				})
 			}()
 			return
 		}
@@ -363,11 +406,9 @@ func (d *Daemon) handleEvent(raw any) {
 
 	case *events.GaiaLoggedOut:
 		d.log.Warn().Msg("Logged out by server")
-		d.mu.Lock()
-		d.paired = false
-		d.mu.Unlock()
-		_ = d.paths.ClearSession()
-		d.setState(wire.StateUnpaired, "Google signed this device out — pair again")
+		// Reset after leaving the event callback; reset also takes sessionMu.
+		parent := d.sessionContext()
+		go d.resetLoggedOut(parent)
 
 	default:
 		d.log.Trace().Type("type", raw).Msg("Unhandled libgm event")
@@ -454,7 +495,7 @@ func (d *Daemon) replaceConversations(convs []*gmproto.Conversation) {
 		d.publish(wire.EventConversation, c)
 	}
 
-	go d.fetchAvatars(context.Background(), convs)
+	go d.fetchAvatars(d.sessionContext(), convs)
 }
 
 func (d *Daemon) upsertConversation(c *gmproto.Conversation) {

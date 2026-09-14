@@ -212,6 +212,11 @@ func (d *Daemon) GifFetch(ctx context.Context, p wire.GifFetchParams) (string, e
 	if len(data) > maxGifBytes {
 		return "", fmt.Errorf("that GIF is larger than %d MB", maxGifBytes>>20)
 	}
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := os.WriteFile(dest, data, 0o600); err != nil {
 		return "", fmt.Errorf("write GIF: %w", err)
 	}

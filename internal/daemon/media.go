@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
@@ -236,7 +237,9 @@ func (d *Daemon) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaResu
 
 	defer func() {
 		d.media.mu.Lock()
-		delete(d.media.inflight, key)
+		if d.media.inflight[key] == done {
+			delete(d.media.inflight, key)
+		}
 		d.media.mu.Unlock()
 		close(done)
 	}()
@@ -261,7 +264,7 @@ func (d *Daemon) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaResu
 
 	switch {
 	case secret.mediaID != "":
-		data, err = withAuthRetry(d, func() ([]byte, error) {
+		data, err = withAuthRetry(ctx, d, func() ([]byte, error) {
 			return d.downloadMediaBounded(ctx, secret.mediaID, secret.key)
 		})
 		if err != nil {
@@ -269,7 +272,7 @@ func (d *Daemon) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaResu
 		}
 
 	case secret.thumbID != "":
-		data, err = withAuthRetry(d, func() ([]byte, error) {
+		data, err = withAuthRetry(ctx, d, func() ([]byte, error) {
 			return d.downloadMediaBounded(ctx, secret.thumbID, secret.thumbKey)
 		})
 		if err != nil {
@@ -292,6 +295,11 @@ func (d *Daemon) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaResu
 		return &wire.MediaResult{Key: key, Pending: true}, nil
 	}
 
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.WriteFile(dest, data, 0o600); err != nil {
 		return nil, fmt.Errorf("write media: %w", err)
 	}
@@ -330,11 +338,24 @@ func (d *Daemon) requestFullSize(ctx context.Context, key string, secret mediaSe
 	if err != nil {
 		return
 	}
+	parent := d.sessionContext()
 	go func() {
-		if _, err := c.GetFullSizeImage(context.WithoutCancel(ctx), secret.messageID, secret.partID); err != nil {
+		ctx, cancel := context.WithTimeout(parent, 45*time.Second)
+		defer cancel()
+		if _, err := c.GetFullSizeImage(ctx, secret.messageID, secret.partID); err != nil {
 			d.log.Debug().Err(err).Str("key", key).Msg("Full-size media request failed")
 			return
 		}
 		d.log.Debug().Str("key", key).Msg("Requested full-size media from phone")
 	}()
+}
+
+func (m *mediaCache) reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clear(m.secrets)
+	clear(m.requested)
+	m.order = nil
+	// Existing requests close their own wait channels when canceled.
+	m.inflight = make(map[string]chan struct{})
 }

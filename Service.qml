@@ -42,6 +42,8 @@ Item {
   readonly property int unread: status && status.unread ? status.unread : 0
   property var conversations: []
   property var browserProfiles: []
+  property bool refreshing: false
+  property string refreshError: ""
 
   signal messageReceived(var message)
   signal conversationUpdated(var conversation)
@@ -67,10 +69,27 @@ Item {
     s.flush()
   }
 
-  function refreshConversations() {
+  function loadConversations() {
     call("conversations", { count: 50 }, function(ok, res) {
       if (ok && res) root.conversations = res
     })
+  }
+
+  function refreshConversations() {
+    if (refreshing) return
+    refreshing = true
+    refreshError = ""
+    call("refresh", null, function(ok, res) {
+      root.refreshing = false
+      if (!ok) { root.refreshError = String(res); return }
+      root.loadConversations()
+    })
+  }
+
+  function failPending(reason) {
+    var pending = _pending
+    _pending = ({})
+    for (var id in pending) pending[id](false, reason)
   }
 
   function loadProfiles() {
@@ -169,7 +188,7 @@ Item {
         root.helperError = "Could not create " + root.pluginDir + "/bin"
         return
       }
-      buildProc.command = ["/usr/bin/go", "build", "-mod=vendor", "-C", root.pluginDir, "-o", root.helperPath, "./cmd/omachatd"]
+      buildProc.command = ["/usr/bin/go", "-C", root.pluginDir, "build", "-mod=vendor", "-o", root.helperPath, "./cmd/omachatd"]
       buildProc.running = false
       buildProc.running = true
     }
@@ -260,9 +279,9 @@ Item {
           reconnectTimer.stop()
           reconnectTimer.interval = 1000
           root.call("status", null, function(ok, res) { if (ok && res) root.status = res })
-          root.refreshConversations()
+          root.loadConversations()
         } else {
-          root._pending = ({})
+          root.failPending("Disconnected from omachatd")
           reconnectTimer.start()
         }
       }
@@ -323,6 +342,7 @@ Item {
     switch (frame.event) {
     case "status":
       root.status = frame.data
+      if (root.state === "unpaired") root.conversations = []
       break
     case "conversation":
       root._mergeConversation(frame.data)
@@ -332,7 +352,7 @@ Item {
       break
     case "paired":
       root.paired()
-      root.refreshConversations()
+      root.loadConversations()
       break
     }
   }
