@@ -33,7 +33,7 @@ Item {
   readonly property color selectedInk: Model.inkOn(selectedFill, foreground, panelBg)
   readonly property color selectedMeta: Model.metaInk(selectedInk, selectedFill)
   readonly property bool pendingIsGif: Model.isGif("", "", pendingAttachment)
-  readonly property bool pendingIsVoice: pendingAttachment.indexOf("/voice-") >= 0 && pendingAttachment.indexOf(".m4a") >= 0
+  readonly property bool pendingIsVoice: pendingAttachment.indexOf("/voice-") >= 0 && (pendingAttachment.indexOf(".m4a") >= 0 || pendingAttachment.indexOf(".ogg") >= 0 || pendingAttachment.indexOf(".opus") >= 0)
   property bool viewActive: true
   readonly property bool panelOpen: viewActive && host && host.opened === true
   onPanelOpenChanged: {
@@ -590,7 +590,7 @@ Item {
     pendingAttachment = ""
     pendingVoiceSeconds = 0
     recordSeconds = 0
-    voicePath = captureDir + "/voice-" + Date.now() + ".m4a"
+    voicePath = captureDir + "/voice-" + Date.now() + (root.isTelegram ? ".ogg" : ".m4a")
     mkdirCache.running = false
     mkdirCache.running = true
   }
@@ -604,7 +604,11 @@ Item {
     if (setting("normalizeVoice", true) !== false && setting("normalizeVoice", true) !== "false") {
       cmd.push("-af", "highpass=f=80,speechnorm=e=12.5:r=0.00025:l=1")
     }
-    cmd.push("-c:a", "aac", "-b:a", "96k", "-t", String(maxRecordSeconds), voicePath)
+    if (root.isTelegram)
+      cmd.push("-c:a", "libopus", "-b:a", "32k", "-application", "voip", "-f", "ogg")
+    else
+      cmd.push("-c:a", "aac", "-b:a", "96k")
+    cmd.push("-t", String(maxRecordSeconds), voicePath)
     voiceProc.command = cmd
     recording = true
     voiceProc.running = true
@@ -1754,7 +1758,7 @@ Item {
       PanelActionButton {
         id: micButton
         objectName: "micButton"
-        visible: !root.isWhatsApp && !root.isTelegram
+        visible: !root.isWhatsApp
         anchors.left: attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter

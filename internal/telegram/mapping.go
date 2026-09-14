@@ -55,6 +55,7 @@ type SendClient interface {
 
 type MediaClient interface {
 	SendImage(ctx context.Context, conversationID int64, path, caption string) (Message, error)
+	SendVoice(ctx context.Context, conversationID int64, path, caption string) (Message, error)
 	DownloadMedia(ctx context.Context, key, dir string) (string, error)
 }
 

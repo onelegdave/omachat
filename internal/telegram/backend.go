@@ -445,7 +445,14 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.
 	if err != nil {
 		return nil, err
 	}
-	msg, err := sender.SendImage(ctx, id, p.Path, p.Caption)
+	var msg Message
+	lowerPath := strings.ToLower(p.Path)
+	isVoice := strings.HasSuffix(lowerPath, ".ogg") || strings.HasSuffix(lowerPath, ".opus") || strings.HasSuffix(lowerPath, ".m4a")
+	if isVoice {
+		msg, err = sender.SendVoice(ctx, id, p.Path, p.Caption)
+	} else {
+		msg, err = sender.SendImage(ctx, id, p.Path, p.Caption)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -453,11 +460,27 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.
 	out.TmpID = p.TmpID
 	out.Status = wire.DeliverySent
 	out.Delivery = wire.DeliverySent
+	if isVoice {
+		out.Attachments = []wire.Attachment{{Key: out.ID, MimeType: "audio/ogg", IsAudio: true}}
+		if strings.HasSuffix(lowerPath, ".m4a") {
+			out.Attachments[0].MimeType = "audio/mp4"
+		}
+	}
 	if info, statErr := os.Stat(p.Path); statErr == nil && info.Mode().IsRegular() {
 		mediaType := mime.TypeByExtension(strings.ToLower(filepath.Ext(p.Path)))
+		if mediaType == "" && isVoice {
+			mediaType = "audio/ogg"
+			if strings.HasSuffix(lowerPath, ".m4a") {
+				mediaType = "audio/mp4"
+			}
+		}
+		attachmentKey := p.TmpID
+		if attachmentKey == "" {
+			attachmentKey = out.ID
+		}
 		out.Attachments = []wire.Attachment{{
-			Key: p.TmpID, MediaID: p.TmpID, Name: filepath.Base(p.Path),
-			MimeType: mediaType, Size: info.Size(), IsImage: strings.HasPrefix(mediaType, "image/"),
+			Key: attachmentKey, MediaID: attachmentKey, Name: filepath.Base(p.Path),
+			MimeType: mediaType, Size: info.Size(), IsImage: !isVoice && strings.HasPrefix(mediaType, "image/"), IsAudio: isVoice || strings.HasPrefix(mediaType, "audio/"),
 			Path: p.Path,
 		}}
 	}

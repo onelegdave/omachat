@@ -557,6 +557,67 @@ func (g *GotdClient) SendImage(ctx context.Context, conversationID int64, path, 
 	return Message{}, errors.New("Telegram image send succeeded without a message response")
 }
 
+func (g *GotdClient) SendVoice(ctx context.Context, conversationID int64, path, caption string) (Message, error) {
+	g.mu.RLock()
+	peer := g.peers[conversationID]
+	g.mu.RUnlock()
+	if peer == nil {
+		return Message{}, fmt.Errorf("telegram peer %d is not available", conversationID)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return Message{}, fmt.Errorf("stat voice note: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 16*1024*1024 {
+		return Message{}, errors.New("voice note must be a regular file between 1 byte and 16 MB")
+	}
+	file, err := uploader.NewUploader(g.client.API()).FromPath(ctx, path)
+	if err != nil {
+		return Message{}, fmt.Errorf("upload voice note: %w", err)
+	}
+	var randomID int64
+	if err := binary.Read(rand.Reader, binary.LittleEndian, &randomID); err != nil {
+		return Message{}, err
+	}
+	mime := "audio/ogg"
+	if strings.HasSuffix(strings.ToLower(path), ".m4a") {
+		mime = "audio/mp4"
+	}
+	updates, err := g.client.API().MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{Peer: peer, Media: &tg.InputMediaUploadedDocument{File: file, MimeType: mime, Attributes: []tg.DocumentAttributeClass{&tg.DocumentAttributeAudio{Voice: true}, &tg.DocumentAttributeFilename{FileName: filepath.Base(path)}}}, Message: caption, RandomID: randomID})
+	if err != nil {
+		return Message{}, err
+	}
+	if u, ok := updates.(*tg.Updates); ok {
+		for _, raw := range u.Updates {
+			if x, ok := raw.(*tg.UpdateNewMessage); ok {
+				if m, ok := x.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+			if x, ok := raw.(*tg.UpdateNewChannelMessage); ok {
+				if m, ok := x.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+		}
+	}
+	if u, ok := updates.(*tg.UpdatesCombined); ok {
+		for _, raw := range u.Updates {
+			if x, ok := raw.(*tg.UpdateNewMessage); ok {
+				if m, ok := x.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+			if x, ok := raw.(*tg.UpdateNewChannelMessage); ok {
+				if m, ok := x.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+		}
+	}
+	return Message{}, errors.New("Telegram voice send succeeded without a message response")
+}
+
 func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 	out := Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out}
 	if photo, ok := m.Media.(*tg.MessageMediaPhoto); ok {

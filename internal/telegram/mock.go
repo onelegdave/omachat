@@ -25,6 +25,7 @@ type MockClient struct {
 	MarkReadFunc      func(ctx context.Context, conversationID int64, messageID int64) error
 	SendTextFunc      func(ctx context.Context, conversationID int64, text string) (Message, error)
 	SendImageFunc     func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
+	SendVoiceFunc     func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
 	DownloadMediaFunc func(ctx context.Context, key, dir string) (string, error)
 }
 
@@ -40,6 +41,13 @@ func (m *MockClient) SendImage(ctx context.Context, conversationID int64, path, 
 		return m.SendImageFunc(ctx, conversationID, path, caption)
 	}
 	return Message{}, nil
+}
+
+func (m *MockClient) SendVoice(ctx context.Context, conversationID int64, path, caption string) (Message, error) {
+	if m.SendVoiceFunc != nil {
+		return m.SendVoiceFunc(ctx, conversationID, path, caption)
+	}
+	return Message{}, errors.New("mock voice send not configured")
 }
 
 func (m *MockClient) DownloadMedia(ctx context.Context, key, dir string) (string, error) {

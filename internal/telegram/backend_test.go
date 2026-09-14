@@ -607,6 +607,24 @@ func TestTelegramSendMediaReturnsAttachmentMetadata(t *testing.T) {
 	}
 }
 
+func TestTelegramSendMediaRoutesVoiceNotes(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	path := filepath.Join(paths.TelegramMediaDir(), "voice.ogg")
+	if err := os.WriteFile(path, []byte("voice"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	mock.SendVoiceFunc = func(_ context.Context, id int64, gotPath, caption string) (Message, error) {
+		called = id == 7 && gotPath == path && caption == "note"
+		return Message{ID: 14, ConversationID: id, Text: caption, Timestamp: 45, FromMe: true}, nil
+	}
+	res, err := b.SendMedia(context.Background(), wire.SendMediaParams{ConversationID: "tg:7", Path: path, Caption: "note"})
+	if err != nil || !called || res == nil || res.Message == nil || len(res.Message.Attachments) != 1 || res.Message.Attachments[0].Key == "" || !res.Message.Attachments[0].IsAudio || res.Message.Attachments[0].MimeType != "audio/ogg" {
+		t.Fatalf("voice send failed: %+v err=%v called=%v", res, err, called)
+	}
+}
+
 func TestStartPairingUnconfigured(t *testing.T) {
 	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
 	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
