@@ -368,10 +368,10 @@ func TestCanceledRecoveryPreservesCooldown(t *testing.T) {
 	d, _ := newTestDaemon(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if d.repairSession(ctx) || d.refreshBrowserCookies(ctx) {
+	if d.refreshBrowserCookies(ctx) {
 		t.Fatal("canceled recovery succeeded")
 	}
-	if !d.cookies.lastRepair.IsZero() || !d.cookies.last.IsZero() {
+	if !d.cookies.last.IsZero() {
 		t.Fatal("canceled recovery consumed cooldown")
 	}
 }

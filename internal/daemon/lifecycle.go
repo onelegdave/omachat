@@ -71,6 +71,7 @@ func (d *Daemon) resetSessionLocked() (*libgm.Client, error) {
 	}
 	d.gaiaCancel = nil
 	d.gaiaActive = false
+	d.syncing = false
 	d.stopPairRefresh()
 	parent := d.maintCtx
 	if parent == nil {
@@ -91,7 +92,7 @@ func (d *Daemon) resetSessionLocked() (*libgm.Client, error) {
 	d.mu.Unlock()
 	d.bindClient(c, ctx)
 	d.cookies.mu.Lock()
-	d.cookies.last, d.cookies.lastRepair = time.Time{}, time.Time{}
+	d.cookies.last = time.Time{}
 	d.cookies.mu.Unlock()
 	d.media.reset()
 	d.avatars.reset()

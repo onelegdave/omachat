@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/onelegdave/omachat/internal/wire"
+	"go.mau.fi/mautrix-gmessages/pkg/libgm"
 )
 
 // gaiaPairTimeout bounds how long we wait for the phone to confirm. The phone's
@@ -27,10 +28,10 @@ const gaiaPairTimeout = 3 * time.Minute
 // FinishGaiaPairing blocks until the phone answers, so the whole exchange runs
 // in the background and reports progress through events.
 func (d *Daemon) StartGaiaPairing(cookies map[string]string) error {
-	return d.startGaiaPairing(d.sessionContext(), cookies, false)
+	return d.startGaiaPairing(d.sessionContext(), cookies)
 }
 
-func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]string, recovery bool) error {
+func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]string) error {
 	if err := validateGaiaCookies(cookies); err != nil {
 		return err
 	}
@@ -43,29 +44,37 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 	if d.gaiaActive {
 		return errors.New("Google pairing is already in progress")
 	}
-	d.mu.RLock()
-	c := d.client
-	auth := d.auth
-	d.mu.RUnlock()
-	if c == nil || auth == nil {
-		return fmt.Errorf("client not initialized")
-	}
-
-	// A QR attempt may still be refreshing from an earlier try.
+	// A fresh client and context isolate this explicit attempt from old
+	// requests, callbacks, and background syncs. Keep the saved pairing
+	// untouched until the phone confirms the replacement.
 	d.stopPairRefresh()
+	if d.sessionCancel != nil {
+		d.sessionCancel()
+	}
+	base := d.maintCtx
+	if base == nil {
+		base = context.Background()
+	}
+	session, sessionCancel := context.WithCancel(base)
+	auth := libgm.NewAuthData()
+	c := libgm.NewClient(auth, nil, d.log.With().Str("component", "libgm").Logger())
+	d.mu.Lock()
+	old := d.client
+	d.auth, d.client = auth, c
+	d.sessionCtx, d.sessionCancel = session, sessionCancel
+	d.mu.Unlock()
+	d.bindClient(c, session)
+	d.syncing = false
+	if old != nil {
+		go old.Disconnect()
+	}
 
 	auth.SetCookies(cookies)
 	d.mu.Lock()
 	d.paired = false
 	d.mu.Unlock()
 	d.gaiaActive = true
-	// Manual pairing outlives its start request. Recovery uses the original
-	// request deadline so a late pairing cannot leave the retry waiting.
-	base := d.sessionContext()
-	if recovery {
-		base = parent
-	}
-	ctx, cancel := context.WithTimeout(base, gaiaPairTimeout)
+	ctx, cancel := context.WithTimeout(session, gaiaPairTimeout)
 	d.gaiaCancel = cancel
 	d.gaiaCtx = ctx
 
@@ -78,7 +87,6 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 	d.mu.Unlock()
 	d.publish(wire.EventStatus, st)
 
-	session := d.sessionContext()
 	go func() {
 		// FinishGaiaPairing blocks on the phone with no timeout of its own, so
 		// an unanswered prompt would otherwise wedge the daemon in
@@ -96,6 +104,13 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 				if ctx.Err() != nil {
 					return
 				}
+				d.mu.RLock()
+				currentState := d.status.State
+				d.mu.RUnlock()
+				if currentState != wire.StateGaiaPairing {
+					d.log.Warn().Str("state", string(currentState)).Msg("Ignoring emoji callback in non-pairing state")
+					return
+				}
 				d.log.Info().Str("emoji", emoji).Msg("Gaia pairing emoji")
 				d.mu.Lock()
 				d.status.Emoji = emoji
@@ -107,6 +122,9 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 		})
 		if err != nil {
 			d.inSession(session, func() {
+				d.mu.Lock()
+				d.status.Emoji = ""
+				d.mu.Unlock()
 				if errors.Is(err, context.DeadlineExceeded) {
 					d.log.Warn().Msg("Gaia pairing timed out waiting for the phone")
 					d.setState(wire.StateUnpaired,
@@ -123,7 +141,8 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 		}
 		// PairSuccessful from DoGaiaPairing drives the rest through
 		// handleEvent, which persists the session and reconnects.
-		d.inSession(session, func() { d.saveSessionLocked() })
+		d.inSession(session, func() { d.gaiaActive = false; d.saveSessionLocked() })
+		go d.initialSync(session)
 	}()
 
 	return nil

@@ -18,10 +18,10 @@ import (
 // "missing OSID" is meaningless on its own, but "sign in to Messages in
 // Chrome / Profile 1" is something a person can act on.
 func (d *Daemon) PairFromBrowser() error {
-	return d.pairFromBrowser(d.sessionContext(), false)
+	return d.pairFromBrowser(d.sessionContext())
 }
 
-func (d *Daemon) pairFromBrowser(ctx context.Context, recovery bool) error {
+func (d *Daemon) pairFromBrowser(ctx context.Context) error {
 	profiles := d.candidateProfiles()
 	if len(profiles) == 0 {
 		d.setPairErrorFor(ctx, "No browser profile found",
@@ -53,7 +53,7 @@ func (d *Daemon) pairFromBrowser(ctx context.Context, recovery bool) error {
 				d.status.Profile = p.Name
 				d.mu.Unlock()
 			})
-			return d.startGaiaPairing(ctx, cookies, recovery)
+			return d.startGaiaPairing(ctx, cookies)
 		}
 		// Track the closest profile so the hint can name it.
 		if bestCookies == nil || len(missing) < len(bestMissing) {

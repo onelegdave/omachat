@@ -7,7 +7,7 @@ number. Test messages and account details are not included as fixtures in this
 repository. The installed plugin now contains the reviewed fixes, and its
 binary was checked against the local build.
 
-## Passed
+## Passed during the original live tests
 
 | Test | Evidence |
 | --- | --- |
@@ -18,7 +18,7 @@ binary was checked against the local build.
 | No credential resurrection on restart | Restarting the shell/helper left the session file absent and status unpaired. |
 | Remote revocation | The user confirmed the OmaChat device disappeared from the phone's Device pairing list before re-pairing started. |
 | Browser-cookie re-pairing | The existing Brave profile supplied cookies; the phone confirmed the saxophone emoji; the daemon emitted paired and connected events. |
-| Paired persistence | The new session file had mode 0600; subsequent shell restarts reconnected successfully. |
+| Paired persistence | The new session file had mode 0600; earlier restart checks reported connected. A later restart exposed premature readiness and automatic re-pairing; see the follow-up below. |
 | Text send | Send returned a provisional acknowledgement, followed by a phone-synced OUTGOING_DELIVERED record. |
 | Transaction identity | The live message event preserved the request's transaction ID, allowing reconciliation with the provisional bubble. |
 | Attachment download after re-pairing | An image sent directly from the phone was delivered and downloaded by OmaChat into the recreated media directory, producing a 55,875-byte file. |
@@ -94,7 +94,7 @@ Automatic recovery from deliberately expired cookies was not induced.
 Browser-cookie extraction and explicit re-pairing did pass. Outgoing media now has a successful phone-synced delivery with its attachment
 intact. These tests do not establish every carrier, format, or device combination.
 
-## Final state
+## State at the end of the image tests
 
 - The helper is connected, the phone is responding, and live refresh passes.
 - The installed binary matches the final fixed local build.
@@ -104,3 +104,32 @@ intact. These tests do not establish every carrier, format, or device combinatio
 - The test messages were left in the user's self-chat.
 - These live tests finished before publication. Subsequent publication is
   recorded by Git tags and GitHub Releases. Marketplace submission is deferred.
+
+
+## Reconnect follow-up after v0.1.1
+
+After the release restart, the helper reported connected while a Gaia emoji
+challenge was still active. The user received an unexpected pairing request
+and dismissed it. Code inspection found automatic pairing in authentication
+recovery and premature connected transitions before phone sync.
+
+The installed follow-up removes automatic pairing, requires authenticated sync
+before connected, and rejects late callbacks from invalid or replaced sessions.
+The first live restart with the invalid stored session now reports a clear
+instruction to select Pair with Google, with no emoji or paired event.
+
+| Follow-up test | Result |
+| --- | --- |
+| Invalid stored session after restart | Explicit renewal error throughout 30 seconds; zero emoji or paired events |
+| Intentional Pair with Google through the panel | User confirmed pairing completed |
+| Authenticated refresh after pairing | Succeeded; 50 conversations returned |
+| Credential persistence | Session file mode 0600 |
+| Restart with the newly confirmed session | Restored connected state; live refresh succeeded |
+| Observe restarted helper for 36 seconds | No pairing state, emoji challenge, or paired event |
+| Installed helper identity | SHA-256 matched the locally built helper |
+
+Current follow-up status: the patched helper is installed and connected, and
+live refresh passes after restart. The earlier successful image delivery remains
+valid. These checks verify the reported reconnect failure and recovery; they do
+not establish indefinite session validity against future Google-side changes.
+No new release or marketplace submission has been made for this follow-up.

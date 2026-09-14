@@ -65,6 +65,8 @@ You must have opened [https://messages.google.com/web](https://messages.google.c
 
 Credentials land in `~/.local/share/omachat/session.json` (mode `0600`) after pairing actually completes.
 
+OmaChat never starts pairing automatically during startup or authentication recovery. If Google invalidates the session, the panel asks you to select **Pair with Google** again. A reconnect stays **Connecting** until an authenticated conversation sync succeeds.
+
 ## Why this is not a web view
 
 Omarchy's shell is one Quickshell process. It also owns the bar, notifications, and the lock screen. Embedding `messages.google.com` with Qt WebEngine aborts that process. QtMultimedia camera backends have the same class of crash. So:

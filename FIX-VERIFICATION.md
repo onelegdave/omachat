@@ -2,8 +2,8 @@
 
 Date: 2026-09-14
 
-Implementation addresses the confirmed findings in `review2.md` and
-`review-audit.md`. Changes are local and uncommitted; no release was published.
+The review and image fixes were published in v0.1.1. The reconnect follow-up
+below is a subsequent local change, installed for live verification.
 
 ## Completed
 
@@ -83,3 +83,30 @@ The installed plugin was updated and the shell restarted. These live tests
 finished before publication; Git tags and GitHub Releases record subsequent
 publication. Automatic recovery from deliberately expired cookies
 was not induced; re-pairing through the browser-cookie flow passed.
+
+
+## Reconnect follow-up after v0.1.1
+
+A restart exposed two additional defects: authentication failures could start
+interactive Gaia pairing automatically, and initial sync announced connected
+before fetching conversations. Transport recovery and pairing completion also
+announced connected too early.
+
+- Removed automatic pairing and its recovery-only entry points. Ordinary
+  requests may refresh browser cookies and retry once; an invalid session or
+  fatal authentication error requires the explicit Pair with Google action.
+- Keep startup, transport recovery, and confirmed pairing in Connecting until
+  authenticated conversation data arrives. Refresh can fetch while Connecting.
+- Latch invalid sessions against late readiness events and sync responses.
+  A new Gaia pairing replaces the client and cancels the old session context.
+- Preserve the active pairing challenge through unrelated transport events.
+
+Go race tests and vet pass, including agy's focused regression coverage and a
+lead-written local-proxy test that exercises an actual startup fetch while
+Connecting. QML/model checks and manifest validation pass. The installed helper
+matches the new local build. Restarting it with the invalid stored session
+showed the explicit renewal error with no pairing challenge during a 30-second
+check. The user then explicitly paired through the panel and confirmed completion.
+Live refresh returned 50 conversations. A subsequent shell/helper restart restored
+the saved session, passed live refresh, and produced no pairing events or emoji
+challenge during a 36-second observation. Credentials remained mode 0600.

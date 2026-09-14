@@ -25,19 +25,11 @@ import (
 // hammer the cookie database.
 const cookieRefreshInterval = 30 * time.Second
 
-// repairInterval throttles automatic re-pairing. Re-pairing is cheap and
-// silent once the account trusts this device, but it must never become a loop.
-const repairInterval = 5 * time.Minute
-
 type cookieRefresher struct {
-	mu         sync.Mutex
-	last       time.Time
-	lastRepair time.Time
+	mu   sync.Mutex
+	last time.Time
 }
 
-// isSessionInvalid marks the failure Google returns once it has torn down the
-// web session entirely. Fresh cookies do not fix this: the auth token is bound
-// to the dead session, so the only way back is to pair again.
 // changedCookies names the cookies whose values differ. Names only: the values
 // are live credentials and must never reach a log.
 func changedCookies(auth *libgm.AuthData, fresh map[string]string) []string {
@@ -58,7 +50,7 @@ func isSessionInvalid(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "SESSION_COOKIE_INVALID")
+	return strings.Contains(strings.ToLower(err.Error()), "session_cookie_invalid")
 }
 
 func isAuthError(err error) bool {
@@ -67,13 +59,15 @@ func isAuthError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "401") ||
+		strings.Contains(msg, "403") ||
 		strings.Contains(msg, "invalid authentication") ||
 		strings.Contains(msg, "unauthenticated") ||
-		strings.Contains(msg, "oauth 2 access token")
+		strings.Contains(msg, "oauth 2 access token") ||
+		strings.Contains(msg, "session_cookie_invalid")
 }
 
 // refreshBrowserCookies re-reads Google cookies from the browser and installs
-// them on the live client. Returns true when something was actually updated.
+// them on the live client. Returns true when a complete cookie set was read.
 func (d *Daemon) refreshBrowserCookies(ctx context.Context) bool {
 	if ctx.Err() != nil {
 		return false
@@ -118,72 +112,12 @@ func (d *Daemon) refreshBrowserCookies(ctx context.Context) bool {
 	}
 
 	d.log.Warn().Msg("Could not refresh cookies from any browser profile")
-	d.inSession(ctx, func() {
-		d.setState(wire.StateError,
-			"Google sign-in expired. Open messages.google.com/web in your browser to refresh it.")
-	})
-	return false
-}
-
-// repairSession re-runs Gaia pairing to replace a session Google has
-// invalidated. Once the account already trusts this device the phone does not
-// prompt again, so this is usually invisible.
-func (d *Daemon) repairSession(ctx context.Context) bool {
-	if ctx.Err() != nil {
-		return false
-	}
-	d.cookies.mu.Lock()
-	if time.Since(d.cookies.lastRepair) < repairInterval {
-		d.cookies.mu.Unlock()
-		return false
-	}
-	d.cookies.lastRepair = time.Now()
-	d.cookies.mu.Unlock()
-
-	d.log.Warn().Msg("Session invalidated by Google; re-pairing automatically")
-
-	d.mu.RLock()
-	before := d.pairGeneration
-	d.mu.RUnlock()
-
-	if ctx.Err() != nil {
-		return false
-	}
-	if err := d.pairFromBrowser(ctx, true); err != nil {
-		d.log.Error().Err(err).Msg("Automatic re-pair failed")
-		return false
-	}
-
-	// Wait for the pairing itself to complete, not merely for the connection
-	// to look healthy: the long poll recovering on its own would otherwise be
-	// mistaken for success while the phone is still being asked to confirm.
-	for i := 0; i < 90; i++ {
-		if !waitContext(ctx, time.Second) {
-			return false
-		}
-
-		d.mu.RLock()
-		now := d.pairGeneration
-		state := d.status.State
-		d.mu.RUnlock()
-
-		if now != before {
-			d.log.Info().Msg("Re-paired successfully")
-			return true
-		}
-		// Pairing gave up or was rejected; stop waiting.
-		if state == wire.StateError || state == wire.StateUnpaired {
-			d.log.Warn().Str("state", string(state)).Msg("Re-pair did not complete")
-			return false
-		}
-	}
-	d.log.Warn().Msg("Re-pair timed out")
 	return false
 }
 
 // withAuthRetry runs op and, on an authentication failure, tries to restore
-// access before giving up: fresh cookies first, then a full re-pair when the
-// session itself has been torn down.
+// access by refreshing browser cookies and retrying once. It never initiates
+// re-pairing automatically; re-pairing requires explicit user action.
 func withAuthRetry[T any](ctx context.Context, d *Daemon, op func() (T, error)) (T, error) {
 	if err := ctx.Err(); err != nil {
 		var zero T
@@ -194,36 +128,36 @@ func withAuthRetry[T any](ctx context.Context, d *Daemon, op func() (T, error)) 
 		return result, err
 	}
 
-	// A dead session cannot be revived with cookies, so skip straight to
-	// re-pairing rather than burning a round trip.
 	if isSessionInvalid(err) {
-		if !d.repairSession(ctx) {
-			return result, err
-		}
+		d.requirePairing(ctx)
+		return result, err
+	}
+	d.log.Warn().Err(err).Msg("Request failed authentication; refreshing cookies")
+	if d.refreshBrowserCookies(ctx) {
 		if err := ctx.Err(); err != nil {
 			var zero T
 			return zero, err
 		}
-		return op()
+		result, err = op()
 	}
+	if isAuthError(err) {
+		d.requirePairing(ctx)
+	}
+	return result, err
+}
 
-	d.log.Warn().Err(err).Msg("Request failed authentication; refreshing cookies")
-	if !d.refreshBrowserCookies(ctx) {
-		return result, err
-	}
+// Re-pairing is an explicit user action. Latch the failed session so late
+// transport events and in-flight sync responses cannot announce readiness.
+func (d *Daemon) requirePairing(ctx context.Context) {
+	d.inSession(ctx, d.requirePairingLocked)
+}
 
-	result, err = op()
-	if !isAuthError(err) {
-		return result, err
+func (d *Daemon) requirePairingLocked() {
+	if d.gaiaActive {
+		return
 	}
-
-	// Fresh cookies were not enough; the session is gone.
-	if !d.repairSession(ctx) {
-		return result, err
-	}
-	if err := ctx.Err(); err != nil {
-		var zero T
-		return zero, err
-	}
-	return op()
+	d.mu.Lock()
+	d.paired = false
+	d.mu.Unlock()
+	d.setState(wire.StateError, "Google sign-in needs to be renewed. Select Pair with Google in OmaChat, then confirm the matching emoji on your phone.")
 }

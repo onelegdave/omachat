@@ -203,23 +203,46 @@ func (d *Daemon) SetTyping(ctx context.Context, p wire.SetTypingParams) error {
 
 // Refresh re-pulls the conversation list from the phone.
 func (d *Daemon) Refresh(ctx context.Context) error {
-	c, err := d.requireClient()
-	if err != nil {
-		return err
+	// Sync is permitted while connecting. Sending still requires connected.
+	d.sessionMu.Lock()
+	if ctx.Err() != nil {
+		d.sessionMu.Unlock()
+		return ctx.Err()
 	}
+	if !d.canSyncLocked() {
+		d.sessionMu.Unlock()
+		return errNotConnected
+	}
+	d.mu.RLock()
+	c := d.client
+	session := d.sessionCtx
+	d.mu.RUnlock()
+	d.sessionMu.Unlock()
+	ctx = sessionBoundContext{Context: ctx, session: session}
 	resp, err := withAuthRetry(ctx, d, func() (*gmproto.ListConversationsResponse, error) {
 		return c.ListConversations(ctx, convListLimit, gmproto.ListConversationsRequest_INBOX)
 	})
 	if err != nil {
 		return fmt.Errorf("list conversations: %w", err)
 	}
+	return d.acceptConversationSync(ctx, c, resp)
+}
+
+func (d *Daemon) acceptConversationSync(ctx context.Context, c *libgm.Client, resp *gmproto.ListConversationsResponse) error {
 	d.sessionMu.Lock()
 	defer d.sessionMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if !d.canSyncLocked() || d.client != c {
+		return errNotConnected
+	}
 	d.replaceConversations(resp.GetConversations())
-	d.publishStatus()
+	d.mu.Lock()
+	d.status.PhoneOK = true
+	d.status.LastSyncSec = time.Now().Unix()
+	d.mu.Unlock()
+	d.setState(wire.StateConnected, "")
 	return nil
 }
 

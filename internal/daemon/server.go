@@ -298,13 +298,13 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		if err != nil {
 			return fail(err)
 		}
-		if err := d.startGaiaPairing(ctx, p.Cookies, false); err != nil {
+		if err := d.startGaiaPairing(ctx, p.Cookies); err != nil {
 			return fail(err)
 		}
 		return ok(nil)
 
 	case wire.MethodPairFromBrowser:
-		if err := d.pairFromBrowser(ctx, false); err != nil {
+		if err := d.pairFromBrowser(ctx); err != nil {
 			return fail(err)
 		}
 		return ok(nil)
