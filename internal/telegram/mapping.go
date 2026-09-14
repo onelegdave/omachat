@@ -29,6 +29,8 @@ type Message struct {
 	SenderID       int64
 	SenderName     string
 	MediaKey       string
+	MediaMime      string
+	MediaAudio     bool
 }
 
 // ReadClient is the future read-only synchronization seam. Implementations may
@@ -77,7 +79,11 @@ func mapMessage(m Message) wire.Message {
 		SenderID: fmt.Sprintf("tg:%d", m.SenderID), SenderName: m.SenderName,
 	}
 	if m.MediaKey != "" {
-		out.Attachments = []wire.Attachment{{Key: m.MediaKey, MimeType: "image/jpeg", IsImage: true}}
+		mimeType := m.MediaMime
+		if mimeType == "" && !m.MediaAudio {
+			mimeType = "image/jpeg"
+		}
+		out.Attachments = []wire.Attachment{{Key: m.MediaKey, MimeType: mimeType, IsImage: !m.MediaAudio, IsAudio: m.MediaAudio}}
 	}
 	return out
 }

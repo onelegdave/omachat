@@ -30,3 +30,17 @@ func TestMapEmpty(t *testing.T) {
 		t.Fatalf("expected empty messages, got %v", got)
 	}
 }
+
+func TestMapAudioAttachment(t *testing.T) {
+	msg := mapMessage(Message{ID: 4, ConversationID: 2, Text: "voice", MediaKey: "tg:4", MediaMime: "audio/ogg", MediaAudio: true})
+	if len(msg.Attachments) != 1 || !msg.Attachments[0].IsAudio || msg.Attachments[0].IsImage || msg.Attachments[0].MimeType != "audio/ogg" {
+		t.Fatalf("unexpected audio attachment: %+v", msg.Attachments)
+	}
+}
+
+func TestMapImageAttachmentDefaultsMime(t *testing.T) {
+	msg := mapMessage(Message{ID: 5, ConversationID: 2, MediaKey: "tg:5"})
+	if len(msg.Attachments) != 1 || !msg.Attachments[0].IsImage || msg.Attachments[0].IsAudio || msg.Attachments[0].MimeType != "image/jpeg" {
+		t.Fatalf("unexpected image attachment: %+v", msg.Attachments)
+	}
+}

@@ -82,6 +82,7 @@ type GotdClient struct {
 	connected  bool
 	onMessage  func(Message)
 	mediaRefs  map[string]tg.InputFileLocationClass
+	mediaExts  map[string]string
 }
 
 // SetMessageHandler registers the callback used for live incoming updates.
@@ -149,6 +150,7 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 		client:      client,
 		peers:       make(map[int64]tg.InputPeerClass),
 		mediaRefs:   make(map[string]tg.InputFileLocationClass),
+		mediaExts:   make(map[string]string),
 		dispatcher:  dispatcher,
 	}
 	return wrapper
@@ -569,7 +571,43 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 			}
 		}
 	}
+	if document, ok := m.Media.(*tg.MessageMediaDocument); ok {
+		if d, ok := document.Document.(*tg.Document); ok {
+			isAudio := false
+			for _, attr := range d.Attributes {
+				if _, ok := attr.(*tg.DocumentAttributeAudio); ok {
+					isAudio = true
+					break
+				}
+			}
+			if isAudio {
+				key := fmt.Sprintf("tg:%d", m.ID)
+				g.mediaRefs[key] = &tg.InputDocumentFileLocation{ID: d.ID, AccessHash: d.AccessHash, FileReference: d.FileReference}
+				mimeType := d.MimeType
+				if mimeType == "" {
+					mimeType = "audio/ogg"
+				}
+				g.mediaExts[key] = telegramMediaExt(mimeType)
+				out.MediaKey, out.MediaMime, out.MediaAudio = key, mimeType, true
+			}
+		}
+	}
 	return out
+}
+
+func telegramMediaExt(mimeType string) string {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "audio/mp4", "audio/aac":
+		return ".m4a"
+	case "audio/mpeg", "audio/mp3":
+		return ".mp3"
+	case "audio/amr":
+		return ".amr"
+	case "audio/3gpp":
+		return ".3ga"
+	default:
+		return ".ogg"
+	}
 }
 
 func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string, error) {
@@ -582,7 +620,13 @@ func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	final := filepath.Join(dir, safeMediaName(key)+".jpg")
+	ext := ".jpg"
+	g.mu.RLock()
+	if value := g.mediaExts[key]; value != "" {
+		ext = value
+	}
+	g.mu.RUnlock()
+	final := filepath.Join(dir, safeMediaName(key)+ext)
 	if st, err := os.Stat(final); err == nil && st.Mode().IsRegular() {
 		return final, nil
 	}
