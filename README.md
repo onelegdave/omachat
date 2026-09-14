@@ -119,9 +119,12 @@ A local cleanup failure is reported separately.
 | `~/.local/share/omachat/session.json` | Google pairing credentials, secret |
 | `~/.local/share/omachat/whatsapp.db` | WhatsApp device store (sqlite, 0600) |
 | `~/.local/share/omachat/whatsapp_store.json` | Cached WhatsApp chats and downloadable media metadata |
+| `~/.local/share/omachat/telegram.session` | Telegram session credentials, secret (when paired) |
+| `~/.local/share/omachat/telegram_store.json` | Cached Telegram chats (when paired) |
 | `~/.local/share/omachat/config.json` | Browser profile preference, secret |
 | `~/.cache/omachat/media/` | Google downloaded attachments |
 | `~/.cache/omachat/media_whatsapp/` | WhatsApp downloaded attachments |
+| `~/.cache/omachat/media_telegram/` | Telegram downloaded attachments (when paired) |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Plugin to helper socket |
 
 Uninstall with `omarchy plugin remove onelegdave.omachat`. That does not delete credentials. Remove those with:
@@ -139,6 +142,7 @@ Also revoke the device on your phone under **Messages > Device pairing** and, if
 - RCS and end-to-end chats relay through your phone. The phone has to stay online.
 - Inbox of 50 conversations. Threads open with the latest 60 messages; **Load older messages** fetches earlier pages while keeping your reading position. Refresh retains loaded history. Switching conversations starts again with the latest page.
 - WhatsApp in this version pages cached companion history (initial phone sync plus live messages). whatsmeow can request on-demand phone history with `BuildHistorySyncRequest`; OmaChat does not send that request yet.
+- Telegram support in this milestone provides network routing abstraction, backend service scaffold, and isolated local storage. Live MTProto pairing is pending library selection and credential configuration.
 - Deliberate view-once behavior: view-once and ephemeral media are intentionally not stored, cached, or reopened, presenting a placeholder in the thread to respect sender privacy.
 - WhatsApp voice notes, GIF search, reactions, and calling are currently disabled with clear UI notices rather than falling through to Google Messages.
 - Incoming GIFs play in the thread. Pick a GIF to send the same way as a photo. Optional GIPHY search needs a personal API key in OmaChat Settings (gear in the header). Get a free key at developers.giphy.com, create an app, paste the key. It is stored in ~/.local/share/omachat/config.json, never shown back to the panel.

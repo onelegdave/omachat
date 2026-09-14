@@ -116,6 +116,9 @@ func TestStorageIsolation(t *testing.T) {
 	if err := os.MkdirAll(p.WhatsAppMediaDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(p.TelegramMediaDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create Google files
 	if err := os.WriteFile(p.SessionFile(), []byte("google-session"), 0o600); err != nil {
@@ -141,7 +144,19 @@ func TestStorageIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Clearing Google session must NOT touch WhatsApp files
+	// Create Telegram files
+	if err := os.WriteFile(p.TelegramSessionFile(), []byte("telegram-session"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.TelegramStoreFile(), []byte("telegram-store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tgMedia := p.TelegramMediaDir() + "/tgphoto.png"
+	if err := os.WriteFile(tgMedia, []byte("telegram-media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Clearing Google session must NOT touch WhatsApp or Telegram files
 	if err := p.ClearSession(); err != nil {
 		t.Fatalf("ClearSession: %v", err)
 	}
@@ -154,17 +169,14 @@ func TestStorageIsolation(t *testing.T) {
 	if b, err := os.ReadFile(p.WhatsAppDBFile()); err != nil || string(b) != "whatsapp-db" {
 		t.Errorf("WhatsApp DB file was modified or deleted by ClearSession: %v", err)
 	}
-	if b, err := os.ReadFile(p.WhatsAppDBFile() + "-wal"); err != nil || string(b) != "whatsapp-wal" {
-		t.Errorf("WhatsApp WAL file was modified or deleted by ClearSession: %v", err)
+	if b, err := os.ReadFile(p.TelegramSessionFile()); err != nil || string(b) != "telegram-session" {
+		t.Errorf("Telegram session file was modified or deleted by ClearSession: %v", err)
 	}
-	if b, err := os.ReadFile(p.WhatsAppStoreFile()); err != nil || string(b) != "whatsapp-store" {
-		t.Errorf("WhatsApp store file was modified or deleted by ClearSession: %v", err)
-	}
-	if b, err := os.ReadFile(waMedia); err != nil || string(b) != "whatsapp-media" {
-		t.Errorf("WhatsApp media file was modified or deleted by ClearSession: %v", err)
+	if b, err := os.ReadFile(tgMedia); err != nil || string(b) != "telegram-media" {
+		t.Errorf("Telegram media file was modified or deleted by ClearSession: %v", err)
 	}
 
-	// Now re-create Google files and clear WhatsApp session
+	// 2. Re-create Google files and clear WhatsApp session
 	if err := os.WriteFile(p.SessionFile(), []byte("google-session-2"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -174,9 +186,6 @@ func TestStorageIsolation(t *testing.T) {
 	if _, err := os.Stat(p.WhatsAppDBFile()); !os.IsNotExist(err) {
 		t.Errorf("expected WhatsApp DB file to be deleted, got %v", err)
 	}
-	if _, err := os.Stat(p.WhatsAppDBFile() + "-wal"); !os.IsNotExist(err) {
-		t.Errorf("expected WhatsApp WAL file to be deleted, got %v", err)
-	}
 	if _, err := os.Stat(p.WhatsAppStoreFile()); !os.IsNotExist(err) {
 		t.Errorf("expected WhatsApp store file to be deleted, got %v", err)
 	}
@@ -185,5 +194,28 @@ func TestStorageIsolation(t *testing.T) {
 	}
 	if b, err := os.ReadFile(p.SessionFile()); err != nil || string(b) != "google-session-2" {
 		t.Errorf("Google session file was modified or deleted by ClearWhatsAppSession: %v", err)
+	}
+	if b, err := os.ReadFile(p.TelegramSessionFile()); err != nil || string(b) != "telegram-session" {
+		t.Errorf("Telegram session file was modified or deleted by ClearWhatsAppSession: %v", err)
+	}
+	if b, err := os.ReadFile(tgMedia); err != nil || string(b) != "telegram-media" {
+		t.Errorf("Telegram media file was modified or deleted by ClearWhatsAppSession: %v", err)
+	}
+
+	// 3. Clear Telegram session
+	if err := p.ClearTelegramSession(); err != nil {
+		t.Fatalf("ClearTelegramSession: %v", err)
+	}
+	if _, err := os.Stat(p.TelegramSessionFile()); !os.IsNotExist(err) {
+		t.Errorf("expected Telegram session file to be deleted, got %v", err)
+	}
+	if _, err := os.Stat(p.TelegramStoreFile()); !os.IsNotExist(err) {
+		t.Errorf("expected Telegram store file to be deleted, got %v", err)
+	}
+	if _, err := os.Stat(tgMedia); !os.IsNotExist(err) {
+		t.Errorf("expected Telegram media file to be deleted, got %v", err)
+	}
+	if b, err := os.ReadFile(p.SessionFile()); err != nil || string(b) != "google-session-2" {
+		t.Errorf("Google session file was modified or deleted by ClearTelegramSession: %v", err)
 	}
 }

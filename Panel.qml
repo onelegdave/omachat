@@ -111,7 +111,9 @@ Panel {
       if (!ok) {
         var advice = currentNet === "whatsapp"
           ? " Check WhatsApp on your phone under Linked devices."
-          : " Check Google Messages on your phone under Device pairing."
+          : (currentNet === "telegram"
+            ? " Check Telegram on your phone or desktop."
+            : " Check Google Messages on your phone under Device pairing.")
         root.unpairError = "Unpair did not complete successfully: " + String(res) + advice
       }
     }, currentNet)
@@ -158,7 +160,7 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             width: Style.space(22)
             height: Style.space(22)
-            text: root.activeService === "whatsapp" ? "󰖣" : "󰭹"
+            text: root.activeService === "whatsapp" ? "󰖣" : (root.activeService === "telegram" ? "\uf2c6" : "󰭹")
             color: Color.accent
             fontFamily: root.fontFamily
             fontSize: fs(Style.font.heading)
@@ -289,8 +291,9 @@ Panel {
         if (!root.service) return false
         var g = typeof root.service.stateFor === "function" ? root.service.stateFor("gmessages") : (root.service.state || "")
         var w = typeof root.service.stateFor === "function" ? root.service.stateFor("whatsapp") : ""
+        var t = typeof root.service.stateFor === "function" ? root.service.stateFor("telegram") : ""
         var isReady = function(st) { return st !== "unpaired" && st !== "pairing" && st !== "gaiaPairing" && st !== "error" && st !== "" }
-        return isReady(g) || isReady(w)
+        return isReady(g) || isReady(w) || isReady(t)
       }
 
       // Retain drafts and selection while Settings or another tab is shown.
@@ -497,7 +500,7 @@ Panel {
       host: root
       viewActive: inboxLoader.visible
       settings: root.settings
-      networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : "Google Messages"
+      networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : (root.activeService === "telegram" ? "Telegram" : "Google Messages")
       uiScale: root.uiScale
     }
   }

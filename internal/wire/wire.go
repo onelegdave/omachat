@@ -10,7 +10,25 @@ package wire
 const (
 	NetworkGMessages = "gmessages"
 	NetworkWhatsApp  = "whatsapp"
+	NetworkTelegram  = "telegram"
 )
+
+// KnownNetworks lists all supported network identifiers.
+var KnownNetworks = []string{
+	NetworkGMessages,
+	NetworkWhatsApp,
+	NetworkTelegram,
+}
+
+// IsKnownNetwork reports whether net is recognized by the daemon.
+func IsKnownNetwork(net string) bool {
+	switch net {
+	case NetworkGMessages, NetworkWhatsApp, NetworkTelegram:
+		return true
+	default:
+		return false
+	}
+}
 
 // Request is a call from the plugin to the daemon.
 type Request struct {

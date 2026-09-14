@@ -51,7 +51,7 @@ func NewPaths() (*Paths, error) {
 		runtime = filepath.Join(v, appDir)
 	}
 	p := &Paths{Data: data, Cache: cache, Runtime: runtime}
-	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir()} {
+	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir(), p.TelegramMediaDir()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
 		}
@@ -73,6 +73,12 @@ func (p *Paths) MediaDir() string { return filepath.Join(p.Cache, "media") }
 
 // WhatsAppMediaDir caches downloaded attachments and avatars for WhatsApp.
 func (p *Paths) WhatsAppMediaDir() string { return filepath.Join(p.Cache, "media_whatsapp") }
+
+// TelegramMediaDir caches downloaded attachments and avatars for Telegram.
+func (p *Paths) TelegramMediaDir() string { return filepath.Join(p.Cache, "media_telegram") }
+
+// TelegramSessionFile holds the session data for Telegram. Treat as a secret.
+func (p *Paths) TelegramSessionFile() string { return filepath.Join(p.Data, "telegram.session") }
 
 // LoadSession reads persisted auth data. A missing file is not an error; it
 // returns fresh auth data and paired=false so the caller can start pairing.
@@ -158,6 +164,25 @@ func (p *Paths) ClearWhatsAppSession() error {
 		return err
 	}
 	return os.MkdirAll(p.WhatsAppMediaDir(), 0o700)
+}
+
+// TelegramStoreFile holds the local cache of Telegram conversations and messages.
+func (p *Paths) TelegramStoreFile() string { return filepath.Join(p.Data, "telegram_store.json") }
+
+// ClearTelegramSession removes stored Telegram credentials/session, conversation cache, and media caches, returning Telegram to unpaired.
+func (p *Paths) ClearTelegramSession() error {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+	if err := os.Remove(p.TelegramSessionFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(p.TelegramStoreFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.RemoveAll(p.TelegramMediaDir()); err != nil {
+		return err
+	}
+	return os.MkdirAll(p.TelegramMediaDir(), 0o700)
 }
 
 // WritePrivateJSON uses a unique private temporary file (0600) in the destination

@@ -133,6 +133,9 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	if d.wa != nil {
 		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkWhatsApp, Data: d.wa.Status()})
 	}
+	if d.tg != nil {
+		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkTelegram, Data: d.tg.Status()})
+	}
 
 	go func() {
 		for {
@@ -192,18 +195,24 @@ func decodeParams[T any](raw any) (T, error) {
 }
 
 func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
+	switch req.Network {
+	case wire.NetworkWhatsApp:
+		return d.dispatchWhatsApp(ctx, req)
+	case wire.NetworkTelegram:
+		return d.dispatchTelegram(ctx, req)
+	case "", wire.NetworkGMessages:
+		return d.dispatchGMessages(ctx, req)
+	default:
+		return wire.Response{ID: req.ID, OK: false, Error: "unknown network: " + req.Network}
+	}
+}
+
+func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.Response {
 	fail := func(err error) wire.Response {
 		return wire.Response{ID: req.ID, OK: false, Error: err.Error()}
 	}
 	ok := func(result any) wire.Response {
 		return wire.Response{ID: req.ID, OK: true, Result: result}
-	}
-
-	if req.Network == wire.NetworkWhatsApp {
-		return d.dispatchWhatsApp(ctx, req)
-	}
-	if req.Network != "" && req.Network != wire.NetworkGMessages {
-		return wire.Response{ID: req.ID, OK: false, Error: "unknown network: " + req.Network}
 	}
 
 	// A request must not outlive the account it was issued against.
@@ -581,5 +590,163 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 
 	default:
 		return fail(fmt.Errorf("unknown method %q for network whatsapp", req.Method))
+	}
+}
+
+func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Response {
+	fail := func(err error) wire.Response {
+		return wire.Response{ID: req.ID, OK: false, Error: err.Error()}
+	}
+	ok := func(result any) wire.Response {
+		return wire.Response{ID: req.ID, OK: true, Result: result}
+	}
+	if d.tg == nil {
+		return fail(errors.New("Telegram backend not initialized"))
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	switch req.Method {
+	case wire.MethodStatus:
+		return ok(d.tg.Status())
+
+	case wire.MethodConversations:
+		p, err := decodeParams[wire.ConversationsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(d.tg.Conversations(p.Count))
+
+	case wire.MethodMessages:
+		p, err := decodeParams[wire.MessagesParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.tg.Messages(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodSend:
+		p, err := decodeParams[wire.SendParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		msg, err := d.tg.Send(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(msg)
+
+	case wire.MethodSendMedia:
+		p, err := decodeParams[wire.SendMediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.tg.SendMedia(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodMedia:
+		p, err := decodeParams[wire.MediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.tg.Media(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodMarkRead:
+		p, err := decodeParams[wire.MarkReadParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.tg.MarkRead(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
+	case wire.MethodStartPairing:
+		qr, err := d.tg.StartPairing(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(map[string]string{"url": qr})
+
+	case wire.MethodUnpair:
+		if err := d.tg.Unpair(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
+	case wire.MethodRefresh:
+		if err := d.tg.Refresh(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
+	case wire.MethodPickImage:
+		path, err := d.PickImage(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(wire.PickImageResult{Path: path})
+
+	case wire.MethodDiscardCapture:
+		p, err := decodeParams[wire.DiscardCaptureParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.DiscardCapture(p.Path); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
+	case wire.MethodConfig:
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetUiScale:
+		p, err := decodeParams[wire.SetUiScaleParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetUiScale(p.Scale); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetGiphyKey:
+		p, err := decodeParams[wire.SetGiphyKeyParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetGiphyKey(p.Key); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodGaiaPairing, wire.MethodPairFromBrowser:
+		return fail(errors.New("Google account pairing is not supported on Telegram"))
+
+	case wire.MethodListProfiles, wire.MethodSetProfile:
+		return fail(errors.New("browser profiles are not supported on Telegram"))
+
+	case wire.MethodReact:
+		return fail(errors.New("reactions are not supported on Telegram yet"))
+
+	case wire.MethodSetTyping:
+		return fail(errors.New("typing indicators are not supported on Telegram yet"))
+
+	case wire.MethodGifSearch, wire.MethodGifFetch:
+		return fail(errors.New("GIF search is not supported on Telegram"))
+
+	default:
+		return fail(fmt.Errorf("unknown method %q for network telegram", req.Method))
 	}
 }

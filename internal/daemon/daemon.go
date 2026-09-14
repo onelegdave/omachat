@@ -15,6 +15,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
 	"github.com/onelegdave/omachat/internal/store"
+	"github.com/onelegdave/omachat/internal/telegram"
 	"github.com/onelegdave/omachat/internal/whatsapp"
 	"github.com/onelegdave/omachat/internal/wire"
 )
@@ -83,6 +84,7 @@ type Daemon struct {
 	subs  map[chan wire.Event]struct{}
 
 	wa *whatsapp.Backend
+	tg *telegram.Backend
 }
 
 // New builds a daemon around already-resolved paths.
@@ -105,6 +107,7 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		status: wire.Status{Network: wire.NetworkGMessages, State: wire.StateUnpaired, PhoneOK: true},
 	}
 	d.wa = whatsapp.New(log, paths, d.PublishEvent)
+	d.tg = telegram.New(log, paths, d.PublishEvent)
 	return d
 }
 
@@ -118,6 +121,16 @@ func (d *Daemon) WhatsApp() *whatsapp.Backend {
 	return d.wa
 }
 
+// SetTelegram overrides the Telegram backend instance (useful for unit testing).
+func (d *Daemon) SetTelegram(tg *telegram.Backend) {
+	d.tg = tg
+}
+
+// Telegram returns the Telegram backend instance.
+func (d *Daemon) Telegram() *telegram.Backend {
+	return d.tg
+}
+
 // Start loads any stored session and connects, or parks in the unpaired state
 // waiting for the plugin to ask for a QR code.
 func (d *Daemon) Start(ctx context.Context) error {
@@ -126,11 +139,17 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.maintCtx, d.maintCancel = context.WithCancel(ctx)
 	d.sessionCtx, d.sessionCancel = context.WithCancel(d.maintCtx)
 
-	// Independent network start: start WhatsApp regardless of Google session status
+	// Independent network start: start WhatsApp and Telegram regardless of Google session status
 	if d.wa != nil {
 		if err := d.wa.Start(ctx); err != nil {
 			d.log.Error().Err(err).Msg("WhatsApp backend initialization failed")
 			d.wa.SetState(wire.StateDisconnected, "WhatsApp initialization error: "+err.Error())
+		}
+	}
+	if d.tg != nil {
+		if err := d.tg.Start(ctx); err != nil {
+			d.log.Error().Err(err).Msg("Telegram backend initialization failed")
+			d.tg.SetState(wire.StateDisconnected, "Telegram initialization error: "+err.Error())
 		}
 	}
 

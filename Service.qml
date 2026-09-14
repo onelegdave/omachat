@@ -41,16 +41,20 @@ Item {
 
   property var status: ({ state: "disconnected", unread: 0, phoneOK: false, qrURL: "", error: "" })
   property var statusWA: ({ state: "disconnected", unread: 0, phoneOK: true, qrURL: "", error: "" })
+  property var statusTG: ({ state: "unpaired", unread: 0, phoneOK: true, qrURL: "", error: "" })
   readonly property string state: status && status.state ? status.state : "disconnected"
-  readonly property int unread: (status && status.unread ? status.unread : 0) + (statusWA && statusWA.unread ? statusWA.unread : 0)
+  readonly property int unread: (status && status.unread ? status.unread : 0) + (statusWA && statusWA.unread ? statusWA.unread : 0) + (statusTG && statusTG.unread ? statusTG.unread : 0)
   property var conversations: []
   property var conversationsWA: []
+  property var conversationsTG: []
   property var browserProfiles: []
   property bool refreshing: false
   property string refreshError: ""
 
   function statusFor(net) {
-    return net === "whatsapp" ? root.statusWA : root.status
+    if (net === "whatsapp") return root.statusWA
+    if (net === "telegram") return root.statusTG
+    return root.status
   }
   function stateFor(net) {
     var s = statusFor(net)
@@ -61,7 +65,9 @@ Item {
     return s && s.unread ? s.unread : 0
   }
   function conversationsFor(net) {
-    return net === "whatsapp" ? root.conversationsWA : root.conversations
+    if (net === "whatsapp") return root.conversationsWA
+    if (net === "telegram") return root.conversationsTG
+    return root.conversations
   }
 
   signal messageReceived(var message, string network)
@@ -305,6 +311,7 @@ Item {
           reconnectTimer.interval = 1000
           root.call("status", null, function(ok, res) { if (ok && res) root.status = res }, "gmessages")
           root.call("status", null, function(ok, res) { if (ok && res) root.statusWA = res }, "whatsapp")
+          root.call("status", null, function(ok, res) { if (ok && res) root.statusTG = res }, "telegram")
           root.loadConversations("gmessages")
           root.loadConversations("whatsapp")
         } else {
@@ -355,7 +362,7 @@ Item {
 
     if (frame.event !== undefined) {
       var net = frame.network || "gmessages"
-      if (net !== "gmessages" && net !== "whatsapp") return
+      if (net !== "gmessages" && net !== "whatsapp" && net !== "telegram") return
       root._handleEvent(frame)
       return
     }
@@ -374,6 +381,9 @@ Item {
       if (net === "whatsapp") {
         root.statusWA = frame.data
         if (root.statusWA && root.statusWA.state === "unpaired") root.conversationsWA = []
+      } else if (net === "telegram") {
+        root.statusTG = frame.data
+        if (root.statusTG && root.statusTG.state === "unpaired") root.conversationsTG = []
       } else {
         root.status = frame.data
         if (root.state === "unpaired") root.conversations = []
@@ -382,6 +392,8 @@ Item {
     case "conversation":
       if (net === "whatsapp") {
         root._mergeConversationWA(frame.data)
+      } else if (net === "telegram") {
+        root._mergeConversationTG(frame.data)
       } else {
         root._mergeConversation(frame.data)
       }
@@ -434,5 +446,25 @@ Item {
     })
     root.conversationsWA = list
     root.conversationUpdated(conv, "whatsapp")
+  }
+
+  function _mergeConversationTG(conv) {
+    if (!conv || !conv.id) return
+    var list = root.conversationsTG.slice()
+    var found = false
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === conv.id) {
+        list[i] = conv
+        found = true
+        break
+      }
+    }
+    if (!found) list.push(conv)
+    list.sort(function(a, b) {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+      return (b.timestamp || 0) - (a.timestamp || 0)
+    })
+    root.conversationsTG = list
+    root.conversationUpdated(conv, "telegram")
   }
 }
