@@ -2,7 +2,7 @@
 
 Version **0.2.0**. See [release notes](https://github.com/onelegdave/omachat/releases/tag/v0.2.0).
 
-Chat from the Omarchy bar for Google Messages and WhatsApp. An unread badge, conversation lists, message history with pagination, inline images and stickers, dual-network isolation, and a keyboard-friendly composer.
+Chat from the Omarchy bar for Google Messages, WhatsApp, and Telegram. OmaChat provides conversation lists, paginated history, inline media, voice notes, static WebP stickers, dual-network isolation, and a keyboard-friendly composer.
 
 ![OmaChat inbox with fake demo contacts](preview.png)
 
@@ -13,9 +13,11 @@ This is a native Omarchy shell plugin. `omarchy plugin add` is the install. The 
 ## Features
 
 - **Google Messages and WhatsApp:** Switch between networks with dedicated tabs in one bar panel.
+- **Telegram:** Pair with Telegram through its MTProto QR flow, sync chats and messages, send text, photos, captions, and voice notes, and receive photos, voice notes, and static WebP stickers.
 - **Dual-network isolation:** Independent session stores, credentials, media directories, and composer drafts. Actions or unpairing on one network never affect the other.
 - **QR pairing for WhatsApp:** Explicit QR code pairing directly in the panel using WhatsApp Linked Devices on your phone.
 - **Inbound stickers:** Incoming WhatsApp stickers render inline as image attachments and persist in local storage.
+- **Telegram media limits:** Animated TGS/video stickers are reported as unsupported. Telegram self-destructing media is never cached.
 - **Persisted media:** Downloaded attachments and message metadata persist locally with bounded cache management and retryable downloads across restarts.
 - **Deliberate view-once behavior:** View-once and ephemeral media are intentionally not saved, cached, or reopened, protecting sender privacy with a visible placeholder.
 - **Message history and pagination:** Threads open with the latest 60 messages and page older history on demand while preserving your scroll position.
@@ -142,12 +144,12 @@ Also revoke the device on your phone under **Messages > Device pairing** and, if
 - RCS and end-to-end chats relay through your phone. The phone has to stay online.
 - Inbox of 50 conversations. Threads open with the latest 60 messages; **Load older messages** fetches earlier pages while keeping your reading position. Refresh retains loaded history. Switching conversations starts again with the latest page.
 - WhatsApp in this version pages cached companion history (initial phone sync plus live messages). whatsmeow can request on-demand phone history with `BuildHistorySyncRequest`; OmaChat does not send that request yet.
-- Telegram support integrates the pure Go gotd MTProto client behind a testable abstraction and context-safe QR login flow (`StartPairing`), with isolated read-only dialog/message cache refresh through `telegram_store.json`. Outbound messaging, media, and live verification remain pending.
+- Telegram support integrates the pure Go gotd MTProto client behind a testable abstraction and context-safe QR login flow (`StartPairing`), with isolated dialog/message synchronization through `telegram_store.json`. Text, image, caption, voice-note, photo, audio, and static WebP sticker flows are supported. Animated TGS/video stickers remain unsupported, and media references are live-only until refreshed.
 - Deliberate view-once behavior: view-once and ephemeral media are intentionally not stored, cached, or reopened, presenting a placeholder in the thread to respect sender privacy.
 - WhatsApp voice notes, GIF search, reactions, and calling are currently disabled with clear UI notices rather than falling through to Google Messages.
 - Incoming GIFs play in the thread. Pick a GIF to send the same way as a photo. Optional GIPHY search needs a personal API key in OmaChat Settings (gear in the header). Get a free key at developers.giphy.com, create an app, paste the key. It is stored in ~/.local/share/omachat/config.json, never shown back to the panel.
 - To configure Telegram API credentials locally, run `python3 scripts/configure-telegram.py` from the project checkout. The script prompts locally and stores the values with mode 0600.
-- Voice notes (Google Messages): tap Rec to record (ffmpeg, not QtMultimedia), Play to preview, then send. Incoming voice plays with ffplay. Received video opens in the default player. Video calling is not in this release.
+- Voice notes: tap Rec to record (ffmpeg, not QtMultimedia), Play to preview, then send. Google Messages records M4A; Telegram records OGG/Opus. Incoming voice plays with ffplay. Received video opens in the default player. Video calling is not in this release.
 
 ## Development
 

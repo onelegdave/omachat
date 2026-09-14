@@ -22,7 +22,7 @@ Panel {
   readonly property var serviceTabs: [
     { value: "gmessages", label: "Google", icon: "󰭹", tooltip: "Google Messages" },
     { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "WhatsApp" },
-    { value: "telegram", label: "Telegram", icon: "\uf2c6", tooltip: "Coming later" }
+    { value: "telegram", label: "Telegram", icon: "\uf2c6", tooltip: "Telegram" }
   ]
   property real uiScale: 1
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
