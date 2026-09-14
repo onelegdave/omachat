@@ -163,3 +163,44 @@ test. UI rendering was inspected with synthetic content.
 The pagination UI was installed and matched the local sources. The helper
 reconnected after the shell restart and live inbox refresh passed. Pagination is included with the reconnect and unpair reporting fixes in
 v0.1.2. See the Git tag and GitHub Release for publication history.
+
+
+## WhatsApp integration and v0.2.0 release scope
+
+OmaChat v0.2.0 extends the verified Google Messages plugin with a native WhatsApp
+backend, dual-network UI routing, inbound sticker support, and persisted media.
+
+- Native WhatsApp protocol backend in `internal/whatsapp` powered by vendored
+  `whatsmeow` (MPL-2.0) and CGO sqlite (`github.com/mattn/go-sqlite3`).
+- Explicit QR pairing path via the WhatsApp tab. The helper requests a pairing QR
+  channel and updates status cleanly. Failures, context cancellations, and timeouts
+  publish a retryable UNPAIRED state with actionable error text and retire the
+  session generation so late QR goroutines cannot overwrite retry state.
+- Dual-network isolation:
+  - Separate credential stores: Google uses `session.json`; WhatsApp uses `whatsapp.db`
+    and `whatsapp_store.json`.
+  - Separate media directories: `media/` for Google, `media_whatsapp/` for WhatsApp.
+  - Independent lifecycle: unpairing WhatsApp logs out the session and deletes its
+    local database/store without affecting Google credentials, and vice versa.
+  - Isolated drafts: composer drafts are namespaced by network so typing on one
+    network is retained when viewing or working in the other.
+- Inbound stickers: incoming WhatsApp stickers are parsed, rendered inline as image
+  attachments (WebP), and cached locally. Sticker metadata persists in
+  `whatsapp_store.json` across restarts and history syncs.
+- Persisted media: bounded local persistence (up to 50 chats and 100 messages each)
+  stores downloadable media metadata in `whatsapp_store.json` (mode 0600). Downloads
+  use atomic temporary files before renaming to opaque chat/message paths, and
+  failed downloads display an in-line retry action.
+- Deliberate view-once behavior: view-once and ephemeral messages (`IsViewOnce`,
+  `IsEphemeral`, and wrapper envelopes) are deliberately not persisted to disk,
+  cached, or redownloaded. A clear placeholder message is rendered to respect
+  sender privacy.
+
+Verification results:
+- `go test -race -mod=vendor -count=1 ./...` passed across all packages.
+- `go vet -mod=vendor ./...` passed.
+- `omarchy plugin validate .` passed.
+- `git diff --check` passed.
+- `make test-ui` passed: 16 JavaScript regressions, pagination tests, helper build
+  and refresh RPC checks, and full QML test suite covering network switching,
+  draft isolation, tab navigation, sticker rendering, and WhatsApp unpair.

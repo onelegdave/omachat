@@ -1,7 +1,8 @@
 # Security
 
-This plugin talks to Google Messages, reads browser cookies once at pairing
-time, and decrypts message content on this machine so the bar can show it.
+This plugin talks to Google Messages and WhatsApp, reads browser cookies once at Google
+pairing time, pairs WhatsApp via QR code, and decrypts message content on this
+machine so the bar can show it.
 
 ## Report a vulnerability
 
@@ -28,6 +29,8 @@ Directories are 0700. The socket is only reachable by your account.
 - Child processes are spawned with an argument array, never a shell, except
   for the one-time `go build` of the helper.
 - Cookie values are not logged. Errors name which cookie is missing.
+- View-once and ephemeral WhatsApp media are omitted from disk persistence and cannot be reopened or redownloaded.
+- Dual-network isolation: Google Messages and WhatsApp maintain separate credential stores, database files, and cache directories. Unpairing one network never deletes or exposes files belonging to the other.
 
 ## Accepted
 

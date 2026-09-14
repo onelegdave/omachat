@@ -1,9 +1,9 @@
 # WhatsApp Implementation Plan and Checkpoint
 
-## Status: REVIEWABLE IMPLEMENTATION (final fixes applied by agy 2026-09-14)
+## Status: PREPARED FOR 0.2.0 RELEASE (2026-09-14)
 - Worktree: `/home/onelegdave/Projects/omachat-whatsapp`
-- Branch: `feature/whatsapp` (based on v0.1.2)
-- Manifest version: 0.1.2 (no release packaging)
+- Branch: `feature/whatsapp` (prepared for v0.2.0)
+- Manifest version: 0.2.0
 - Human owner / maintainer: OneLegDave
 - Codex owns final review, live pairing, and installed verification
 - This checkpoint was completed by Grok after agy was interrupted
@@ -102,7 +102,7 @@ Codex should still re-run these on the review pass.
 3. Point a throwaway runtime/data dir at the built helper, or install only after review.
 4. Pair Google still works (existing session). Pair WhatsApp with an explicit QR from the WhatsApp tab.
 5. Confirm independent unpair, drafts, send, image send/receive, restart restores cached chats and regular image download, view-once is not reopened.
-6. Keep version 0.1.2 until a real release.
+6. Version bumped to 0.2.0 with release documentation prepared.
 
 ---
 

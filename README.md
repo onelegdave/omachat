@@ -1,14 +1,25 @@
 # OmaChat
 
-Version **0.1.2**. See [release notes](https://github.com/onelegdave/omachat/releases/tag/v0.1.2).
+Version **0.2.0**. See [release notes](https://github.com/onelegdave/omachat/releases/tag/v0.2.0).
 
-Chat from the Omarchy bar. Google Messages and WhatsApp: an unread badge, a conversation list, the latest 60 messages per conversation, inline images, and a composer.
+Chat from the Omarchy bar for Google Messages and WhatsApp. An unread badge, conversation lists, message history with pagination, inline images and stickers, dual-network isolation, and a keyboard-friendly composer.
 
 ![OmaChat inbox with fake demo contacts](preview.png)
 
 The preview uses invented names. Real numbers, messages, and photos stay off GitHub.
 
 This is a native Omarchy shell plugin. `omarchy plugin add` is the install. The protocol helper is a child process of `omarchy-shell`, not a systemd user unit.
+
+## Features
+
+- **Google Messages and WhatsApp:** Switch between networks with dedicated tabs in one bar panel.
+- **Dual-network isolation:** Independent session stores, credentials, media directories, and composer drafts. Actions or unpairing on one network never affect the other.
+- **QR pairing for WhatsApp:** Explicit QR code pairing directly in the panel using WhatsApp Linked Devices on your phone.
+- **Inbound stickers:** Incoming WhatsApp stickers render inline as image attachments and persist in local storage.
+- **Persisted media:** Downloaded attachments and message metadata persist locally with bounded cache management and retryable downloads across restarts.
+- **Deliberate view-once behavior:** View-once and ephemeral media are intentionally not saved, cached, or reopened, protecting sender privacy with a visible placeholder.
+- **Message history and pagination:** Threads open with the latest 60 messages and page older history on demand while preserving your scroll position.
+- **Independent unpair and cleanup:** Local credentials and caches are wiped cleanly, with actionable warnings if remote device revocation fails.
 
 ## Install
 
@@ -79,20 +90,26 @@ Omarchy's shell is one Quickshell process. It also owns the bar, notifications, 
 
 ## Using it
 
-Click the bar icon. Pick a conversation, read the thread, type, press Enter.
+Click the bar icon. Switch between Google Messages and WhatsApp using the header tabs. Pick a conversation, read the thread, type, and press Enter.
 
-Middle-click the bar icon to refresh. The badge is unread conversations, not a third notification daemon. Your phone already notifies you.
+Middle-click the bar icon to refresh. The badge shows unread conversations across active networks, not a third notification daemon. Your phone already notifies you.
 
 Right-click a bubble to copy it.
+
+Drafts are preserved per conversation and isolated between networks. Typing a message in Google Messages remains saved when switching to the WhatsApp tab or navigating other chats.
+
+Inbound WhatsApp stickers appear inline in the thread as image attachments. Downloaded media files are stored locally in the cache and can be retried if a download initially fails.
 
 Attachment captions appear as a separate message after the attachment. If the
 caption cannot be confirmed, OmaChat reports that separately so you can check
 the conversation before retrying the text.
 
-The **Unpair this desktop** button clears local credentials and cached media,
-then requests device revocation from Google. If that request fails, OmaChat
-shows a warning and asks you to remove the device in **Google Messages > Device
-pairing** on your phone. A local cleanup failure is reported separately.
+The **Unpair this desktop** button clears local credentials and cached media for
+the active network without affecting the other network. On Google Messages, it
+also requests device revocation from Google; if that request fails, OmaChat shows
+a warning and asks you to remove the device in **Google Messages > Device pairing**
+on your phone. On WhatsApp, it logs out the session and removes local stores.
+A local cleanup failure is reported separately.
 
 ## Files
 
@@ -113,7 +130,7 @@ Uninstall with `omarchy plugin remove onelegdave.omachat`. That does not delete 
 rm -rf ~/.local/share/omachat ~/.cache/omachat
 ```
 
-Also revoke the device on your phone under **Messages → Device pairing** and, if you used WhatsApp, **WhatsApp → Linked devices**.
+Also revoke the device on your phone under **Messages > Device pairing** and, if you used WhatsApp, **WhatsApp > Linked devices**.
 
 ## Limits
 
@@ -121,9 +138,11 @@ Also revoke the device on your phone under **Messages → Device pairing** and, 
 - Pairing uses one Messages-for-web device slot.
 - RCS and end-to-end chats relay through your phone. The phone has to stay online.
 - Inbox of 50 conversations. Threads open with the latest 60 messages; **Load older messages** fetches earlier pages while keeping your reading position. Refresh retains loaded history. Switching conversations starts again with the latest page.
-- WhatsApp in this version pages cached companion history (initial phone sync plus live messages). whatsmeow can request on-demand phone history with `BuildHistorySyncRequest`; OmaChat does not send that request yet. View-once media is not stored or reopened. Voice, GIFs, reactions, and calling are disabled on the WhatsApp tab with a clear message rather than falling through to Google.
+- WhatsApp in this version pages cached companion history (initial phone sync plus live messages). whatsmeow can request on-demand phone history with `BuildHistorySyncRequest`; OmaChat does not send that request yet.
+- Deliberate view-once behavior: view-once and ephemeral media are intentionally not stored, cached, or reopened, presenting a placeholder in the thread to respect sender privacy.
+- WhatsApp voice notes, GIF search, reactions, and calling are currently disabled with clear UI notices rather than falling through to Google Messages.
 - Incoming GIFs play in the thread. Pick a GIF to send the same way as a photo. Optional GIPHY search needs a personal API key in OmaChat Settings (gear in the header). Get a free key at developers.giphy.com, create an app, paste the key. It is stored in ~/.local/share/omachat/config.json, never shown back to the panel.
-- Voice notes: tap Rec to record (ffmpeg, not QtMultimedia), Play to preview, then send. Incoming voice plays with ffplay. Received video opens in the default player. Video calling is not in this release.
+- Voice notes (Google Messages): tap Rec to record (ffmpeg, not QtMultimedia), Play to preview, then send. Incoming voice plays with ffplay. Received video opens in the default player. Video calling is not in this release.
 
 ## Development
 
