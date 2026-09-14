@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"mime"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -451,6 +453,14 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.
 	out.TmpID = p.TmpID
 	out.Status = wire.DeliverySent
 	out.Delivery = wire.DeliverySent
+	if info, statErr := os.Stat(p.Path); statErr == nil && info.Mode().IsRegular() {
+		mediaType := mime.TypeByExtension(strings.ToLower(filepath.Ext(p.Path)))
+		out.Attachments = []wire.Attachment{{
+			Key: p.TmpID, MediaID: p.TmpID, Name: filepath.Base(p.Path),
+			MimeType: mediaType, Size: info.Size(), IsImage: strings.HasPrefix(mediaType, "image/"),
+			Path: p.Path,
+		}}
+	}
 	b.ingestMessage(msg)
 	return &wire.SendMediaResult{Message: &out}, nil
 }

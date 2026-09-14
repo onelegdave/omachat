@@ -587,6 +587,26 @@ func TestTelegramSendTextRoutesAndCaches(t *testing.T) {
 	}
 }
 
+func TestTelegramSendMediaReturnsAttachmentMetadata(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	b.AddTestConversation(wire.Conversation{ID: "tg:7", Name: "Alice"})
+	path := filepath.Join(paths.TelegramMediaDir(), "photo.jpg")
+	if err := os.WriteFile(path, []byte("image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mock.SendImageFunc = func(_ context.Context, id int64, gotPath, caption string) (Message, error) {
+		if id != 7 || gotPath != path || caption != "caption" {
+			t.Fatalf("unexpected media args")
+		}
+		return Message{ID: 13, ConversationID: id, Text: caption, Timestamp: 44, FromMe: true}, nil
+	}
+	res, err := b.SendMedia(context.Background(), wire.SendMediaParams{TmpID: "tx-2", ConversationID: "tg:7", Path: path, Caption: "caption"})
+	if err != nil || res == nil || res.Message == nil || len(res.Message.Attachments) != 1 || !res.Message.Attachments[0].IsImage {
+		t.Fatalf("unexpected media result: %+v err=%v", res, err)
+	}
+}
+
 func TestStartPairingUnconfigured(t *testing.T) {
 	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
 	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
