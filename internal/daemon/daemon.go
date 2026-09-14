@@ -107,7 +107,7 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		status: wire.Status{Network: wire.NetworkGMessages, State: wire.StateUnpaired, PhoneOK: true},
 	}
 	d.wa = whatsapp.New(log, paths, d.PublishEvent)
-	d.tg = telegram.New(log, paths, d.PublishEvent)
+	d.tg = telegram.New(log, paths, d.PublishEvent, d.config)
 	return d
 }
 

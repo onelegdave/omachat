@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -216,5 +217,153 @@ func TestBackendUnpairCleanup(t *testing.T) {
 		}
 	default:
 		t.Error("expected status event to be published on unpair")
+	}
+}
+
+func TestTelegramStartUnconfiguredStatus(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
+
+	b, _, _ := setupTestTelegram(t)
+	ctx := context.Background()
+
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected state %q for unconfigured Telegram, got %q", wire.StateUnpaired, st.State)
+	}
+	const wantHint = "Telegram API credentials required: configure api_id and api_hash in ~/.local/share/omachat/config.json (obtain from my.telegram.org)"
+	if st.Hint != wantHint {
+		t.Errorf("hint = %q, want %q", st.Hint, wantHint)
+	}
+	if st.Error != "" {
+		t.Errorf("expected empty Error for clean unconfigured state, got %q", st.Error)
+	}
+	if b.Client() != nil {
+		t.Error("expected Client to remain nil when unconfigured")
+	}
+}
+
+func TestTelegramStartConfiguredStatus(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
+
+	b, paths, _ := setupTestTelegram(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	if err := cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	b.SetConfig(cs)
+
+	ctx := context.Background()
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected state %q, got %q", wire.StateUnpaired, st.State)
+	}
+	const wantHint = "Telegram API credentials configured; pairing not yet started"
+	if st.Hint != wantHint {
+		t.Errorf("hint = %q, want %q", st.Hint, wantHint)
+	}
+	if st.Error != "" {
+		t.Errorf("expected empty Error, got %q", st.Error)
+	}
+	// Invariant: no client connection or QR pairing started
+	if b.Client() != nil {
+		t.Error("expected Client to remain nil in this milestone")
+	}
+}
+
+func TestTelegramStartEnvironmentFallback(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "7654321")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "fedcba9876543210fedcba9876543210")
+
+	b, _, _ := setupTestTelegram(t)
+	ctx := context.Background()
+
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected state %q, got %q", wire.StateUnpaired, st.State)
+	}
+	const wantHint = "Telegram API credentials configured; pairing not yet started"
+	if st.Hint != wantHint {
+		t.Errorf("hint = %q, want %q", st.Hint, wantHint)
+	}
+	if b.Client() != nil {
+		t.Error("expected Client to remain nil in this milestone")
+	}
+}
+
+func TestTelegramStartMalformedCredentials(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
+
+	b, paths, _ := setupTestTelegram(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	// Set invalid hash
+	_ = cs.SetTelegramCredentials(12345, "invalid-hash-too-short")
+	b.SetConfig(cs)
+
+	ctx := context.Background()
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected state %q, got %q", wire.StateUnpaired, st.State)
+	}
+	if !strings.Contains(st.Hint, "Telegram API credentials required") {
+		t.Errorf("expected credentials required in hint, got %q", st.Hint)
+	}
+	if st.Error == "" {
+		t.Error("expected non-empty Error for malformed credentials")
+	}
+	if strings.Contains(st.Error, "invalid-hash-too-short") {
+		t.Error("SECURITY: secret leaked into status Error message")
+	}
+}
+
+func TestTelegramUnpairPreservesConfiguredHint(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
+
+	b, paths, _ := setupTestTelegram(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef")
+	b.SetConfig(cs)
+
+	// Seed session file
+	if err := os.WriteFile(paths.TelegramSessionFile(), []byte("tg-session"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := b.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if b.Status().State != wire.StateConnecting {
+		t.Fatalf("expected StateConnecting with session, got %s", b.Status().State)
+	}
+
+	if err := b.Unpair(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired, got %s", st.State)
+	}
+	if st.Hint != "Telegram API credentials configured; pairing not yet started" {
+		t.Errorf("expected configured hint after unpair with valid credentials, got %q", st.Hint)
 	}
 }

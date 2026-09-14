@@ -18,10 +18,16 @@ import (
 // or reviewed API credentials.
 var ErrNotConfigured = errors.New("Telegram client is not configured: protocol library integration pending")
 
+const (
+	hintCredentialsRequired   = "Telegram API credentials required: configure api_id and api_hash in ~/.local/share/omachat/config.json (obtain from my.telegram.org)"
+	hintCredentialsConfigured = "Telegram API credentials configured; pairing not yet started"
+)
+
 // Backend manages the Telegram service state, local data isolation, and protocol routing scaffold.
 type Backend struct {
 	log     zerolog.Logger
 	paths   *appStore.Paths
+	config  *appStore.ConfigStore
 	publish func(wire.Event)
 
 	mu        sync.RWMutex
@@ -38,10 +44,17 @@ type Backend struct {
 }
 
 // New creates an unstarted Telegram backend scaffold.
-func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *Backend {
+func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event), cfg ...*appStore.ConfigStore) *Backend {
+	var configStore *appStore.ConfigStore
+	if len(cfg) > 0 && cfg[0] != nil {
+		configStore = cfg[0]
+	} else if paths != nil {
+		configStore = appStore.NewConfigStore(paths.ConfigFile())
+	}
 	return &Backend{
 		log:      log.With().Str("network", wire.NetworkTelegram).Logger(),
 		paths:    paths,
+		config:   configStore,
 		publish:  publish,
 		convs:    make(map[string]wire.Conversation),
 		messages: make(map[string][]wire.Message),
@@ -49,13 +62,37 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *B
 			Network: wire.NetworkTelegram,
 			State:   wire.StateUnpaired,
 			PhoneOK: true,
-			Hint:    "Telegram protocol client integration pending",
+			Hint:    hintCredentialsRequired,
 		},
 	}
 }
 
+// SetConfig updates the configuration store for the backend.
+func (b *Backend) SetConfig(cs *appStore.ConfigStore) {
+	b.mu.Lock()
+	b.config = cs
+	b.mu.Unlock()
+}
+
+// Credentials inspects and returns the configured Telegram credentials, or an error if unconfigured or invalid.
+// Secrets are never logged or exposed.
+func (b *Backend) Credentials() (appStore.TelegramCredentials, error) {
+	b.mu.RLock()
+	cs := b.config
+	b.mu.RUnlock()
+
+	if cs != nil {
+		return cs.TelegramCredentials()
+	}
+	if b.paths != nil {
+		return appStore.NewConfigStore(b.paths.ConfigFile()).TelegramCredentials()
+	}
+	return appStore.Config{}.TelegramCredentials()
+}
+
 // Start initializes the Telegram backend. If a persisted session file exists,
-// it marks the backend state accordingly; otherwise it parks in StateUnpaired.
+// it marks the backend state accordingly; otherwise it inspects credentials
+// and reports an honest unpaired hint without initiating network calls or live clients.
 func (b *Backend) Start(ctx context.Context) error {
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
@@ -73,8 +110,21 @@ func (b *Backend) Start(ctx context.Context) error {
 		return nil
 	}
 
-	b.setState(wire.StateUnpaired, "")
-	b.log.Info().Msg("Telegram backend initialized in unpaired scaffold mode")
+	creds, credErr := b.Credentials()
+	if credErr != nil {
+		if errors.Is(credErr, appStore.ErrTelegramUnconfigured) {
+			b.setStatusWithHint(wire.StateUnpaired, hintCredentialsRequired, "")
+			b.log.Info().Msg("Telegram credentials unconfigured; remaining in unpaired scaffold mode")
+			return nil
+		}
+		b.setStatusWithHint(wire.StateUnpaired, hintCredentialsRequired, credErr.Error())
+		b.log.Warn().Msg("Telegram credentials invalid; remaining in unpaired scaffold mode")
+		return nil
+	}
+
+	_ = creds
+	b.setStatusWithHint(wire.StateUnpaired, hintCredentialsConfigured, "")
+	b.log.Info().Msg("Telegram backend initialized with valid credentials; pairing pending")
 	return nil
 }
 
@@ -102,6 +152,23 @@ func (b *Backend) SetState(state wire.ConnState, errStr string) {
 func (b *Backend) setState(state wire.ConnState, errStr string) {
 	b.mu.Lock()
 	b.status.State = state
+	b.status.Error = errStr
+	st := b.status
+	b.mu.Unlock()
+
+	if b.publish != nil {
+		b.publish(wire.Event{
+			Event:   wire.EventStatus,
+			Network: wire.NetworkTelegram,
+			Data:    st,
+		})
+	}
+}
+
+func (b *Backend) setStatusWithHint(state wire.ConnState, hint string, errStr string) {
+	b.mu.Lock()
+	b.status.State = state
+	b.status.Hint = hint
 	b.status.Error = errStr
 	st := b.status
 	b.mu.Unlock()
@@ -193,7 +260,13 @@ func (b *Backend) Unpair(ctx context.Context) error {
 		b.log.Error().Err(clearErr).Msg("Failed to clear local Telegram session files")
 		statusErr = "Local Telegram files could not be removed: " + clearErr.Error()
 	}
-	b.setState(wire.StateUnpaired, statusErr)
+
+	creds, credErr := b.Credentials()
+	hint := hintCredentialsRequired
+	if credErr == nil && creds.APIID > 0 {
+		hint = hintCredentialsConfigured
+	}
+	b.setStatusWithHint(wire.StateUnpaired, hint, statusErr)
 	if clearErr != nil {
 		return fmt.Errorf("telegram storage cleanup failed: %w", clearErr)
 	}

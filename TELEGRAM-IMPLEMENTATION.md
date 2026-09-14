@@ -1,11 +1,11 @@
 # Telegram Implementation Plan and Readiness Review
 
-## Status: Milestone 1 & Milestone 2 (Dependency Vendoring) Complete (2026-09-14)
+## Status: Milestone 1, Milestone 2, & Milestone 3 (Credential Configuration) Complete (2026-09-14)
 - **Worktree**: `/home/onelegdave/Projects/omachat`
 - **Branch**: `feature/telegram`
 - **Human Owner / Maintainer**: OneLegDave
 - **MTProto Dependency**: `github.com/gotd/td v0.161.0`
-- **Review status**: Dependency vendoring and build baseline verified offline. Credentials and live network integration remain subject to human provisioning and review.
+- **Review status**: Dependency vendoring, credential configuration, and offline validation complete. Live MTProto pairing and network integration remain subject to human provisioning and review.
 
 ---
 
@@ -152,22 +152,27 @@ Telegram requires all MTProto client applications to identify themselves using t
    - Telegram permits alternative third-party companion clients under the API Terms of Service, provided that official branding guidelines are respected, security measures are maintained, and MTProto security proofs (e.g. SRP) are computed properly.
 
 ### Credential Configuration Strategy for OmaChat
-OmaChat will support two non-intrusive, secure credential sources:
+OmaChat supports two non-intrusive, secure credential sources:
 1. **Config File (Primary)**:
-   - File: `~/.config/omachat/config.json` or `~/.local/share/omachat/config.json` (mode `0600`).
-   - JSON keys:
+   - File: `~/.local/share/omachat/config.json` (mode `0600`).
+   - JSON keys: `telegramApiID` (integer) and `telegramApiHash` (32-character hexadecimal string). Backward-compatible alias support for `telegram_api_id` and `telegram_api_hash` is also included.
      ```json
      {
-       "telegram_api_id": 1234567,
-       "telegram_api_hash": "0123456789abcdef0123456789abcdef"
+       "telegramApiID": 1234567,
+       "telegramApiHash": "0123456789abcdef0123456789abcdef"
      }
      ```
 2. **Environment Variables (Secondary / Development Override)**:
    - `OMACHAT_TELEGRAM_API_ID`
    - `OMACHAT_TELEGRAM_API_HASH`
-3. **Unconfigured Behavior**:
+3. **Precedence and Validation**:
+   - Configuration file values take precedence over environment variables.
+   - Validation requires a positive integer `api_id` and a non-empty 32-character hexadecimal `api_hash`.
+   - Security invariant: credential secrets and raw values are never logged or exposed in error messages.
+4. **Unconfigured Behavior**:
    - If neither source provides valid credentials, `internal/telegram/backend.go` remains in `wire.StateUnpaired` and provides an honest, clear hint in `wire.Status.Hint`:
-     `"Telegram API credentials required: configure api_id and api_hash in ~/.config/omachat/config.json (obtain from my.telegram.org)"`
+      `"Telegram API credentials required: configure api_id and api_hash in ~/.local/share/omachat/config.json (obtain from my.telegram.org)"`
+   - If credentials are valid, the backend reports `wire.StateUnpaired` with hint `"Telegram API credentials configured; pairing not yet started"`.
    - No crashes, no unhandled panics, and no attempt to initiate network connections without valid credentials.
 
 ---
@@ -214,7 +219,7 @@ The following routine development actions are authorized within scope, but **the
    - Human check: Verify licensing and vendor tree size before merging.
 2. **API Credential Registration & Provisioning**:
    - Registering an application on `https://my.telegram.org` using OneLegDave's Telegram account to obtain a real `api_id` and `api_hash`.
-   - Placing the credentials into `~/.config/omachat/config.json`.
+   - Placing the credentials into `~/.local/share/omachat/config.json`.
    - *Note*: AI agents cannot autonomously register credentials on `my.telegram.org` due to SMS/in-app verification and CAPTCHA requirements.
 3. **Live Network Integration Authorization**:
    - Authorizing the first live outbound MTProto network connection from `bin/omachatd` to Telegram DC production servers (`149.154.167.50:443`, etc.).
@@ -238,12 +243,16 @@ The following routine development actions are authorized within scope, but **the
   - `make test-ui`: PASS
   - `make validate` (`omarchy plugin validate .`): PASS
 
-### Stage 2: Configuration & Credential Management
-- Add configuration loading in `internal/store/config.go`:
-  - Read `~/.config/omachat/config.json` for `telegram_api_id` and `telegram_api_hash`.
-  - Check fallback environment variables `OMACHAT_TELEGRAM_API_ID` and `OMACHAT_TELEGRAM_API_HASH`.
-- If credentials are absent, ensure `internal/telegram/backend.go` reports `wire.StateUnpaired` with descriptive `Status.Hint`.
-- Add unit tests verifying credential loading, precedence, and missing credential reporting.
+### Stage 2: Configuration & Credential Management (COMPLETED - 2026-09-14)
+- Added `TelegramAPIID` (integer) and `TelegramAPIHash` (string) to `store.Config` in `internal/store/config.go`.
+- Supported JSON keys `telegramApiID` and `telegramApiHash` with backward/forward-compatible unmarshaling for `telegram_api_id` and `telegram_api_hash`.
+- Integrated atomic persistence via existing `writePrivateJSON` (`SetTelegramCredentials`, `SetTelegramAPIID`, `SetTelegramAPIHash`).
+- Added environment variable fallback `OMACHAT_TELEGRAM_API_ID` and `OMACHAT_TELEGRAM_API_HASH` for development, with config taking precedence.
+- Validated positive `api_id` and non-empty 32-character hexadecimal `api_hash` with strict protection against logging or exposing secrets in errors.
+- Implemented `TelegramCredentials` type and `ResolveTelegramCredentials` helper returning validated credentials or an explicit `ErrTelegramUnconfigured`.
+- Wired `internal/telegram/backend.go` to inspect credentials at `Start`, reporting an honest unpaired hint without initiating network calls, creating live client connections, or starting QR pairing.
+- Preserved existing Google Messages and WhatsApp behaviors and isolation.
+- Added focused unit test suite (`internal/store/telegram_config_test.go` and `internal/telegram/backend_test.go`) covering config round-trip, precedence, malformed values, secret leak prevention, and unconfigured status hints.
 
 ### Stage 3: MTProto Client Lifecycle and QR Pairing Engine
 - Implement `telegram.Client` initialization in `internal/telegram/backend.go`:
@@ -311,4 +320,23 @@ The following routine development actions are authorized within scope, but **the
   - Zero live network connections initiated (no DC connections, client unstarted).
   - Existing `ComingSoon.qml` path preserved; Telegram UI remains inactive until Milestone 6.
   - Existing Google Messages and WhatsApp isolation and tests fully intact.
+- **Authorship Policy**: Human authorship policy strictly maintained; no AI author/co-author trailers added.
+
+### Milestone 3 Verification Results (2026-09-14)
+- **Credential Fields Added**: `TelegramAPIID` (int) and `TelegramAPIHash` (string) added to `store.Config` and `store.ConfigStore`.
+- **JSON Serialization**: Documented JSON tags `telegramApiID` and `telegramApiHash` with alias unmarshaling for `telegram_api_id` and `telegram_api_hash`.
+- **Atomic Persistence**: Persisted using existing `writePrivateJSON` 0600 tempfile rename pattern (`SetTelegramCredentials`, `SetTelegramAPIID`, `SetTelegramAPIHash`).
+- **Environment Fallback**: `OMACHAT_TELEGRAM_API_ID` and `OMACHAT_TELEGRAM_API_HASH` supported with config precedence.
+- **Validation**: Strict validation for positive integer `api_id` and 32-character hex `api_hash`, preventing secret exposure in errors.
+- **Unconfigured Error & Status**: Explicit `ErrTelegramUnconfigured` sentinel returned; `internal/telegram/backend.go` reports honest unpaired hint `"Telegram API credentials required: configure api_id and api_hash in ~/.local/share/omachat/config.json (obtain from my.telegram.org)"`.
+- **Safety Invariants**:
+  - Zero live MTProto client connections initiated.
+  - Zero QR pairing started.
+  - Zero network calls made.
+  - No secret values exposed in log output or errors.
+  - Google Messages and WhatsApp behavior and isolation fully intact.
+- **Tests & Static Analysis**:
+  - `go test -mod=vendor ./...`: PASS across all packages.
+  - `go vet -mod=vendor ./...`: PASS.
+  - Focused test suite (`internal/store/telegram_config_test.go`, `internal/telegram/backend_test.go`): PASS.
 - **Authorship Policy**: Human authorship policy strictly maintained; no AI author/co-author trailers added.
