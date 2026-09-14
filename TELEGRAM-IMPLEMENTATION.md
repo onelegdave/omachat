@@ -1,10 +1,11 @@
 # Telegram Implementation Plan and Readiness Review
 
-## Status: Milestone 1 Complete; Milestone 2 Implementation-Readiness Review (2026-09-14)
+## Status: Milestone 1 & Milestone 2 (Dependency Vendoring) Complete (2026-09-14)
 - **Worktree**: `/home/onelegdave/Projects/omachat`
 - **Branch**: `feature/telegram`
 - **Human Owner / Maintainer**: OneLegDave
-- **Review status**: Dependency and authentication decisions remain subject to human review before integration.
+- **MTProto Dependency**: `github.com/gotd/td v0.161.0`
+- **Review status**: Dependency vendoring and build baseline verified offline. Credentials and live network integration remain subject to human provisioning and review.
 
 ---
 
@@ -222,15 +223,20 @@ The following routine development actions are authorized within scope, but **the
 
 ## 9. Staged Next Implementation Plan
 
-### Stage 1: Dependency Vendoring and Build Baseline
-- In a dedicated step authorized by OneLegDave:
-  - Run `go get github.com/gotd/td@v0.120.0` (or current stable release).
-  - Run `go mod vendor` and `go mod tidy`.
-- Verify build and tests pass offline:
-  - `go test -mod=vendor ./...`
-  - `make helper` (`CGO_ENABLED=1 go build -mod=vendor ...`)
-  - `make test-ui`
-  - `omarchy plugin validate .`
+### Stage 1: Dependency Vendoring and Build Baseline (COMPLETED - 2026-09-14)
+- Added pure Go MTProto 2.0 client `github.com/gotd/td v0.161.0` (compatible with Go 1.25–1.27+).
+- Updated `go.mod` and `go.sum` and vendored all dependencies into `vendor/`.
+- Preserved local `libgm` tachyon token synchronization patch in `vendor/go.mau.fi/mautrix-gmessages/pkg/libgm/client.go`.
+- Implemented atomic `FileSessionStorage` (`internal/telegram/session.go`) satisfying `session.Storage` with `0600` file permissions via OmaChat's `store.WritePrivateFile`.
+- Wired `*telegram.Client` field and `Client()` accessor in `internal/telegram/backend.go`, resetting on `Unpair`.
+- Added focused build and dependency test suite (`internal/telegram/dependency_test.go`) validating offline client initialization, session file storage, and QR login token URL round-tripping.
+- Verified offline compilation and tests pass cleanly:
+  - `go test -mod=vendor ./...`: PASS
+  - `go vet -mod=vendor ./...`: PASS
+  - `GOPROXY=off go build -mod=vendor ./cmd/omachatd`: PASS
+  - `make helper` (`CGO_ENABLED=1 GOPROXY=off go build -mod=vendor ...`): PASS
+  - `make test-ui`: PASS
+  - `make validate` (`omarchy plugin validate .`): PASS
 
 ### Stage 2: Configuration & Credential Management
 - Add configuration loading in `internal/store/config.go`:
@@ -283,9 +289,26 @@ The following routine development actions are authorized within scope, but **the
 
 ## 10. Verification and Checkpoint Status
 
-The current working tree is clean on `feature/telegram` with all tests passing:
-- `go test -mod=vendor ./...`: PASS across all packages.
-- `go vet -mod=vendor ./...`: PASS.
-- `make test-ui`: PASS (16 Node JS model tests, QML shell tests, pagination tests, and isolated build helper test).
-- `omarchy plugin validate .`: PASS.
-- Live Google Messages and WhatsApp implementations remain completely untouched and isolated.
+### Milestone 2 Verification Results (2026-09-14)
+- **Dependency Added**: `github.com/gotd/td v0.161.0` (pure Go MTProto 2.0 client; direct requirement in `go.mod`).
+- **Vendoring**: Full offline vendoring in `vendor/` with `vendor/modules.txt` updated.
+- **Offline Build Check (`GOPROXY=off`)**:
+  - `GOPROXY=off go build -mod=vendor ./cmd/omachatd`: PASS.
+  - `GOPROXY=off make helper`: PASS (`bin/omachatd` compiled with `CGO_ENABLED=1`).
+- **Unit & Dependency Tests**:
+  - `go test -mod=vendor ./...`: PASS across all packages (`cmd/omachatd`, `internal/daemon`, `internal/store`, `internal/telegram`, `internal/whatsapp`, `internal/wire`).
+  - Focused tests in `internal/telegram/dependency_test.go` (`TestFileSessionStorage`, `TestMTProtoClientInitialization`, `TestQRLoginTokenParsing`, `TestTGTypesInstantiable`): PASS.
+- **Static Analysis**:
+  - `go vet -mod=vendor ./...`: PASS.
+- **UI & Integration Suite**:
+  - `make test-ui`: PASS (16 Node.js model tests, QuickShell QML tests, pagination suite, and isolated unpaired daemon build check).
+- **Plugin Validation**:
+  - `omarchy plugin validate .` (`make validate`): PASS.
+- **Licensing Audit**:
+  - All new transitive dependencies audited: 100% permissively licensed (MIT, Apache-2.0, BSD-3-Clause). Zero GPL/AGPL/LGPL/MPL in new modules. Project `NOTICE` updated.
+- **Safety & Isolation Invariants**:
+  - Zero Telegram API credentials added.
+  - Zero live network connections initiated (no DC connections, client unstarted).
+  - Existing `ComingSoon.qml` path preserved; Telegram UI remains inactive until Milestone 6.
+  - Existing Google Messages and WhatsApp isolation and tests fully intact.
+- **Authorship Policy**: Human authorship policy strictly maintained; no AI author/co-author trailers added.

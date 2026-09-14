@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/gotd/td/telegram"
 	"github.com/rs/zerolog"
 
 	appStore "github.com/onelegdave/omachat/internal/store"
@@ -28,6 +29,8 @@ type Backend struct {
 
 	status wire.Status
 	paired bool
+
+	client *telegram.Client
 
 	convs    map[string]wire.Conversation
 	order    []string
@@ -80,6 +83,13 @@ func (b *Backend) Status() wire.Status {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.status
+}
+
+// Client returns the active MTProto client, or nil if not configured.
+func (b *Backend) Client() *telegram.Client {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.client
 }
 
 // SetState updates the backend status and publishes a status event.
@@ -173,6 +183,7 @@ func (b *Backend) Unpair(ctx context.Context) error {
 	b.convs = make(map[string]wire.Conversation)
 	b.order = nil
 	b.messages = make(map[string][]wire.Message)
+	b.client = nil
 	b.paired = false
 	b.mu.Unlock()
 

@@ -18,3 +18,7 @@ WhatsApp support vendors go.mau.fi/whatsmeow and related go.mau.fi modules
 under the Mozilla Public License 2.0. Those files remain MPL-2.0; this plugin
 does not relicense them. github.com/mattn/go-sqlite3 is MIT and is linked
 through CGO for the WhatsApp session database.
+
+Telegram support vendors github.com/gotd/td and its transitive dependencies
+under permissive licenses (MIT, Apache-2.0, and BSD-3-Clause). Upstream
+authorship and licenses remain intact.
