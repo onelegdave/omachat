@@ -1,5 +1,8 @@
 # Google Messages service guide
 
+Enable Google Messages in **Settings > Services** before pairing. Disabling it
+keeps credentials but stops its client after the shared helper restarts.
+
 [Overview](../../README.md) · [Dependencies](../dependencies.md)
 
 Google Messages runs through the shared `omachatd` helper and mautrix libgm.

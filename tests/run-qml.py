@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 
 repo = Path(__file__).resolve().parents[1]
+go_cache = subprocess.check_output(["go", "env", "GOCACHE"], text=True,
+                                 env=dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")).strip()
 omarchy = Path(os.environ.get("OMARCHY_PATH", "/usr/share/omarchy"))
 if not os.environ.get("WAYLAND_DISPLAY"):
     raise SystemExit("QML integration checks need an active Wayland desktop and open a temporary demo window.")
@@ -48,11 +50,15 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     (config / "shell.qml").write_text((repo / "tests/qml/build.qml").read_text())
     runtime = config / "runtime"
     runtime.mkdir(mode=0o700)
-    env.update(XDG_DATA_HOME=str(config / "data"), XDG_CACHE_HOME=str(config / "cache"), XDG_RUNTIME_DIR=str(runtime), GOPROXY="off", GOTOOLCHAIN="local")
+    env.update(XDG_DATA_HOME=str(config / "data"), XDG_CACHE_HOME=str(config / "cache"), XDG_RUNTIME_DIR=str(runtime), GOPROXY="off", GOTOOLCHAIN="local", GOCACHE=go_cache)
     # Keep Wayland reachable while isolating the daemon socket and credentials.
     if not os.path.isabs(env["WAYLAND_DISPLAY"]):
         env["WAYLAND_DISPLAY"] = str(Path(os.environ["XDG_RUNTIME_DIR"]) / env["WAYLAND_DISPLAY"])
-    result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
+    try:
+        result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=90)
+    except subprocess.TimeoutExpired as error:
+        print(error.stdout)
+        raise
     print(result.stdout)
     if result.returncode or "OMACHAT_BUILD_PASS" not in result.stdout or "OMACHAT_BUILD_FAIL" in result.stdout:
         raise SystemExit(1)

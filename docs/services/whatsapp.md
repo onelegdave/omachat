@@ -1,5 +1,8 @@
 # WhatsApp service guide
 
+Enable WhatsApp in **Settings > Services** before pairing. Disabling it keeps
+credentials but stops its client after the shared helper restarts.
+
 [Overview](../../README.md) · [Dependencies](../dependencies.md)
 
 OmaChat is a Native Omarchy Plugin. WhatsApp runs in the shell-owned

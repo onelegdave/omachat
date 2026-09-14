@@ -232,14 +232,20 @@ func (d *Daemon) SetGiphyKey(key string) error {
 
 // PluginConfig is the panel-safe snapshot of daemon preferences.
 func (d *Daemon) PluginConfig() wire.ConfigResult {
+	d.servicesMu.Lock()
+	defer d.servicesMu.Unlock()
 	cfg := d.config.Get()
+	enabled, required := d.config.EnabledServices(d.paths)
 	scale := cfg.UiScale
 	if scale <= 0 {
 		scale = 1
 	}
 	return wire.ConfigResult{
-		GiphyKeySet: strings.TrimSpace(cfg.GiphyAPIKey) != "",
-		UiScale:     scale,
+		EnabledServices:          enabled,
+		ServiceSelectionRequired: required,
+		RestartRequired:          d.restartPending,
+		GiphyKeySet:              strings.TrimSpace(cfg.GiphyAPIKey) != "",
+		UiScale:                  scale,
 	}
 }
 

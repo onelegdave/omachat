@@ -17,6 +17,9 @@ import (
 // because the daemon needs it while running headless — the background cookie
 // sync must know which browser profile to read, with no panel open.
 type Config struct {
+	// Nil migrates older installations; an explicit empty list disables all services.
+	EnabledServices          *[]string `json:"enabledServices,omitempty"`
+	ServiceSelectionRequired bool      `json:"serviceSelectionRequired,omitempty"`
 	// BrowserProfile is the profile name to take Google cookies from, as
 	// reported by the browser scan (e.g. "Chrome / Profile 1"). Empty means
 	// choose automatically.
@@ -91,7 +94,67 @@ func NewConfigStore(path string) *ConfigStore {
 func (c *ConfigStore) Get() Config {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.loaded
+	out := c.loaded
+	if out.EnabledServices != nil {
+		services := append([]string{}, (*out.EnabledServices)...)
+		out.EnabledServices = &services
+	}
+	return out
+}
+
+// EnabledServices preserves legacy installations while fresh installs require a choice.
+func (c *ConfigStore) EnabledServices(paths *Paths) ([]string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cfg := c.loaded
+	if cfg.EnabledServices != nil {
+		return append([]string{}, (*cfg.EnabledServices)...), cfg.ServiceSelectionRequired
+	}
+	_, err := os.Stat(c.path)
+	if errors.Is(err, os.ErrNotExist) && (paths == nil || !paths.HasAccountEvidence()) {
+		empty := []string{}
+		c.loaded.EnabledServices = &empty
+		c.loaded.ServiceSelectionRequired = true
+		return []string{}, true
+	}
+	return []string{"gmessages", "whatsapp", "telegram"}, false
+}
+
+// SetEnabledServices validates and persists before committing the in-memory value.
+func (c *ConfigStore) SetEnabledServices(services []string) error {
+	if services == nil {
+		return errors.New("enabledServices must be an array, including [] for no services")
+	}
+	seen := make(map[string]bool)
+	for _, service := range services {
+		if service != "gmessages" && service != "whatsapp" && service != "telegram" {
+			return fmt.Errorf("unknown service %q", service)
+		}
+		if seen[service] {
+			return fmt.Errorf("duplicate service %q", service)
+		}
+		seen[service] = true
+	}
+	canonical := []string{}
+	for _, service := range []string{"gmessages", "whatsapp", "telegram"} {
+		if seen[service] {
+			canonical = append(canonical, service)
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	next := c.loaded
+	next.EnabledServices = &canonical
+	next.ServiceSelectionRequired = false
+	data, err := json.Marshal(next)
+	if err != nil {
+		return err
+	}
+	if err := writePrivateJSON(c.path, data); err != nil {
+		return err
+	}
+	c.loaded = next
+	return nil
 }
 
 // SetBrowserProfile records the chosen profile and persists it atomically.

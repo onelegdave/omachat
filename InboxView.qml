@@ -139,6 +139,10 @@ Item {
     var prev = _previousNetwork
     _previousNetwork = network
     if (prev === network) return
+    selectionGeneration++
+    historyRequest++
+    loadingMessages=false
+    loadingOlder=false
 
     if (selectedConvID) {
       var saved = Object.assign({}, _draftsByNet)

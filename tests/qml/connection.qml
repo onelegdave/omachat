@@ -14,7 +14,10 @@ ShellRoot {
     running:true
     repeat:true
     onTriggered: {
-      if(service.connected && service.state === "unpaired") {
+      if(service.connected && service.servicesConfigLoaded && service.state === "disabled") {
+        if(service.enabledServices.length !== 0 || service.serviceSelectionRequired) {
+          console.error("OMACHAT_CONNECTION_FAIL explicit empty choice did not survive restart"); Qt.quit(); return
+        }
         if(root.initialErrors > 0) console.log("OMACHAT_CONNECTION_PASS recovered after delayed helper startup")
         else console.error("OMACHAT_CONNECTION_FAIL did not exercise initial connection failure")
         Qt.quit()

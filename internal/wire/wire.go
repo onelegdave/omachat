@@ -66,13 +66,14 @@ const (
 
 // Method names.
 const (
-	MethodStatus        = "status"
-	MethodConversations = "conversations"
-	MethodMessages      = "messages"
-	MethodSend          = "send"
-	MethodMarkRead      = "markRead"
-	MethodStartPairing  = "startPairing"
-	MethodGaiaPairing   = "gaiaPairing"
+	MethodSetEnabledServices = "setEnabledServices"
+	MethodStatus             = "status"
+	MethodConversations      = "conversations"
+	MethodMessages           = "messages"
+	MethodSend               = "send"
+	MethodMarkRead           = "markRead"
+	MethodStartPairing       = "startPairing"
+	MethodGaiaPairing        = "gaiaPairing"
 	// MethodPairFromBrowser lets the widget pair on its own: the daemon finds
 	// the browser profile and reads the cookies itself, so pairing never
 	// requires dropping to a terminal.
@@ -100,6 +101,7 @@ const (
 type ConnState string
 
 const (
+	StateDisabled ConnState = "disabled"
 	StateUnpaired ConnState = "unpaired"
 	StatePairing  ConnState = "pairing"
 	// StateGaiaPairing is the Google-account flow: no QR, an emoji the user
@@ -354,8 +356,15 @@ type SetGiphyKeyParams struct {
 // ConfigResult is safe to show in the panel. The GIPHY key itself stays in
 // the daemon config file and is never sent to QML.
 type ConfigResult struct {
-	GiphyKeySet bool    `json:"giphyKeySet"`
-	UiScale     float64 `json:"uiScale"`
+	EnabledServices          []string `json:"enabledServices"`
+	ServiceSelectionRequired bool     `json:"serviceSelectionRequired"`
+	RestartRequired          bool     `json:"restartRequired"`
+	GiphyKeySet              bool     `json:"giphyKeySet"`
+	UiScale                  float64  `json:"uiScale"`
+}
+
+type SetEnabledServicesParams struct {
+	EnabledServices []string `json:"enabledServices"`
 }
 
 type SetUiScaleParams struct {

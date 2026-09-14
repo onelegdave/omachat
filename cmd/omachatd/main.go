@@ -73,6 +73,13 @@ func run(log zerolog.Logger, socketOverride string) error {
 	defer stop()
 
 	d := daemon.New(log, paths)
+	go func() {
+		select {
+		case <-d.RestartRequested():
+			stop()
+		case <-ctx.Done():
+		}
+	}()
 	if err := d.Start(ctx); err != nil {
 		return err
 	}

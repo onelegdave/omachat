@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls as Controls
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -19,11 +20,21 @@ Panel {
   property bool unpairing: false
   property string unpairError: ""
   property int accountGeneration: 0
-  readonly property var serviceTabs: [
+  readonly property var allServiceTabs: [
     { value: "gmessages", label: "Google", icon: "󰭹", tooltip: "Google Messages" },
     { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "WhatsApp" },
     { value: "telegram", label: "Telegram", icon: "\uf2c6", tooltip: "Telegram" }
   ]
+  readonly property var serviceTabs: allServiceTabs.filter(function(tab) {
+    return !root.service || !Array.isArray(root.service.enabledServices) || root.service.enabledServices.indexOf(tab.value) >= 0
+  })
+  readonly property bool noServices: serviceTabs.length === 0
+  onServiceTabsChanged: syncActiveService()
+  function syncActiveService() {
+    if (serviceTabs.some(function(tab) { return tab.value === root.activeService })) return
+    activeService = serviceTabs.length ? serviceTabs[0].value : ""
+    if(service) service.currentNetwork=activeService
+  }
   property real uiScale: 1
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
   readonly property bool serviceLive: activeService === "gmessages" || activeService === "whatsapp"
@@ -51,6 +62,7 @@ Panel {
   readonly property string linkLabel: {
     if (!service) return "SERVICE OFFLINE"
     if (!service.connected) return "HELPER OFFLINE"
+    if (noServices) return service.servicesConfigLoaded === false ? "LOADING" : "SERVICES OFF"
     if (connState === "connected" && activeStatus && activeStatus.phoneOK === false)
       return "PHONE OFFLINE"
     if (connState === "connected") return "CONNECTED"
@@ -61,11 +73,13 @@ Panel {
   }
 
   function refresh() {
+    if (noServices) return
     if (service && service.refreshConversations) service.refreshConversations(activeService)
     if (inboxLoader.item) inboxLoader.item.refreshThread()
   }
 
   function setActiveService(v) {
+    if (!serviceTabs.some(function(tab) { return tab.value === v })) return
     root.settingsOpen = false
     root.activeService = v
     if (root.service) {
@@ -78,6 +92,7 @@ Panel {
     if (!service) return
     service.call("config", null, function(ok, res) {
       if (!ok || !res) return
+      if (typeof service.applyServiceConfig === "function" && !service.savingServices) service.applyServiceConfig(res)
       var s = Number(res.uiScale)
       if (isFinite(s) && s > 0) root.uiScale = s
     }, "gmessages")
@@ -87,10 +102,11 @@ Panel {
     if (!opened || !service) return
     loadConfig()
     if (needsPair && activeService === "gmessages") service.loadProfiles()
-    service.loadConversations(activeService)
+    if (!noServices) service.loadConversations(activeService)
   }
 
   onServiceChanged: {
+    syncActiveService()
     accountGeneration++
     unpairing = false
     unpairError = ""
@@ -317,8 +333,8 @@ Panel {
         anchors.top: headerSep.bottom
         anchors.bottom: parent.bottom
         anchors.topMargin: Style.space(10)
-        active: root.service && root.service.connected && (parent.anyAccountReady || !root.needsPair)
-        visible: active && (root.serviceLive || root.telegramLive) && !root.settingsOpen && !root.needsPair
+        active: root.service && (root.service.connected || root.service.restartingServices === true) && (parent.anyAccountReady || !root.needsPair)
+        visible: active && root.service.connected && !root.service.restartingServices && !root.noServices && (root.serviceLive || root.telegramLive) && !root.settingsOpen && !root.needsPair
         sourceComponent: inboxView
       }
 
@@ -332,13 +348,36 @@ Panel {
         anchors.topMargin: Style.space(10)
         sourceComponent: {
           if (root.settingsOpen) return settingsView
-          if (!root.serviceLive && !root.telegramLive) return comingSoonView
           if (!root.service) return missingServiceView
           if (!root.service.connected) return helperView
+          if (root.noServices) return servicesOffView
+          if (!root.serviceLive && !root.telegramLive) return comingSoonView
           if (root.telegramLive && root.connState !== "connected") return pairingView
           if (root.needsPair) return pairingView
           return null
         }
+      }
+    }
+  }
+
+  Component {
+    id: servicesOffView
+    Flickable {
+      clip:true
+      contentWidth:width
+      contentHeight:chooser.implicitHeight
+      Controls.ScrollBar.vertical: Controls.ScrollBar { policy:Controls.ScrollBar.AsNeeded }
+      Column {
+        id:chooser
+        width:parent.width
+        spacing:Style.space(14)
+        Text {
+          objectName:"servicesOffLabel"
+          width:parent.width; wrapMode:Text.Wrap
+          text:root.service && root.service.servicesConfigLoaded === false ? "Loading service choices from the helper. If the helper needs an update, open Settings and rebuild it." : (root.service && root.service.serviceSelectionRequired ? "Choose the services you want to use. Nothing connects until you apply your choices." : "All services are turned off. Your saved accounts are kept. Choose services below or open Settings.")
+          color:root.foreground; font.family:root.fontFamily; font.pixelSize:root.fs(Style.font.body)
+        }
+        ServiceOptions { width:parent.width; service:root.service; fontFamily:root.fontFamily; uiScale:root.uiScale }
       }
     }
   }
@@ -409,8 +448,8 @@ Panel {
   Component {
     id: helperView
     Item {
-      readonly property bool needGo: root.service && !root.service.goPresent && !root.service.helperPresent
-      readonly property bool canBuild: root.service && root.service.goPresent && !root.service.helperPresent
+      readonly property bool needGo: !!root.service && !root.service.goPresent && !root.service.helperPresent
+      readonly property bool canBuild: !!root.service && root.service.goPresent && !root.service.helperPresent
 
       Flickable {
         anchors.fill: parent
@@ -489,11 +528,11 @@ Panel {
             }
 
             Button {
-              visible: canBuild || (root.service && root.service.building)
+              visible: canBuild || (!!root.service && root.service.building)
               objectName: "buildHelperButton"
               text: root.service && root.service.building ? "Building" : "Build helper"
               bordered: true
-              enabled: root.service && !root.service.building && root.service.goPresent
+              enabled: !!root.service && !root.service.building && root.service.goPresent
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: if (root.service) root.service.buildHelper()

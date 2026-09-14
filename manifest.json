@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "onelegdave.omachat",
   "name": "OmaChat",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "author": "OneLegDave",
   "license": "MIT",
   "description": "Native Omarchy Plugin for Google Messages, WhatsApp, and Telegram. The shell owns the protocol helper; no systemd unit.",

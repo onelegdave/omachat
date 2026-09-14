@@ -21,6 +21,16 @@ ShellRoot {
   id: fake
   property bool connected: true
   property string currentNetwork: "gmessages"
+  property var enabledServices: ["gmessages","whatsapp","telegram"]
+  property bool servicesConfigLoaded: true
+  property bool serviceSelectionRequired: false
+  property bool savingServices: false
+  property bool restartingServices: false
+  property string servicesError: ""
+  function setEnabledServices(selected, callback) {
+    savingServices=true
+    delayed.push({method:"setEnabledServices",selected:selected,callback:callback})
+  }
   property string state: "connected"
   property var status: ({phoneOK:true, state:"connected"})
   property var statusWA: ({phoneOK:true, state:"connected"})
@@ -77,6 +87,7 @@ ShellRoot {
  }
  Chat.Panel { id: panel; service: fake }
  Chat.SettingsView { id: settings; visible: false; service: fake }
+ Chat.ServiceOptions { id: serviceOptions; parent:window.contentItem; width:600; visible:false; service:fake }
  Chat.DependencyChecklist {
   id: dependencies
   parent: window.contentItem
@@ -96,6 +107,27 @@ ShellRoot {
  function runTests() {
    try {
     console.log("QML_TEST_BEGIN")
+    serviceOptions.choose("whatsapp",false)
+    root.check(fake.enabledServices.length === 3,"service edit waits for explicit apply")
+    serviceOptions.save()
+    var opt=fake.delayed.pop()
+    root.check(opt.method === "setEnabledServices" && opt.selected.indexOf("whatsapp")<0,"service apply sends requested selection")
+    fake.savingServices=false
+    opt.callback(false,"Could not save")
+    root.check(fake.enabledServices.length === 3 && serviceOptions.resultText === "Could not save","failed selection does not hide services")
+    serviceOptions.reload()
+    fake.enabledServices=["telegram"]
+    panel.syncActiveService()
+    root.check(panel.activeService === "telegram" && panel.serviceTabs.length === 1,"disabled active tab moves to enabled service")
+    panel.setActiveService("gmessages")
+    root.check(panel.activeService === "telegram","shortcut cannot open disabled service")
+    fake.enabledServices=[]
+    panel.syncActiveService()
+    root.check(panel.noServices && panel.activeService === "","all-disabled state has no active service")
+    root.check(!!inspect.findChild(panel,"servicesOffLabel"),"all-disabled view keeps service chooser accessible")
+    fake.enabledServices=["gmessages","whatsapp","telegram"]
+    panel.syncActiveService()
+    serviceOptions.reload()
     var source="https://gitlab.archlinux.org/archlinux/packaging/packages/qrencode"
     var rows=[{id:"qrencode",name:"QR encoder",purpose:"Pairing",detail:"Missing qrencode",installed:false,sourceUrl:source},
               {id:"go",name:"Go",purpose:"Build",detail:"Available",installed:true,sourceUrl:source}]
@@ -225,6 +257,18 @@ ShellRoot {
     root.check(loader.item === original && !loader.visible, "Settings hides and retains the inbox")
     panel.settingsOpen=false
     root.check(loader.item === original && inspect.findChild(original,"composer").text === "Keep across settings", "Settings preserves selection and draft")
+    fake.restartingServices=true
+    fake.connected=false
+    root.check(loader.item === original && !loader.visible,"expected helper disconnect retains hidden draft storage")
+    fake.connected=true
+    fake.restartingServices=false
+    root.check(inspect.findChild(original,"composer").text === "Keep across settings","expected helper reconnect retains text draft")
+    fake.enabledServices=[]
+    panel.syncActiveService()
+    root.check(loader.item === original,"disabling all services retains draft storage")
+    fake.enabledServices=["gmessages","whatsapp","telegram"]
+    panel.syncActiveService()
+    root.check(inspect.findChild(original,"composer").text === "Keep across settings","reenabling restores the service text draft")
     panel.refresh()
     root.check(fake.calls.some(function(c){return c.method === "refresh"}), "panel refresh requests a network refresh")
     fake.refreshError="Refresh failed"

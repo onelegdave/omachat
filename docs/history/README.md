@@ -15,3 +15,4 @@ Use the [current documentation](../README.md) for setup and capabilities.
 - [v0.3.1 release notes](RELEASE-0.3.1.md)
 - [v0.3.2 release notes](RELEASE-0.3.2.md)
 - [v0.3.3 release notes](RELEASE-0.3.3.md)
+- [v0.3.4 release notes](RELEASE-0.3.4.md)

@@ -35,6 +35,9 @@ func setupTestDaemonWithMockWhatsApp(t *testing.T) (*Daemon, *whatsapp.MockClien
 	_ = os.MkdirAll(paths.TelegramMediaDir(), 0o700)
 
 	log := zerolog.Nop()
+	if err := store.NewConfigStore(paths.ConfigFile()).SetEnabledServices([]string{"gmessages", "whatsapp", "telegram"}); err != nil {
+		t.Fatal(err)
+	}
 	d := New(log, paths)
 
 	mockWA := whatsapp.NewMockClient()

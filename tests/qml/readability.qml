@@ -15,6 +15,11 @@ ShellRoot {
     property var status: ({state:"error",error:"Pairing needs attention",hint:root.longHint})
     property string state: "error"
     property var browserProfiles: []
+    property var enabledServices: ["gmessages", "telegram"]
+    property bool servicesConfigLoaded: true
+    property bool serviceSelectionRequired: false
+    property bool savingServices: false
+    property string servicesError: ""
     function statusFor(net) { return status }
     function stateFor(net) { return state }
     function call(method, params, callback, network) {

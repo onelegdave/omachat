@@ -169,9 +169,19 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 		// Each request gets its own goroutine so a slow fetch does not block
 		// the rest of the UI's calls on the same connection.
 		go func(req wire.Request) {
+			// A pre-change config snapshot must not be written after the setter's
+			// restart-required acknowledgement on another concurrent request.
+			if globalSetting(req.Method) || req.Method == wire.MethodSetEnabledServices {
+				d.configResponseMu.Lock()
+				defer d.configResponseMu.Unlock()
+			}
 			resp := d.dispatch(ctx, req)
 			if err := w.send(resp); err != nil {
 				cancel()
+				return
+			}
+			if req.Method == wire.MethodSetEnabledServices {
+				d.acknowledgeServiceChange(resp)
 			}
 		}(req)
 	}
@@ -195,6 +205,24 @@ func decodeParams[T any](raw any) (T, error) {
 }
 
 func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
+	if req.Network != "" && !wire.IsKnownNetwork(req.Network) {
+		return wire.Response{ID: req.ID, Error: "unknown network: " + req.Network}
+	}
+	if req.Method == wire.MethodSetEnabledServices {
+		return d.handleSetEnabledServices(req)
+	}
+	if globalSetting(req.Method) {
+		return d.dispatchGMessages(ctx, req)
+	}
+	network := req.Network
+	if network == "" {
+		network = wire.NetworkGMessages
+	}
+	if wire.IsKnownNetwork(network) && req.Method != wire.MethodStatus {
+		if err := d.serviceRequestError(network); err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+	}
 	switch req.Network {
 	case wire.NetworkWhatsApp:
 		return d.dispatchWhatsApp(ctx, req)

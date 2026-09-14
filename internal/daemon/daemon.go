@@ -26,8 +26,15 @@ const convListLimit = 50
 
 // Daemon owns the libgm client and the cached view of the account.
 type Daemon struct {
-	log   zerolog.Logger
-	paths *store.Paths
+	// Order configuration snapshots and their socket writes across all panels.
+	configResponseMu sync.Mutex
+	servicesMu       sync.Mutex
+	activeServices   map[string]bool
+	restartPending   bool
+	restartOnce      sync.Once
+	restartCh        chan struct{}
+	log              zerolog.Logger
+	paths            *store.Paths
 
 	// sessionMu orders account resets, event handling, and persistence.
 	sessionMu     sync.Mutex
@@ -90,6 +97,7 @@ type Daemon struct {
 // New builds a daemon around already-resolved paths.
 func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 	d := &Daemon{
+		restartCh: make(chan struct{}),
 		log:       log,
 		paths:     paths,
 		convs:     make(map[string]wire.Conversation),
@@ -108,6 +116,11 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 	}
 	d.wa = whatsapp.New(log, paths, d.PublishEvent)
 	d.tg = telegram.New(log, paths, d.PublishEvent, d.config)
+	services, _ := d.config.EnabledServices(paths)
+	d.activeServices = make(map[string]bool)
+	for _, service := range services {
+		d.activeServices[service] = true
+	}
 	return d
 }
 
@@ -140,19 +153,26 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.sessionCtx, d.sessionCancel = context.WithCancel(d.maintCtx)
 
 	// Independent network start: start WhatsApp and Telegram regardless of Google session status
-	if d.wa != nil {
+	if d.wa != nil && d.serviceEnabled(wire.NetworkWhatsApp) {
 		if err := d.wa.Start(ctx); err != nil {
 			d.log.Error().Err(err).Msg("WhatsApp backend initialization failed")
 			d.wa.SetState(wire.StateDisconnected, "WhatsApp initialization error: "+err.Error())
 		}
+	} else if d.wa != nil {
+		d.wa.SetState(wire.StateDisabled, "")
 	}
-	if d.tg != nil {
+	if d.tg != nil && d.serviceEnabled(wire.NetworkTelegram) {
 		if err := d.tg.Start(ctx); err != nil {
 			d.log.Error().Err(err).Msg("Telegram backend initialization failed")
 			d.tg.SetState(wire.StateDisconnected, "Telegram initialization error: "+err.Error())
 		}
+	} else if d.tg != nil {
+		d.tg.SetState(wire.StateDisabled, "")
 	}
-
+	if !d.serviceEnabled(wire.NetworkGMessages) {
+		d.setState(wire.StateDisabled, "")
+		return nil
+	}
 	auth, paired, err := d.paths.LoadSession()
 	if err != nil {
 		d.log.Warn().Err(err).Msg("Google session read failed; marking disconnected")

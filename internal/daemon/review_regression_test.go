@@ -58,6 +58,9 @@ func newTestDaemon(t *testing.T) (*Daemon, *store.Paths) {
 			t.Fatalf("mkdir %s: %v", d, err)
 		}
 	}
+	if err := store.NewConfigStore(paths.ConfigFile()).SetEnabledServices([]string{"gmessages", "whatsapp", "telegram"}); err != nil {
+		t.Fatal(err)
+	}
 	d := New(zerolog.Nop(), paths)
 	ctx := context.Background()
 	d.maintCtx, d.maintCancel = context.WithCancel(ctx)

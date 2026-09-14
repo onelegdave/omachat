@@ -135,7 +135,8 @@ Flickable {
       spacing: Style.space(8)
       Repeater {
         model: [
-          {label:"Services", section:servicesSection},
+          {label:"Services", section:serviceChoices},
+          {label:"Service guides", section:servicesSection},
           {label:"Tools", section:toolsSection},
           {label:"GIF search", section:gifSection},
           {label:"Credits", section:creditsSection},
@@ -150,6 +151,14 @@ Flickable {
           onClicked: root.jumpTo(modelData.section)
         }
       }
+    }
+
+    ServiceOptions {
+      id:serviceChoices
+      width:parent.width
+      service:root.service
+      fontFamily:root.fontFamily
+      uiScale:root.uiScale
     }
 
     // Section 2: Interface Scale

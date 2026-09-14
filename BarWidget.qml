@@ -34,7 +34,11 @@ BarWidget {
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property int unread: chat ? (chat.unread || 0) : 0
   readonly property string connState: chat ? (chat.state || "") : ""
-  readonly property bool live: chat && chat.connected && connState === "connected"
+  readonly property bool live: {
+    if (!chat || !chat.connected) return false
+    if (!Array.isArray(chat.enabledServices) || typeof chat.stateFor !== "function") return connState === "connected"
+    return chat.enabledServices.some(function(net) { return chat.stateFor(net) === "connected" })
+  }
 
   function open() { if (panelLoader.item && panelLoader.item.open) panelLoader.item.open() }
   function close() { if (panelLoader.item && panelLoader.item.close) panelLoader.item.close() }

@@ -38,12 +38,122 @@ Item {
   property string buildLog: ""
 
   property string currentNetwork: "gmessages"
+  property var enabledServices: []
+  property bool servicesConfigLoaded: false
+  property bool serviceSelectionRequired: false
+  property bool savingServices: false
+  property string servicesError: ""
+  property int servicesGeneration: 0
+  property bool restartingServices: false
+  property var pendingServiceChoice: null
+  property var _selectionCallback: null
+  property string _restartingProcessId: ""
+  property int connectionGeneration: 0
+  property int restartConnectionGeneration: 0
+
+  function finishServiceSelection(ok, result) {
+    restartGrace.stop()
+    restartDeadline.stop()
+    var callback=_selectionCallback
+    _selectionCallback=null
+    restartingServices=false
+    savingServices=false
+    pendingServiceChoice=null
+    if (!ok) servicesError=String(result)
+    if (callback) callback(ok,result)
+  }
+
+  function awaitServiceRestart(choice, callback) {
+    pendingServiceChoice=choice.slice()
+    if (callback) _selectionCallback=callback
+    restartingServices=true
+    restartConnectionGeneration=connectionGeneration
+    _restartingProcessId=String(helperProc.processId)
+    savingServices=true
+    servicesError=""
+    restartGrace.restart()
+    restartDeadline.restart()
+  }
+
+  function isServiceEnabled(net) {
+    return servicesConfigLoaded && enabledServices.indexOf(net) >= 0
+  }
+
+  function applyServiceConfig(config) {
+    if (config && config.restartRequired === true) return false
+    if (!config || !Array.isArray(config.enabledServices)) {
+      servicesError = "Rebuild the helper to use service selection."
+      return false
+    }
+    var next = config.enabledServices.filter(function(net) { return ["gmessages", "whatsapp", "telegram"].indexOf(net) >= 0 })
+    if (next.length !== config.enabledServices.length || next.some(function(net,index) { return next.indexOf(net) !== index })) { servicesError = "Invalid service configuration from helper."; return false }
+    if (JSON.stringify(next) !== JSON.stringify(enabledServices)) servicesGeneration++
+    enabledServices = next
+    serviceSelectionRequired = config.serviceSelectionRequired === true
+    servicesConfigLoaded = true
+    servicesError = ""
+    if (!isServiceEnabled("gmessages")) { conversations = []; browserProfiles = [] }
+    if (!isServiceEnabled("whatsapp")) conversationsWA = []
+    if (!isServiceEnabled("telegram")) conversationsTG = []
+    return true
+  }
+
+  function loadServiceConfig() {
+    if (!connected || (savingServices && !restartingServices)) return
+    var generation = servicesGeneration
+    call("config", null, function(ok, res) {
+      if ((savingServices && !restartingServices) || generation !== servicesGeneration) return
+      if (!ok) { servicesError = String(res); return }
+      if (res && res.restartRequired === true) return
+      if (restartingServices && connectionGeneration <= restartConnectionGeneration) return
+      var expected=pendingServiceChoice
+      var applied=applyServiceConfig(res)
+      if (applied) enabledServices.forEach(function(net) { root.loadConversations(net) })
+      if (restartingServices && applied) {
+        var matches=expected && JSON.stringify(expected.slice().sort()) === JSON.stringify(enabledServices.slice().sort())
+        finishServiceSelection(!!matches,matches ? res : "The helper restarted with different service choices. Review the current selection.")
+      }
+    }, "gmessages")
+  }
+
+  function setEnabledServices(selected, callback) {
+    if (savingServices || !servicesConfigLoaded) return
+    savingServices = true
+    servicesError = ""
+    call("setEnabledServices", {enabledServices:selected}, function(ok, res) {
+      if (!ok && root.restartingServices) { root._selectionCallback=callback; return }
+      if (ok && res && res.restartRequired === true) {
+        root.awaitServiceRestart(selected,callback)
+        return
+      }
+      root.savingServices = false
+      if (ok) ok = root.applyServiceConfig(res)
+      if (!ok) root.servicesError = typeof res === "string" ? res : "Service selection could not be saved."
+      else root.enabledServices.forEach(function(net) { root.loadConversations(net) })
+      if (callback) callback(ok, ok ? res : root.servicesError)
+    }, "gmessages")
+  }
+
+  Timer {
+    id: restartGrace
+    interval:10000
+    onTriggered: {
+      // Only the helper process owned by this plugin can be signaled here.
+      if (helperProc.running && String(helperProc.processId) === root._restartingProcessId) helperProc.signal(9)
+      else root.servicesError="Waiting for the helper to restart and confirm your choices."
+    }
+  }
+  Timer {
+    id: restartDeadline
+    interval:30000
+    onTriggered: root.finishServiceSelection(false,"Choices were saved, but helper restart could not be confirmed. Restart the Omarchy shell, then review Settings. No send was retried.")
+  }
 
   property var status: ({ state: "disconnected", unread: 0, phoneOK: false, qrURL: "", error: "" })
   property var statusWA: ({ state: "disconnected", unread: 0, phoneOK: true, qrURL: "", error: "" })
   property var statusTG: ({ state: "unpaired", unread: 0, phoneOK: true, qrURL: "", error: "" })
   readonly property string state: status && status.state ? status.state : "disconnected"
-  readonly property int unread: (status && status.unread ? status.unread : 0) + (statusWA && statusWA.unread ? statusWA.unread : 0) + (statusTG && statusTG.unread ? statusTG.unread : 0)
+  readonly property int unread: unreadFor("gmessages") + unreadFor("whatsapp") + unreadFor("telegram")
   property var conversations: []
   property var conversationsWA: []
   property var conversationsTG: []
@@ -61,6 +171,7 @@ Item {
     return s && s.state ? s.state : "disconnected"
   }
   function unreadFor(net) {
+    if (!isServiceEnabled(net)) return 0
     var s = statusFor(net)
     return s && s.unread ? s.unread : 0
   }
@@ -97,8 +208,10 @@ Item {
 
   function loadConversations(network) {
     var net = network || "gmessages"
+    if (!isServiceEnabled(net)) return
+    var generation = servicesGeneration
     call("conversations", { count: 50 }, function(ok, res) {
-      if (ok && res) {
+      if (ok && res && generation === servicesGeneration && root.isServiceEnabled(net)) {
         if (net === "whatsapp") root.conversationsWA = res
         else if (net === "telegram") root.conversationsTG = res
         else root.conversations = res
@@ -108,6 +221,7 @@ Item {
 
   function refreshConversations(network) {
     var net = network || "gmessages"
+    if (!isServiceEnabled(net)) return
     if (refreshing) return
     refreshing = true
     refreshError = ""
@@ -125,6 +239,7 @@ Item {
   }
 
   function loadProfiles() {
+    if (!isServiceEnabled("gmessages")) return
     call("listProfiles", null, function(ok, res) {
       if (ok && res) root.browserProfiles = res
     }, "gmessages")
@@ -265,6 +380,15 @@ Item {
     }
     onExited: function(code) {
       root._startingHelper = false
+      if (root.restartingServices) {
+        restartGrace.stop()
+        root.connected=false
+        root.helperState="restarting"
+        root._restartMs=1000
+        restartTimer.restart()
+        root.rebuildSocket()
+        return
+      }
       // A live helper already owns the socket. That is success, not a crash.
       if (root.connected) {
         root.helperState = "running"
@@ -307,17 +431,24 @@ Item {
       onConnectionStateChanged: {
         root.connected = connected
         if (connected) {
+          root.connectionGeneration++
           root.helperState = "running"
           reconnectTimer.stop()
           reconnectTimer.interval = 1000
-          root.call("status", null, function(ok, res) { if (ok && res) root.status = res }, "gmessages")
-          root.call("status", null, function(ok, res) { if (ok && res) root.statusWA = res }, "whatsapp")
-          root.call("status", null, function(ok, res) { if (ok && res) root.statusTG = res }, "telegram")
-          root.loadConversations("gmessages")
-          root.loadConversations("whatsapp")
+          var generation=root.connectionGeneration
+          // Socket can connect during Loader construction, before item exists.
+          Qt.callLater(function() {
+            if (!root.connected || generation !== root.connectionGeneration) return
+            root.call("status", null, function(ok, res) { if (ok && res) root.status = res }, "gmessages")
+            root.call("status", null, function(ok, res) { if (ok && res) root.statusWA = res }, "whatsapp")
+            root.call("status", null, function(ok, res) { if (ok && res) root.statusTG = res }, "telegram")
+            root.loadServiceConfig()
+          })
         } else {
-          root.failPending("Disconnected from omachatd")
+          root.failPending(root.restartingServices ? "Helper restarting after service changes. A submitted message may still arrive; check before retrying." : "Disconnected from omachatd")
           reconnectTimer.start()
+          // Process exit can precede the socket's disconnect notification.
+          if (root.helperPresent && !helperProc.running) restartTimer.restart()
         }
       }
 
@@ -337,6 +468,13 @@ Item {
     id: sockLoader
     active: false
     sourceComponent: sockComponent
+  }
+
+  Timer {
+    interval:1000
+    repeat:true
+    running:root.connected && (!root.servicesConfigLoaded || root.restartingServices)
+    onTriggered:root.loadServiceConfig()
   }
 
   Timer {
@@ -379,7 +517,14 @@ Item {
   }
 
   function _handleEvent(frame) {
+    if (frame.event === "config") {
+      if (frame.data && frame.data.restartRequired === true && !restartingServices)
+        awaitServiceRestart(frame.data.enabledServices,null)
+      else if (!savingServices) applyServiceConfig(frame.data)
+      return
+    }
     var net = frame.network || "gmessages"
+    if (frame.event !== "status" && !isServiceEnabled(net)) return
     switch (frame.event) {
     case "status":
       if (net === "whatsapp") {

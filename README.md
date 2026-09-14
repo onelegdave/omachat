@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, and Telegram.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current release: **0.3.3**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.3).
+Current release: **0.3.4**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.4).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -84,6 +84,12 @@ for every service. See [verification history](docs/history/README.md) for dated
 evidence and its limits.
 
 ## Everyday use
+
+Choose enabled services in **Settings > Services**. Apply briefly restarts the
+shared helper, so enabled services reconnect. Disabled services stop background
+activity and disappear from the tabs without deleting credentials. You may turn
+off every service. Fresh installations ask you to choose before connecting;
+upgrades preserve existing choices. See [service opt-outs](docs/service-selection-plan.md).
 
 Settings includes text-size choices, service setup guides, optional-tool
 instructions, and upstream credits. Setup messages wrap and scroll, including
