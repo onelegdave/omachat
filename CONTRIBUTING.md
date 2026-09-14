@@ -13,12 +13,14 @@ omarchy plugin validate .
 `make helper` and the panel Build helper button compile `omachatd` with
 `CGO_ENABLED=1`. WhatsApp session storage uses `github.com/mattn/go-sqlite3`,
 which needs a C compiler (`gcc` or `clang`). The plugin does not install Go
-or a C toolchain.
+or a C toolchain automatically.
 
 Edit the checkout under `~/Projects/omachat` or `~/.config/omarchy/plugins/onelegdave.omachat`. Never edit packaged files under `/usr/share/omarchy/`. After QML or helper changes, `omarchy restart shell`.
 
-Build with `go build -mod=vendor`. Do not add an ELF to git. Never install,
-update, or download dependencies on the user's behalf. Document requirements
+Build with `go build -mod=vendor`. Do not add an ELF to git. Never automatically
+install, update, or download dependencies. The explicit Settings install action
+uses allowlisted packages and preserves terminal and package-manager confirmation.
+Do not exercise real installs in tests. Document requirements
 in [the dependency guide](docs/dependencies.md) and explain missing tools in
 the app so the user can choose whether to install them. Keep all three
 [service guides](docs/README.md) aligned with actual supported behavior.

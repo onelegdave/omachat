@@ -1,9 +1,21 @@
 # Dependencies and user choice
 
-[OmaChat](../README.md) never installs, updates, or downloads dependencies for
-you. Missing requirements are described in the panel or reported when you
-request the feature. You decide whether to install tools using your own package
-manager. The plugin does not run package-manager commands, sudo, or install hooks.
+[OmaChat](../README.md) never installs dependencies automatically. Settings
+includes a read-only checklist with **Review source**, **Install**, and **Recheck**
+actions. Install is offered for missing tools and opens a terminal, showing the
+exact command before asking for confirmation. Pacman then shows its transaction
+and asks for confirmation too. Cancelling either prompt installs nothing.
+
+Only fixed, known Arch package names can be passed to this action. It does not
+run install hooks, download scripts, use AUR helpers, refresh package databases,
+or upgrade your system. You can always install tools manually instead. Source
+buttons open the [Arch packaging repositories](https://wiki.archlinux.org/title/Arch_Build_System),
+where PKGBUILDs link to upstream source. No package source is executed by reviewing it.
+
+Choose **Recheck** after installation. Available means the required executable
+was found (and Go meets the minimum version), not that accounts, devices, portals,
+or keyrings are configured. Python 3 is needed to run the checklist; if unavailable,
+the app reports a check failure and you can install Python manually.
 
 ## Shared requirements
 
@@ -46,6 +58,6 @@ yourself. Text and photos do not need voice tools. WhatsApp voice notes remain
 unavailable even when those tools are installed. Installing a tool does not
 enable an unsupported service feature.
 
-Desktop packages vary. OmaChat uses available tools without installing or
-updating them. Accounts, API credentials, pairing, and optional features are
-always the user's choice.
+Desktop packages vary. Accounts, API credentials, pairing, and optional features
+are always the user's choice. A missing tool is not a reason to install every
+listed package. These actions do not enable unsupported protocol features.

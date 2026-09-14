@@ -37,6 +37,7 @@ Item {
   readonly property var profiles: service ? (service.browserProfiles || []) : []
   property bool profilePickerOpen: false
   property int qrRevision: 0
+  property string qrError: ""
 
   readonly property string qrPath: {
     var cache = Quickshell.env("XDG_CACHE_HOME")
@@ -46,9 +47,11 @@ Item {
 
   function renderQR(url) {
     if (!url) return
+    qrError = ""
     qrProc.running = false
     qrProc.command = ["qrencode", "-o", root.qrPath, "-s", "6", "-m", "2", "--", url]
     qrProc.running = true
+    qrTimeout.restart()
   }
 
   function syncQR() {
@@ -76,7 +79,21 @@ Item {
 
   Process {
     id: qrProc
-    onExited: root.qrRevision++
+    objectName: "qrProcess"
+    onExited: function(code) {
+      qrTimeout.stop()
+      if (code === 0) root.qrRevision++
+      else root.qrError = "Could not draw the pairing QR code. Check qrencode in Settings > Tools, then retry."
+    }
+  }
+
+  Timer {
+    id: qrTimeout
+    interval: 5000
+    onTriggered: {
+      qrProc.running = false
+      root.qrError = "QR generation did not finish. Check qrencode in Settings > Tools, then retry."
+    }
   }
 
   Flickable {
@@ -172,6 +189,26 @@ Item {
       }
 
       Text {
+        objectName: "qrErrorText"
+        width: parent.width
+        visible: root.qrError !== "" && root.isQR
+        text: root.qrError
+        wrapMode: Text.Wrap
+        color: root.urgentInk
+        font.family: root.fontFamily
+        font.pixelSize: root.fs(Style.font.body)
+      }
+
+      Button {
+        visible: root.qrError !== "" && root.isQR
+        anchors.horizontalCenter: parent.horizontalCenter
+        text: "Retry QR code"
+        foreground: root.foreground
+        bordered: true
+        onClicked: root.syncQR()
+      }
+
+      Text {
         anchors.horizontalCenter: parent.horizontalCenter
         visible: root.isGaia && root.emoji !== ""
         text: root.emoji
@@ -194,7 +231,7 @@ Item {
           asynchronous: true
           cache: false
           fillMode: Image.PreserveAspectFit
-          source: root.qrRevision > 0 ? "file://" + root.qrPath + "?v=" + root.qrRevision : ""
+          source: root.qrRevision > 0 && root.qrError === "" ? "file://" + root.qrPath + "?v=" + root.qrRevision : ""
         }
       }
 

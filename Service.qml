@@ -248,7 +248,7 @@ Item {
         var tail = root.buildLog.trim()
         root.helperError = tail !== ""
           ? "Build failed (exit " + code + "):\n" + tail
-          : "Build failed (exit " + code + "). The shared helper needs Go and a C compiler (gcc or clang) for all services. You can install missing tools yourself with: omarchy pkg add go gcc. OmaChat never installs dependencies."
+          : "Build failed (exit " + code + "). The shared helper needs Go and a C compiler (gcc or clang) for all services. Check Settings > Tools to review missing requirements and choose whether to install them. OmaChat never installs dependencies automatically."
       }
     }
   }

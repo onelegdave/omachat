@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, and Telegram.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current release: **0.3.2**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.2).
+Current release: **0.3.3**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.3).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -24,9 +24,11 @@ locally from vendored source. Building requires **Go and a C compiler
 (gcc or clang)**, even if you only use Google Messages or Telegram.
 No helper binary is shipped in Git or downloaded by OmaChat.
 
-**OmaChat never installs dependencies.** If tools are missing, the app explains
-what is needed. You decide whether to install them yourself and whether to
-enable the feature. For example, if you choose to install the build tools:
+**OmaChat never installs dependencies automatically.** Settings includes a
+dependency checklist with source-review links and optional Install buttons.
+Installation opens a terminal for your confirmation and keeps the package
+manager's own confirmation prompt. You decide which tools and features you want.
+You can also install tools manually. For example:
 
 ```bash
 omarchy pkg add go gcc
@@ -35,7 +37,8 @@ omarchy pkg add go gcc
 Then select **Build helper** in the panel. This compiles the included source
 with `go build -mod=vendor`; it does not install packages or download modules.
 The shell owns the helper as a child process. There is no systemd unit,
-installer hook, or sudo step in the plugin.
+installer hook, or automatic privileged step. Only the explicit dependency
+Install action can request sudo in a terminal, after your confirmation.
 
 See [dependencies and optional features](docs/dependencies.md) for the full
 tool list. Availability varies by desktop; do not assume a tool is installed.

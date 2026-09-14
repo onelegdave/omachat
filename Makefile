@@ -19,6 +19,7 @@ test:
 
 test-ui:
 	node --test tests/model*.test.cjs
+	python3 -m unittest discover -s tests -p '*_test.py'
 	python3 tests/run-qml.py
 
 lint:

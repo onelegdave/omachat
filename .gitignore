@@ -1,6 +1,7 @@
 # Build output at the repository root. Keep vendored packages under version control.
 /bin/
 /AGENTS.md
+__pycache__/
 *.sock
 session.json
 config.json

@@ -12,7 +12,8 @@ online for message relay, including RCS and end-to-end chats.
    Chromium-family browser and sign in. A general Google login is insufficient;
    Messages for web must have issued its own cookies.
 2. Unlock the desktop keyring. Browser cookie access uses `sqlite3` and
-   `secret-tool`; OmaChat does not install them.
+   `secret-tool`; OmaChat does not install them automatically. Settings > Tools
+   lets you review their source and choose whether to install missing tools.
 3. Select Google Messages in OmaChat, check the selected browser profile,
    and choose **Pair with Google**.
 4. On the phone, confirm the emoji matching the one shown in OmaChat.

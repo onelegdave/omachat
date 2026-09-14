@@ -24,7 +24,7 @@ loads the new values. Restarting briefly reloads the whole Omarchy shell.
 
 The configuration is stored in `~/.local/share/omachat/config.json` with mode
 `0600`. The user chooses whether to install Go, ffmpeg, qrencode, or any other
-optional dependency. OmaChat never installs dependencies.
+optional dependency. OmaChat never installs dependencies automatically.
 
 Select Telegram in the panel and choose **Pair with Telegram**. OmaChat shows
 a Telegram QR login token and keeps the client session in

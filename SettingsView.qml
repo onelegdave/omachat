@@ -239,130 +239,23 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "OmaChat is a native Omarchy plugin and never automatically installs packages, runs sudo, or downloads helper binaries. When tools are missing, OmaChat explains what is required so you can choose whether to install them using your system package manager."
+        text: "OmaChat never installs packages automatically. Check the tools below, review their source, and choose Install only for tools you want. The terminal asks for confirmation before invoking sudo; the package manager asks again before making changes. Accounts and API credentials remain your choice."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
         lineHeight: 1.25
       }
 
-      Column {
+      DependencyChecklist {
         width: parent.width
-        spacing: Style.space(10)
-
-        Column {
-          width: parent.width
-          spacing: Style.space(3)
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "Shared Helper Build Tools (Go and C compiler)"
-            color: root.copyColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            font.bold: true
-          }
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "All three services share a single Go helper binary (omachatd) compiled locally from vendored source. Building requires Go (1.27+) and a standard C compiler (gcc or clang) for CGO SQLite. No Go modules are downloaded at runtime.\n\nExample installation:\nomarchy pkg add go gcc"
-            color: root.mutedColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            lineHeight: 1.25
-          }
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(3)
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "QR Code Pairing (qrencode)"
-            color: root.copyColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            font.bold: true
-          }
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "qrencode is required to render pairing QR codes for WhatsApp, Telegram, and the Google Messages QR fallback.\n\nExample installation:\nomarchy pkg add qrencode"
-            color: root.mutedColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            lineHeight: 1.25
-          }
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(3)
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "Voice Notes (ffmpeg and ffplay)"
-            color: root.copyColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            font.bold: true
-          }
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "Optional voice note recording and playback for Google Messages and Telegram use ffmpeg and ffplay. Text and photos function without them. WhatsApp voice notes are not supported by its protocol client.\n\nExample installation:\nomarchy pkg add ffmpeg"
-            color: root.mutedColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            lineHeight: 1.25
-          }
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(3)
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "Google Browser Pairing (sqlite3 and secret-tool)"
-            color: root.copyColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            font.bold: true
-          }
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "Google Messages browser pairing reads web session cookies from your selected Chromium-family profile using sqlite3 and secret-tool (libsecret). Your desktop keyring must be unlocked."
-            color: root.mutedColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            lineHeight: 1.25
-          }
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(3)
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "Clipboard Copying (wl-copy)"
-            color: root.copyColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-            font.bold: true
-          }
-          Text {
-            width: parent.width
-            wrapMode: Text.Wrap
-            text: "Copying bubble text uses wl-copy from the wl-clipboard package."
-            color: root.mutedColor
-            font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.body)
-          }
-        }
+        fontFamily: root.fontFamily
+        copyColor: root.copyColor
+        mutedColor: root.mutedColor
+        accentColor: root.accentColor
+        urgentColor: root.urgentColor
+        foreground: root.foreground
+        fs: root.fs
+        openUrl: root.openUrl
       }
     }
 

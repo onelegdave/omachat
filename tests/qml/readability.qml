@@ -35,7 +35,7 @@ ShellRoot {
         id: page
         anchors.fill: parent
         anchors.margins: 20
-        sourceComponent: root.frame % 3 === 0 ? pairing : settings
+        sourceComponent: root.frame % 4 === 0 ? pairing : settings
       }
     }
   }
@@ -63,7 +63,7 @@ ShellRoot {
     return null
   }
   function palette() {
-    var light = frame >= 3
+    var light = frame >= 4
     Color.foreground = light ? "#e0e0e0" : "#202028"
     Color.muted = light ? "#dddddd" : "#111118"
     Color.accent = light ? "#f4d4de" : "#40152f"
@@ -79,14 +79,14 @@ ShellRoot {
         root.check(!!page.item,"page loaded")
         root.check(Model.contrastRatio(page.item.foreground, Color.popups.background) >= 4.5,"page foreground contrast")
         root.inspect(page.item)
-        if(root.frame % 3 === 2) {
-          var title=root.findText(page.item,"Upstream Credits and Licenses")
-          root.check(!!title,"credits section exists")
+        if(root.frame % 4 >= 2) {
+          var title=root.findText(page.item,root.frame % 4 === 2 ? "Dependencies and User Choice" : "Upstream Credits and Licenses")
+          root.check(!!title,"settings section exists")
           page.item.jumpTo(title.parent)
         }
         if(root.artifactDir) {
           canvas.grabToImage(function(result) {
-            root.check(result.saveToFile(root.artifactDir + "/" + (root.frame >= 3 ? "light-" : "dark-") + ["pairing","settings","credits"][root.frame % 3] + ".png"), "screenshot saved")
+            root.check(result.saveToFile(root.artifactDir + "/" + (root.frame >= 4 ? "light-" : "dark-") + ["pairing","settings","dependencies","credits"][root.frame % 4] + ".png"), "screenshot saved")
             root.next()
           })
         } else root.next()
@@ -95,7 +95,7 @@ ShellRoot {
   }
   function next() {
     frame++
-    if(frame === 6) { console.log("OMACHAT_READABILITY_PASS dark/light large-text setup, Settings, selected choices, and credits"); Qt.quit(); return }
+    if(frame === 8) { console.log("OMACHAT_READABILITY_PASS dark/light large-text setup, Settings, dependency checklist, selected choices, and credits"); Qt.quit(); return }
     palette()
     verify.restart()
   }

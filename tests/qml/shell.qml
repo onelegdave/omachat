@@ -11,6 +11,12 @@ ShellRoot {
  property bool passed: false
  property string testImage: Quickshell.env("OMACHAT_TEST_IMAGE")
  function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
+ function named(item, name) {
+  if (item.objectName === name) return item
+  var kids=item.children || []
+  for(var i=0;i<kids.length;i++) { var found=named(kids[i],name); if(found) return found }
+  return null
+ }
  QtObject {
   id: fake
   property bool connected: true
@@ -71,10 +77,45 @@ ShellRoot {
  }
  Chat.Panel { id: panel; service: fake }
  Chat.SettingsView { id: settings; visible: false; service: fake }
+ Chat.DependencyChecklist {
+  id: dependencies
+  parent: window.contentItem
+  width: 600
+  visible: false
+  autoCheck: false
+  property var launches: []
+  property string openedUrl: ""
+  launch: function(argv) { launches.push(argv) }
+  openUrl: function(url) { openedUrl=url }
+  Component.onCompleted: acceptResult(0,JSON.stringify([
+    {id:"qrencode",name:"QR encoder",purpose:"Pairing",detail:"Missing qrencode",installed:false,sourceUrl:"https://gitlab.archlinux.org/archlinux/packaging/packages/qrencode"},
+    {id:"go",name:"Go",purpose:"Build",detail:"Available",installed:true,sourceUrl:"https://gitlab.archlinux.org/archlinux/packaging/packages/go"}
+  ]))
+ }
  Process { command: ["sleep", "0.5"]; running: true; onExited: root.runTests() }
  function runTests() {
    try {
     console.log("QML_TEST_BEGIN")
+    var source="https://gitlab.archlinux.org/archlinux/packaging/packages/qrencode"
+    var rows=[{id:"qrencode",name:"QR encoder",purpose:"Pairing",detail:"Missing qrencode",installed:false,sourceUrl:source},
+              {id:"go",name:"Go",purpose:"Build",detail:"Available",installed:true,sourceUrl:source}]
+    root.check(dependencies.dependencies.length === 2 && !dependencies.errorText,"dependency result loads")
+    dependencies.install("go")
+    dependencies.install("unknown")
+    root.check(dependencies.launches.length === 0,"available and unknown tools cannot trigger install")
+    root.named(dependencies,"dependencySource-qrencode").clicked()
+    root.check(dependencies.openedUrl === source && dependencies.launches.length === 0,"source review never installs")
+    dependencies.install("qrencode")
+    dependencies.install("qrencode")
+    root.check(dependencies.launches.length === 1,"duplicate install request is blocked")
+    var argv=dependencies.launches[0]
+    root.check(argv[0] === "omarchy" && argv[1] === "launch" && argv[2] === "terminal" && argv[4].endsWith("/scripts/dependencies.py") && argv[5] === "--install" && argv[6] === "qrencode","install launches explicit terminal argv")
+    dependencies.acceptResult(0,"not json")
+    root.check(dependencies.dependencies.length === 0 && dependencies.errorText !== "","failed check clears stale availability")
+    dependencies.acceptResult(0,JSON.stringify([{id:"qrencode",installed:"yes"}]))
+    root.check(dependencies.dependencies.length === 0,"malformed check fails closed")
+    dependencies.acceptResult(1,JSON.stringify(rows))
+    root.check(dependencies.dependencies.length === 0,"nonzero check exit cannot mark tools available")
     var composer = inspect.findChild(inbox,"composer")
     var caption = inspect.findChild(inbox,"attachCaption")
     var search = inspect.findChild(inbox,"searchField")
@@ -208,6 +249,10 @@ ShellRoot {
     var warningLabel=inspect.findChild(panel,"unpairWarningText")
     root.check(warningLabel && warningLabel.text === warning && warningLabel.wrapMode !== Text.NoWrap, "unpaired screen retains remote revocation warning and phone instructions")
     root.check(!panel.unpairing, "failed unpair releases pending state")
+    var qrProcess=inspect.findChild(panel,"qrProcess")
+    root.check(!!qrProcess,"pairing QR process exists")
+    qrProcess.exited(1,0)
+    root.check(inspect.findChild(panel,"qrErrorText").text.indexOf("Settings > Tools") >= 0,"QR failure gives dependency guidance")
 
     fake.state="connected"
     fake.status={phoneOK:true}

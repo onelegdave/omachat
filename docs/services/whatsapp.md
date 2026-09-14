@@ -13,7 +13,7 @@ phone, open **Linked devices**, choose **Link a device**, and scan the code.
 Pairing is explicit and does not start automatically.
 
 The user chooses whether to install Go, a C compiler, ffmpeg, qrencode, or any
-other optional dependency. OmaChat never installs dependencies. The helper
+other optional dependency. OmaChat never installs dependencies automatically. The helper
 build uses Go modules from `vendor/`; the WhatsApp SQLite store requires
 CGO and a standard C compiler such as gcc or clang.
 
