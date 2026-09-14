@@ -431,9 +431,28 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, e
 	return &converted, nil
 }
 
-// SendMedia rejects sending media as protocol media exchange is pending subsequent milestones.
 func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.SendMediaResult, error) {
-	return nil, ErrNotConfigured
+	b.mu.RLock()
+	cli := b.client
+	b.mu.RUnlock()
+	sender, ok := cli.(MediaClient)
+	if !ok {
+		return nil, ErrNotConfigured
+	}
+	id, err := parseTelegramID(p.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	msg, err := sender.SendImage(ctx, id, p.Path, p.Caption)
+	if err != nil {
+		return nil, err
+	}
+	out := mapMessage(msg)
+	out.TmpID = p.TmpID
+	out.Status = wire.DeliverySent
+	out.Delivery = wire.DeliverySent
+	b.ingestMessage(msg)
+	return &wire.SendMediaResult{Message: &out}, nil
 }
 
 // Media rejects fetching media as protocol media exchange is pending subsequent milestones.

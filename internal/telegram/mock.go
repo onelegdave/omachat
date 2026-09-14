@@ -23,11 +23,19 @@ type MockClient struct {
 	MessagesFunc     func(ctx context.Context, conversationID int64, limit int) ([]Message, error)
 	MarkReadFunc     func(ctx context.Context, conversationID int64, messageID int64) error
 	SendTextFunc     func(ctx context.Context, conversationID int64, text string) (Message, error)
+	SendImageFunc    func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
 }
 
 func (m *MockClient) SendText(ctx context.Context, conversationID int64, text string) (Message, error) {
 	if m.SendTextFunc != nil {
 		return m.SendTextFunc(ctx, conversationID, text)
+	}
+	return Message{}, nil
+}
+
+func (m *MockClient) SendImage(ctx context.Context, conversationID int64, path, caption string) (Message, error) {
+	if m.SendImageFunc != nil {
+		return m.SendImageFunc(ctx, conversationID, path, caption)
 	}
 	return Message{}, nil
 }

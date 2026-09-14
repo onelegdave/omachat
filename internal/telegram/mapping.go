@@ -50,6 +50,10 @@ type SendClient interface {
 	SendText(ctx context.Context, conversationID int64, text string) (Message, error)
 }
 
+type MediaClient interface {
+	SendImage(ctx context.Context, conversationID int64, path, caption string) (Message, error)
+}
+
 func mapDialog(d Dialog) wire.Conversation {
 	name := d.Name
 	if name == "" {

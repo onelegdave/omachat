@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/auth/qrlogin"
+	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
 	"github.com/rs/zerolog"
@@ -496,6 +498,52 @@ func (g *GotdClient) SendText(ctx context.Context, conversationID int64, text st
 		return Message{ID: int64(u.ID), ConversationID: conversationID, Text: text, Timestamp: telegramTimestamp(u.Date), FromMe: u.Out}, nil
 	}
 	return Message{}, errors.New("Telegram send succeeded without a message response")
+}
+
+func (g *GotdClient) SendImage(ctx context.Context, conversationID int64, path, caption string) (Message, error) {
+	g.mu.RLock()
+	peer := g.peers[conversationID]
+	g.mu.RUnlock()
+	if peer == nil {
+		return Message{}, fmt.Errorf("telegram peer %d is not available", conversationID)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return Message{}, fmt.Errorf("stat image: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return Message{}, errors.New("image is not a regular file")
+	}
+	if info.Size() <= 0 || info.Size() > 16*1024*1024 {
+		return Message{}, errors.New("image must be between 1 byte and 16 MB")
+	}
+	file, err := uploader.NewUploader(g.client.API()).FromPath(ctx, path)
+	if err != nil {
+		return Message{}, fmt.Errorf("upload image: %w", err)
+	}
+	var randomID int64
+	if err := binary.Read(rand.Reader, binary.LittleEndian, &randomID); err != nil {
+		return Message{}, err
+	}
+	updates, err := g.client.API().MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{Peer: peer, Media: &tg.InputMediaUploadedPhoto{File: file}, Message: caption, RandomID: randomID})
+	if err != nil {
+		return Message{}, err
+	}
+	if u, ok := updates.(*tg.Updates); ok {
+		for _, raw := range u.Updates {
+			if x, ok := raw.(*tg.UpdateNewMessage); ok {
+				if m, ok := x.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+			if x, ok := raw.(*tg.UpdateNewChannelMessage); ok {
+				if m, ok := x.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+		}
+	}
+	return Message{}, errors.New("Telegram image send succeeded without a message response")
 }
 
 // gotd exposes Telegram dates as Unix seconds; OmaChat wire timestamps use
