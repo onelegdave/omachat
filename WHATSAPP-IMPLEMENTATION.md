@@ -128,5 +128,5 @@ Codex should still re-run these on the review pass.
 
 - Independently verified the final Go race suite, vet, manifest validation and whitespace checks. Earlier rendered UI suite also passed; agy repeated it after QR changes.
 - Lead regression proved a retry handler still captured a retired generation. Rebinding the client handler after failure now accepts the retry connection; strengthened existing retry test passes.
-- Remaining UI blocker: preserve Google drafts while visiting unpaired WhatsApp; clear only the affected account state on unpair/re-pair and namespace drafts by network. Assigned to agy; Gemini provider reset is September 14, 2026 at 13:07 UTC.
+- UI drafts and isolation blocker resolved: Google drafts are preserved while visiting unpaired WhatsApp, only the affected account state is cleared on unpair/re-pair, drafts are properly namespaced by network, and QML tests were added to cover UI isolation (agy 2026-09-14).
 - Feature remains isolated, unpublished, and not installed. Original Google plugin remains connected. Rollback plugin archive saved outside the repository.

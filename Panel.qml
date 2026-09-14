@@ -92,6 +92,9 @@ Panel {
       unpairing = false
       unpairError = ""
     }
+    if (connState === "unpaired" && inboxLoader.item && inboxLoader.item.clearNetwork) {
+      inboxLoader.item.clearNetwork(activeService)
+    }
   }
 
   function unpair() {
@@ -282,6 +285,14 @@ Panel {
         foreground: root.foreground
       }
 
+      readonly property bool anyAccountReady: {
+        if (!root.service) return false
+        var g = typeof root.service.stateFor === "function" ? root.service.stateFor("gmessages") : (root.service.state || "")
+        var w = typeof root.service.stateFor === "function" ? root.service.stateFor("whatsapp") : ""
+        var isReady = function(st) { return st !== "unpaired" && st !== "pairing" && st !== "gaiaPairing" && st !== "error" && st !== "" }
+        return isReady(g) || isReady(w)
+      }
+
       // Retain drafts and selection while Settings or another tab is shown.
       // Unpairing or losing the helper destroys this view and its account data.
       Loader {
@@ -292,8 +303,8 @@ Panel {
         anchors.top: headerSep.bottom
         anchors.bottom: parent.bottom
         anchors.topMargin: Style.space(10)
-        active: root.service && root.service.connected && !root.needsPair
-        visible: active && root.serviceLive && !root.settingsOpen
+        active: root.service && root.service.connected && (parent.anyAccountReady || !root.needsPair)
+        visible: active && root.serviceLive && !root.settingsOpen && !root.needsPair
         sourceComponent: inboxView
       }
 

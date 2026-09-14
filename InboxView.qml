@@ -57,7 +57,7 @@ Item {
   readonly property var conversations: service ? (typeof service.conversationsFor === "function" ? service.conversationsFor(root.network) : (service.conversations || [])) : []
   property string searchQuery: ""
   property string selectedConvID: ""
-  property var drafts: ({})
+  property var _draftsByNet: ({})
   property int selectionGeneration: 0
   property var messages: []
   property var grouped: []
@@ -139,9 +139,11 @@ Item {
     if (prev === network) return
 
     if (selectedConvID) {
-      var saved = Object.assign({}, drafts)
-      saved[selectedConvID] = composer ? composer.text : ""
-      drafts = saved
+      var saved = Object.assign({}, _draftsByNet)
+      var netDrafts = Object.assign({}, saved[prev] || {})
+      netDrafts[selectedConvID] = composer ? composer.text : ""
+      saved[prev] = netDrafts
+      _draftsByNet = saved
     }
     var nextSel = Object.assign({}, _selectedByNet)
     nextSel[prev] = selectedConvID
@@ -182,9 +184,13 @@ Item {
 
   function selectConversation(id) {
     if (id === selectedConvID || sendingMedia) return
-    var saved = Object.assign({}, drafts)
-    if (selectedConvID) saved[selectedConvID] = composer.text
-    drafts = saved
+    var saved = Object.assign({}, _draftsByNet)
+    if (selectedConvID) {
+      var netDrafts = Object.assign({}, saved[network] || {})
+      netDrafts[selectedConvID] = composer.text
+      saved[network] = netDrafts
+      _draftsByNet = saved
+    }
     selectionGeneration++
     historyRequest++
     viewportRevision++
@@ -206,7 +212,8 @@ Item {
     reactingTo = ""
     pendingAttachment = ""
     selectedConvID = id
-    composer.text = drafts[id] || ""
+    var currentNetDrafts = _draftsByNet[network] || {}
+    composer.text = currentNetDrafts[id] || ""
     attachCaption.text = ""
     pendingVoiceSeconds = 0
     messages = []
@@ -677,17 +684,32 @@ Item {
       if (root.panelOpen && !msg.fromMe) root.markThreadRead()
     }
     function onPaired(net) {
-      if (net && net !== root.network) {
-        var nextSel = Object.assign({}, root._selectedByNet)
-        delete nextSel[net]
-        root._selectedByNet = nextSel
-        return
-      }
-      root.selectedConvID = ""; root.drafts = ({})
-      var s = Object.assign({}, root._selectedByNet)
-      delete s[root.network]
-      root._selectedByNet = s
+      root.clearNetwork(net)
     }
+  }
+
+  function clearNetwork(net) {
+    if (net && net !== root.network) {
+      var nextSel = Object.assign({}, root._selectedByNet)
+      delete nextSel[net]
+      root._selectedByNet = nextSel
+      var nextDrafts = Object.assign({}, root._draftsByNet)
+      delete nextDrafts[net]
+      root._draftsByNet = nextDrafts
+      return
+    }
+    root.selectionGeneration++
+    root.historyRequest++
+    root.selectedConvID = ""
+    var s2 = Object.assign({}, root._selectedByNet)
+    delete s2[root.network]
+    root._selectedByNet = s2
+    var d2 = Object.assign({}, root._draftsByNet)
+    delete d2[root.network]
+    root._draftsByNet = d2
+    root.messages = []
+    root.grouped = []
+    if (root.composer) root.composer.text = ""
   }
 
   Timer {

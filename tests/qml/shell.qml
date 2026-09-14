@@ -201,6 +201,7 @@ ShellRoot {
     root.check(fake.calls.length === beforeDuplicate, "pending unpair cannot be submitted twice")
     var warning="Local credentials and cached files were cleared. Google device revocation could not be confirmed. Remove OmaChat in Google Messages on your phone under Device pairing."
     fake.state="unpaired"
+    fake.statusWA={state:"unpaired"}
     fake.status={state:"unpaired",error:warning}
     unpairCall.callback(false,warning)
     root.check(loader.item === null, "unpair destroys account UI state")
@@ -210,6 +211,7 @@ ShellRoot {
 
     fake.state="connected"
     fake.status={phoneOK:true}
+    fake.statusWA={phoneOK:true, state:"connected"}
     panel.unpair()
     unpairCall=fake.delayed.pop()
     unpairCall.callback(false,"Disconnected from omachatd")
@@ -288,6 +290,64 @@ ShellRoot {
     root.check(gmInbox.messages.length === gmCount, "late whatsapp send callback cannot land in the google inbox")
     root.check(fake.currentNetwork === "gmessages", "keyboard-equivalent tab switch updates currentNetwork")
 
+    // 1. Google draft -> unpaired WA tab -> Google retains draft
+    panel.activeService = "gmessages"
+    gmInbox = inspect.findChild(panel, "inboxLoader").item
+    gmInbox.selectConversation("g-draft-conv")
+    inspect.findChild(gmInbox, "composer").text = "My Google Draft"
+
+    // Simulate WhatsApp being unpaired
+    fake.statusWA = {phoneOK:true, state:"unpaired"}
+    fake.status = {phoneOK:true, state:"connected"}
+    panel.activeService = "whatsapp"
+    // The panel should show pairing view for whatsapp, but gmInbox shouldn't be destroyed
+    root.check(inspect.findChild(panel, "inboxLoader").item !== null, "inbox view is retained when switching to an unpaired WA tab if Google is still connected")
+
+    panel.activeService = "gmessages"
+    gmInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(inspect.findChild(gmInbox, "composer").text === "My Google Draft", "Google draft is retained after viewing unpaired WA tab")
+
+    // 2. Identical synthetic IDs across networks don't share drafts
+    panel.activeService = "gmessages"
+    gmInbox = inspect.findChild(panel, "inboxLoader").item
+    gmInbox.selectConversation("same-id")
+    inspect.findChild(gmInbox, "composer").text = "Google specific draft"
+
+    fake.statusWA = {phoneOK:true, state:"connected"}
+    panel.activeService = "whatsapp"
+    waInbox = inspect.findChild(panel, "inboxLoader").item
+    waInbox.selectConversation("same-id")
+    root.check(inspect.findChild(waInbox, "composer").text === "", "identical ID on WhatsApp does not load Google's draft")
+    inspect.findChild(waInbox, "composer").text = "WA specific draft"
+
+    panel.activeService = "gmessages"
+    gmInbox = inspect.findChild(panel, "inboxLoader").item
+    // switch to trigger saving current then select same-id again
+    gmInbox.selectConversation("other-id")
+    gmInbox.selectConversation("same-id")
+    root.check(inspect.findChild(gmInbox, "composer").text === "Google specific draft", "identical ID on Google retained its own draft")
+
+    // 3. unpair/re-pair one preserves other
+    // Trigger onPaired directly on the inbox view component
+    fake.paired("whatsapp")
+    // After fake.paired, the signal propagates to InboxView
+    gmInbox.selectConversation("other-id")
+    gmInbox.selectConversation("same-id")
+    root.check(inspect.findChild(gmInbox, "composer").text === "Google specific draft", "clearing WhatsApp drafts via onPaired does not affect Google drafts")
+
+    // 4. if both unpaired, prior account-view destruction still valid
+    fake.statusWA = {phoneOK:true, state:"unpaired"}
+    fake.status = {phoneOK:true, state:"unpaired"}
+    // Both unpaired, anyAccountReady should be false, and inboxLoader should be destroyed
+    // need to trigger connState change update if needed, but changing status should do it.
+    // wait for qml to process bindings
+    panel.activeService = "gmessages" // trigger update
+    root.check(inspect.findChild(panel, "inboxLoader").item === null, "if both accounts are unpaired, the inboxLoader item is destroyed")
+
+    // Restore states for later tests
+    fake.statusWA = {phoneOK:true, state:"connected"}
+    fake.status = {phoneOK:true, state:"connected"}
+    panel.activeService = "gmessages"
     var beforeTelegram = fake.calls.length
     panel.setActiveService("telegram")
     root.check(!inspect.findChild(panel, "inboxLoader").visible, "unknown network hides the live inbox")
