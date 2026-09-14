@@ -176,6 +176,21 @@ func (b *Backend) Start(ctx context.Context) error {
 	b.setState(wire.StateConnecting, "")
 	if err := cli.Start(b.ctx); err != nil {
 		b.log.Warn().Err(err).Msg("Telegram session restore connection failed")
+		if strings.Contains(strings.ToLower(err.Error()), "unauthorized") || strings.Contains(strings.ToLower(err.Error()), "revoked") {
+			// A canceled or revoked QR attempt can leave a session blob behind.
+			// Remove only Telegram's local state and return to a fresh pairing
+			// screen instead of trapping the panel in reconnecting.
+			_ = cli.Stop()
+			b.mu.Lock()
+			b.client = nil
+			b.paired = false
+			b.mu.Unlock()
+			if b.paths != nil {
+				_ = b.paths.ClearTelegramSession()
+			}
+			b.setStatusWithHint(wire.StateUnpaired, hintCredentialsConfigured, "")
+			return nil
+		}
 		b.setState(wire.StateDisconnected, "restore session: "+err.Error())
 		return nil
 	}
