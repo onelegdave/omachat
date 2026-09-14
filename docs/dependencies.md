@@ -38,6 +38,10 @@ Then choose **Build helper**. Source dependencies are already in `vendor/`;
 the button compiles them with module downloads disabled. It does not install a
 toolchain. A build error can also indicate an incompatible toolchain or source
 problem; read the displayed build log before retrying.
+The first build can take several minutes and may produce no output while it
+works. Do not restart the Omarchy shell during compilation. The helper starts
+automatically when the build succeeds; failures appear in the panel.
+After installing Go, choose **Retry** on the helper screen to recheck it.
 
 ## Service and feature requirements
 

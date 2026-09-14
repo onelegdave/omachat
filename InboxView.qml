@@ -63,6 +63,26 @@ Item {
   property int selectionGeneration: 0
   property var messages: []
   property var grouped: []
+  // Keep delegates alive across snapshots and receipt updates. Replacing a JS
+  // array model destroys every visible image, even when its message is unchanged.
+  ListModel { id: messageRows; dynamicRoles: true }
+  onGroupedChanged: {
+    for (var i = 0; i < grouped.length; i++) {
+      var entry = grouped[i]
+      var found = -1
+      for (var j = i; j < messageRows.count; j++) {
+        if (messageRows.get(j).entry.key === entry.key) { found = j; break }
+      }
+      if (found < 0) messageRows.insert(i, {entry: entry})
+      else {
+        if (found !== i) messageRows.move(found, i, 1)
+        if (JSON.stringify(messageRows.get(i).entry) !== JSON.stringify(entry))
+          messageRows.setProperty(i, "entry", entry)
+      }
+    }
+    if (messageRows.count > grouped.length)
+      messageRows.remove(grouped.length, messageRows.count - grouped.length)
+  }
   property bool loadingMessages: false
   property bool loadingOlder: false
   property bool hasOlder: false
@@ -1211,19 +1231,24 @@ Item {
       visible: root.selectedConvID !== ""
       clip: true
       spacing: Style.space(2)
-      model: root.grouped
+      model: messageRows
       boundsBehavior: Flickable.StopAtBounds
 
       delegate: Item {
         id: row
-        required property var modelData
+        required property var entry
+        readonly property var modelData: entry
         readonly property bool isDay: modelData.kind === "day"
         readonly property var msg: isDay ? null : modelData.message
         readonly property bool mine: msg ? msg.fromMe === true : false
         readonly property bool startsRun: !isDay && modelData.startsRun === true
         readonly property int maxBubble: Math.min(Math.round(width * 0.78), Style.space(420))
         readonly property bool hasText: msg && String(msg.text || "") !== ""
-        readonly property var attachments: msg && msg.attachments ? msg.attachments : []
+        property var attachments: []
+        onMsgChanged: {
+          var next = msg && msg.attachments ? msg.attachments : []
+          if (JSON.stringify(attachments) !== JSON.stringify(next)) attachments = next
+        }
         readonly property var copyTargets: hasText ? Model.extractCopyTargets(msg.text) : []
 
         width: messageList.width
@@ -1298,7 +1323,7 @@ Item {
                     ? root.mediaPaths[mediaKey] : (modelData && modelData.path ? modelData.path : "")
                   readonly property string mediaState: mediaKey && root.mediaRequests[mediaKey] ? root.mediaRequests[mediaKey] : ""
                   readonly property bool mediaFailed: isImage && mediaPath === "" && mediaState === "failed"
-                  readonly property bool mediaLoading: isImage && mediaPath === "" && !mediaFailed
+                  readonly property bool mediaLoading: isImage && !mediaFailed && !thumb.ready && !thumb.hasError
                   readonly property bool playingThis: isVoice && root.playingKey === mediaKey
                   readonly property bool loadingThis: isVoice && root.audioWaitingKey === mediaKey
                   width: parent.width
@@ -1306,7 +1331,7 @@ Item {
                     if (isVoice || isVideo) return Style.space(36)
                     if (isImage) {
                       if (mediaPath !== "" && thumb.visible) return thumb.height || Style.space(96)
-                      return Style.space(36)
+                      return Style.space(96)
                     }
                     return 0
                   }

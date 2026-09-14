@@ -25,6 +25,14 @@ The helper reads configuration at startup. Restart the shell immediately after
 saving credentials, before changing OmaChat Settings, so the running helper
 loads the new values. Restarting briefly reloads the whole Omarchy shell.
 
+Run the setup script as your normal user, without `sudo`. Enter the numeric
+`api_id` first. At the `api_hash` prompt, typing or pasting displays no characters
+or asterisks: the input looks blank by design. Enter the full hash and press
+Enter. This is your application API hash, not your Telegram login password.
+The `config.json` path is a storage location, not a terminal command.
+Saving these credentials does not pair your account automatically; restart,
+then choose **Pair with Telegram** as described below.
+
 The configuration is stored in `~/.local/share/omachat/config.json` with mode
 `0600`. The user chooses whether to install Go, ffmpeg, qrencode, or any other
 optional dependency. OmaChat never installs dependencies automatically.

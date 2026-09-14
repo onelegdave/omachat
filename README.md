@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, and Telegram.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current release: **0.3.5**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.5).
+Current release: **0.3.6**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.6).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -49,6 +49,9 @@ omarchy pkg add go gcc
 
 Then select **Build helper** in the panel. This compiles the included source
 with `go build -mod=vendor`; it does not install packages or download modules.
+The first build can take several minutes depending on your hardware. Go may
+show no output while compiling. Wait without restarting the Omarchy shell;
+the helper starts automatically on success, or the panel displays a build error.
 The shell owns the helper as a child process. There is no systemd unit,
 installer hook, or automatic privileged step. Only the explicit dependency
 Install action can request sudo in a terminal, after your confirmation.

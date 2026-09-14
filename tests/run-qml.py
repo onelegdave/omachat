@@ -42,6 +42,12 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     if result.returncode or "OMACHAT_READABILITY_PASS" not in result.stdout or "OMACHAT_READABILITY_FAIL" in result.stdout or "ERROR" in result.stdout:
         raise SystemExit(1)
 
+    (config / "shell.qml").write_text((repo / "tests/qml/media.qml").read_text())
+    result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+    print(result.stdout)
+    if result.returncode or "OMACHAT_MEDIA_PASS" not in result.stdout or "OMACHAT_MEDIA_FAIL" in result.stdout or "ERROR" in result.stdout:
+        raise SystemExit(1)
+
     build = config / "Build"
     build.mkdir()
     (build / "Service.qml").write_text((repo / "Service.qml").read_text())

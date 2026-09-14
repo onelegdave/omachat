@@ -12,6 +12,7 @@ ShellRoot {
  property bool selectionRequested: false
  property bool selectionConfirmed: false
  property bool disableRequested: false
+ property bool buildGuidanceChecked: false
  Build.Service { id: service }
  Chat.Panel { id: panel; service: service }
  TestResult { id: inspect }
@@ -31,6 +32,13 @@ ShellRoot {
    }
    if (root.requested && service.helperError) {
     console.error("OMACHAT_BUILD_FAIL",service.helperError);Qt.quit();return
+   }
+   if (service.building && !root.buildGuidanceChecked) {
+    var hero=inspect.findChild(panel,"helperBuildHero")
+    if (!hero || hero.meta.indexOf("several minutes") < 0 || hero.meta.indexOf("no output") < 0 || hero.meta.indexOf("starts automatically") < 0) {
+     console.error("OMACHAT_BUILD_FAIL missing build guidance");Qt.quit();return
+    }
+    root.buildGuidanceChecked=true
    }
    if (root.requested && service.connected && service.servicesConfigLoaded && !root.selectionRequested) {
     if (!service.serviceSelectionRequired || service.enabledServices.length !== 0) {
@@ -65,6 +73,7 @@ ShellRoot {
        if(ok || String(res).indexOf("disabled") < 0) {
         console.error("OMACHAT_BUILD_FAIL disabled service accepted refresh",res);Qt.quit();return
        }
+       if (!root.buildGuidanceChecked) { console.error("OMACHAT_BUILD_FAIL build guidance was not checked");Qt.quit();return }
        service.stopHelper()
        console.log("OMACHAT_BUILD_PASS compiled helper, fresh chooser, opt-in, opt-out, and disabled RPC guard")
        Qt.quit()

@@ -16,7 +16,10 @@ def main() -> None:
     except (OSError, json.JSONDecodeError):
         data = {}
 
+    print("Enter the api_id and api_hash from my.telegram.org, not your Telegram login password.")
     data["telegramApiID"] = int(input("Telegram api_id: "))
+    print("The api_hash input is hidden: typing or pasting shows no characters or asterisks.")
+    print("The prompt will look blank. Enter the full api_hash, then press Enter.")
     data["telegramApiHash"] = getpass.getpass("Telegram api_hash: ").strip()
 
     payload = (json.dumps(data, indent=2) + "\n").encode()
@@ -33,6 +36,10 @@ def main() -> None:
         if os.path.exists(temporary):
             os.unlink(temporary)
     print(f"Saved securely to {path}")
+    print("Next, run: omarchy restart shell")
+    print("This briefly reloads the whole shell and loads the saved credentials.")
+    print("Then open OmaChat > Telegram > Pair with Telegram.")
+    print("On your phone: Telegram > Settings > Devices > Link Desktop Device, then scan the QR code.")
 
 
 if __name__ == "__main__":

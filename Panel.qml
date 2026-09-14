@@ -466,6 +466,7 @@ Panel {
           width: Math.min(parent.width - Style.space(40), Style.space(480))
 
           ReadableHero {
+            objectName: "helperBuildHero"
             width: parent.width
             uiScale: root.uiScale
             title: {
@@ -480,11 +481,11 @@ Panel {
             meta: {
               if (root.service && root.service.helperError) return root.service.helperError
               if (root.service && root.service.building)
-                return "Compiling omachatd from the vendored source files in this plugin. No external downloads are performed."
+                return "Building OmaChat's messaging helper on this computer. The first build can take several minutes, depending on your hardware. Go may show no output while compiling; a quiet screen does not mean the build has stopped. Please wait and do not restart the Omarchy shell during the build. The helper starts automatically when compilation succeeds, or a build error appears here if it fails. This uses the included source without installing packages or downloading modules."
               if (needGo)
-                return "OmaChat requires a locally compiled helper (omachatd) to connect to Google Messages, WhatsApp, and Telegram. Install Go and a C compiler (gcc or clang) using your system package manager, then choose Build helper below."
+                return "OmaChat needs a small background program, the messaging helper (omachatd), to connect your chosen services. It is built on your computer from the included source. Building requires Go 1.27+ and a C compiler (gcc or clang). Open Settings > Tools to check what is missing, review its source, and choose whether to install it. Then return here, choose Retry to recheck Go, and select Build helper."
               if (canBuild)
-                return "Go is installed. Build the shared helper from this plugin's vendored source. All services also require a C compiler (gcc or clang) to build. Rebuild after updates that change the helper."
+                return "Go was found. Check Settings > Tools to confirm Go 1.27+ and a C compiler (gcc or clang) are available. Choose Build helper to compile the included source for your selected services. The first build can take several minutes and may show no output. The helper starts automatically on success. Rebuild after updates that change the helper. No dependencies are installed automatically."
               return "The protocol helper runs as a background process owned by the Omarchy shell."
             }
             foreground: root.foreground

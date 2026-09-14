@@ -30,6 +30,7 @@ Item {
 
   readonly property bool hasItemSize: loader.item && loader.item.implicitWidth > 0 && loader.item.implicitHeight > 0
   readonly property bool hasError: !!(loader.item && loader.item.status === (root.gif ? AnimatedImage.Error : Image.Error))
+  readonly property bool ready: !!(loader.item && loader.item.status === (root.gif ? AnimatedImage.Ready : Image.Ready))
 
   implicitWidth: Math.min(maxEdge, Math.max(Style.space(96), hasItemSize ? loader.item.implicitWidth : Style.space(96)))
   implicitHeight: {
@@ -78,6 +79,8 @@ Item {
     Image {
       anchors.fill: parent
       asynchronous: true
+      // Keep the thumbnail visible while a full-resolution replacement decodes.
+      retainWhileLoading: true
       smooth: true
       fillMode: Image.PreserveAspectFit
       source: root.source

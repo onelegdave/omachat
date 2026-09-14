@@ -1,6 +1,6 @@
 # OmaChat documentation
 
-Current user documentation describes OmaChat v0.3.5, a Native Omarchy Plugin
+Current user documentation describes OmaChat v0.3.6, a Native Omarchy Plugin
 for Google Messages, WhatsApp, and Telegram.
 
 - [Theme screenshots with fictional chats](screenshots/README.md)

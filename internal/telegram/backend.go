@@ -24,7 +24,7 @@ import (
 var ErrNotConfigured = errors.New("Telegram client is not configured: protocol library integration pending")
 
 const (
-	hintCredentialsRequired   = "Telegram API credentials required: configure api_id and api_hash in ~/.local/share/omachat/config.json (obtain from my.telegram.org)"
+	hintCredentialsRequired   = "Telegram API credentials required. Run: python3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py (without sudo). API hash input stays blank while typing. Then run: omarchy restart shell, reopen Telegram, and choose Pair with Telegram. Obtain credentials from my.telegram.org."
 	hintCredentialsConfigured = "Telegram API credentials configured; pairing not yet started"
 )
 
@@ -566,7 +566,7 @@ func (b *Backend) StartPairing(ctx context.Context) (string, error) {
 	if credErr != nil {
 		var userErr string
 		if errors.Is(credErr, appStore.ErrTelegramUnconfigured) {
-			userErr = "Telegram API credentials required. Configure api_id and api_hash in ~/.local/share/omachat/config.json."
+			userErr = hintCredentialsRequired
 			b.setStatusWithHint(wire.StateUnpaired, hintCredentialsRequired, userErr)
 			return "", ErrNotConfigured
 		}

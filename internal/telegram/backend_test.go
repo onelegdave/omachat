@@ -342,7 +342,7 @@ func TestTelegramStartUnconfiguredStatus(t *testing.T) {
 	if st.State != wire.StateUnpaired {
 		t.Errorf("expected state %q for unconfigured Telegram, got %q", wire.StateUnpaired, st.State)
 	}
-	const wantHint = "Telegram API credentials required: configure api_id and api_hash in ~/.local/share/omachat/config.json (obtain from my.telegram.org)"
+	const wantHint = "Telegram API credentials required. Run: python3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py (without sudo). API hash input stays blank while typing. Then run: omarchy restart shell, reopen Telegram, and choose Pair with Telegram. Obtain credentials from my.telegram.org."
 	if st.Hint != wantHint {
 		t.Errorf("hint = %q, want %q", st.Hint, wantHint)
 	}
