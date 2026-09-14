@@ -1,7 +1,7 @@
 # Dependencies and user choice
 
 [OmaChat](../README.md) never installs dependencies automatically. Settings
-includes a read-only checklist with **Review source**, **Install**, and **Recheck**
+includes read-only availability checks with **Review source**, **Install**, and **Recheck**
 actions. Install is offered for missing tools and opens a terminal, showing the
 exact command before asking for confirmation. Pacman then shows its transaction
 and asks for confirmation too. Cancelling either prompt installs nothing.

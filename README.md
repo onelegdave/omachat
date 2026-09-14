@@ -4,12 +4,25 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, and Telegram.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current release: **0.3.4**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.4).
+Current release: **0.3.5**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.5).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
-The preview uses fictional contacts. Never include private conversations or
-account details in public screenshots or bug reports.
+The preview shows the current QML panel with fictional contacts and messages,
+using the Tokyo Night base palette. Connection and delivery states are simulated.
+Never include private conversations or account details in public screenshots.
+
+<details>
+<summary>More theme examples: Catppuccin Latte and Gruvbox</summary>
+
+![OmaChat with the Catppuccin Latte light base palette](docs/screenshots/catppuccin-latte.png)
+
+![OmaChat with the Gruvbox base palette](docs/screenshots/gruvbox.png)
+
+These demo captures use stock theme base colors with default control styling.
+See the [gallery and reproduction details](docs/screenshots/README.md).
+
+</details>
 
 ## Install and build
 
@@ -124,7 +137,7 @@ kept locally; see [Security](SECURITY.md) for protections and limitations.
 | `~/.local/share/omachat/session.json` | Google Messages credentials |
 | `~/.local/share/omachat/whatsapp.db` and `whatsapp_store.json` | WhatsApp credentials and chat cache |
 | `~/.local/share/omachat/telegram.session` and `telegram_store.json` | Telegram credentials and chat cache |
-| `~/.local/share/omachat/config.json` | Browser selection, GIPHY key, Telegram API credentials |
+| `~/.local/share/omachat/config.json` | Service choices, text size, browser selection, GIPHY key, Telegram API credentials |
 | `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/` | Service-specific media caches |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Private plugin/helper control socket |
 
@@ -157,6 +170,10 @@ make test-ui
 See [Contributing](CONTRIBUTING.md) for prerequisites and verification,
 [Security](SECURITY.md) for reporting, and the [documentation index](docs/README.md)
 for service guides, release notes, and historical reviews.
+
+Marketplace submission is pending the [oldsmaru acceptance check](docs/oldsmaru-checklist.md).
+See [marketplace readiness](docs/marketplace-readiness.md) for check results,
+review capabilities, and their limits. OmaChat is not claiming marketplace approval.
 
 ## Credits and license
 

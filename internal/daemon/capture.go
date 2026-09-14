@@ -51,7 +51,7 @@ func isOwnCapture(base string) bool {
 	switch {
 	case strings.HasPrefix(base, "webcam-") && strings.HasSuffix(base, ".jpg"):
 		return true
-	case strings.HasPrefix(base, "voice-") && strings.HasSuffix(base, ".m4a"):
+	case strings.HasPrefix(base, "voice-") && (strings.HasSuffix(base, ".m4a") || strings.HasSuffix(base, ".ogg")):
 		return true
 	}
 	return false

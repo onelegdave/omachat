@@ -2,6 +2,10 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -83,4 +87,35 @@ func TestSendRenditionPrefersSmallest(t *testing.T) {
 	if got := r.sendURL(0); got != "https://media.giphy.com/original.gif" {
 		t.Errorf("sendURL = %q, want the original as a fallback", got)
 	}
+}
+
+func TestGifSanitization(t *testing.T) {
+	d := newGifDaemon(t)
+	if err := d.config.SetGiphyAPIKey("SECRET_KEY_123"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock avatarHTTP transport to fail
+	originalTransport := avatarHTTP.Transport
+	avatarHTTP.Transport = &mockTransport{
+		err: errors.New("simulated transport error"),
+	}
+	defer func() { avatarHTTP.Transport = originalTransport }()
+
+	_, err := d.GifSearch(context.Background(), wire.GifSearchParams{Query: "cat"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if strings.Contains(err.Error(), "SECRET_KEY_123") {
+		t.Errorf("error contains secret key: %v", err)
+	}
+}
+
+type mockTransport struct {
+	err error
+}
+
+func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// The standard library url.Error includes the URL which is what we want to test sanitization against
+	return nil, &url.Error{Op: "Get", URL: req.URL.String(), Err: m.err}
 }

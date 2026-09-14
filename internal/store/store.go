@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	"go.mau.fi/mautrix-gmessages/pkg/libgm"
 )
@@ -54,6 +55,15 @@ func NewPaths() (*Paths, error) {
 	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir(), p.TelegramMediaDir()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
+		}
+		f, err := os.OpenFile(dir, os.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW, 0)
+		if err != nil {
+			return nil, fmt.Errorf("open to secure %s: %w", dir, err)
+		}
+		err = f.Chmod(0o700)
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("secure %s: %w", dir, err)
 		}
 	}
 	return p, nil

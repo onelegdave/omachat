@@ -117,9 +117,9 @@ func (d *Daemon) GifSearch(ctx context.Context, p wire.GifSearchParams) (*wire.G
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := avatarHTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("reach GIPHY: %w", err)
+		return nil, errors.New("reach GIPHY: network error")
 	}
 	defer resp.Body.Close()
 
@@ -196,9 +196,9 @@ func (d *Daemon) GifFetch(ctx context.Context, p wire.GifFetchParams) (string, e
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := avatarHTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("download GIF: %w", err)
+		return "", errors.New("download GIF: network error")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

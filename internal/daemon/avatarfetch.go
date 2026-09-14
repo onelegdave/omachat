@@ -30,6 +30,15 @@ var errAvatarRefused = errors.New("refusing to fetch avatar")
 // slip straight through.
 var avatarHTTP = &http.Client{
 	Timeout: 30 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" {
+			return errors.New("refusing non-HTTPS redirect")
+		}
+		if len(via) >= 10 {
+			return errors.New("too many redirects")
+		}
+		return nil
+	},
 	Transport: &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: 10 * time.Second,

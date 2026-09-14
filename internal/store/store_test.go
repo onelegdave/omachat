@@ -219,3 +219,81 @@ func TestStorageIsolation(t *testing.T) {
 		t.Errorf("Google session file was modified or deleted by ClearTelegramSession: %v", err)
 	}
 }
+
+func TestNewPathsSecuresExistingDirectories(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+
+	// Create a pre-existing directory with insecure permissions
+	insecureDir := dir + "/omachat"
+	if err := os.MkdirAll(insecureDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(insecureDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The mode includes the directory bit, so we mask it with 0777
+	if info.Mode()&0o777 != 0o700 {
+		t.Errorf("expected permissions to be 0700, got %v", info.Mode()&0o777)
+	}
+}
+
+func TestNewPathsSymlinkRejection(t *testing.T) {
+	dir := t.TempDir()
+
+	// Test file rejected
+	filePath := dir + "/file_not_dir"
+	if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("XDG_DATA_HOME", filePath)
+	t.Setenv("XDG_CACHE_HOME", dir)
+	t.Setenv("XDG_RUNTIME_DIR", dir)
+
+	_, err := NewPaths()
+	if err == nil {
+		t.Error("expected error when path is a file")
+	}
+
+	// Test symlink rejected (leaf symlink)
+	symDir := t.TempDir()
+	targetDir := symDir + "/target"
+	if err := os.Mkdir(targetDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(targetDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("XDG_DATA_HOME", symDir)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	linkPath := symDir + "/omachat"
+	if err := os.Symlink(targetDir, linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = NewPaths()
+	if err == nil {
+		t.Error("expected error when leaf path is a symlink")
+	}
+
+	info, err := os.Stat(targetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0755 {
+		t.Error("symlink target was chmodded!")
+	}
+}

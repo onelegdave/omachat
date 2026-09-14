@@ -86,20 +86,22 @@ func TestDiscardCaptureRefusesAnythingElse(t *testing.T) {
 
 func TestDiscardCaptureRemovesVoiceRecordings(t *testing.T) {
 	d, dir := newCaptureDaemon(t)
-	path := filepath.Join(dir, "voice-1757280000.m4a")
-	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.DiscardCapture(path); err != nil {
-		t.Fatalf("discard failed: %v", err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Error("voice recording should have been removed")
+	for _, ext := range []string{".m4a", ".ogg"} {
+		path := filepath.Join(dir, "voice-1757280000"+ext)
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.DiscardCapture(path); err != nil {
+			t.Fatalf("discard failed for %s: %v", ext, err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("voice recording %s should have been removed", ext)
+		}
 	}
 }
 
 func TestIsOwnCapture(t *testing.T) {
-	ours := []string{"webcam-1.jpg", "voice-1.m4a"}
+	ours := []string{"webcam-1.jpg", "voice-1.m4a", "voice-1.ogg"}
 	for _, name := range ours {
 		if !isOwnCapture(name) {
 			t.Errorf("%q should be recognised as ours", name)

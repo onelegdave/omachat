@@ -14,6 +14,8 @@ import (
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
+var osChmod = os.Chmod
+
 // maxFrame bounds a single request line so a runaway client cannot exhaust
 // memory. Requests are small; replies can be large.
 const maxFrame = 1 << 20
@@ -29,8 +31,10 @@ func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
 		return fmt.Errorf("listen %s: %w", socketPath, err)
 	}
 	// The socket carries message content; keep it owner-only.
-	if err := os.Chmod(socketPath, 0o600); err != nil {
-		d.log.Warn().Err(err).Msg("Could not restrict socket permissions")
+	if err := osChmod(socketPath, 0o600); err != nil {
+		ln.Close()
+		os.Remove(socketPath)
+		return fmt.Errorf("secure socket: %w", err)
 	}
 	defer func() {
 		ln.Close()

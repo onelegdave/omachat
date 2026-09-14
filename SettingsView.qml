@@ -293,7 +293,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "OmaChat supports Google Messages, WhatsApp, and Telegram with isolated credentials, caches, and drafts. Each service connects only when you explicitly configure it."
+        text: "OmaChat supports Google Messages, WhatsApp, and Telegram with separate credentials, caches, and drafts in one shared helper. Choose enabled services in Settings. Previously paired, enabled services reconnect automatically. Service separation is not a security sandbox."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
@@ -427,7 +427,7 @@ Flickable {
         Text {
           width: parent.width
           wrapMode: Text.Wrap
-          text: "3. Copy the API key, paste it below, and choose Save. OmaChat stores the key only in your local configuration."
+          text: "3. Copy the API key, paste it below, and choose Save. OmaChat stores the key in your local configuration and sends it to GIPHY when you search. Search terms are also sent to GIPHY."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)

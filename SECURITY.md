@@ -1,13 +1,15 @@
 # Security
 
 This Native Omarchy Plugin talks to Google Messages, WhatsApp, and Telegram. It
-reads browser cookies once at Google pairing time, pairs WhatsApp and Telegram
-through their QR flows, and keeps message content on this machine.
+reads browser cookies while checking pairing profiles, pairing, changing the
+selected profile, and recovering from authentication failures. WhatsApp and
+Telegram use their QR flows. Message content and credentials are cached locally.
 
 ## Report a vulnerability
 
-Email or message OneLegDave privately rather than opening a public issue for
-credential or protocol bugs.
+Use [GitHub's private vulnerability report form](https://github.com/onelegdave/omachat/security/advisories/new)
+for credential or protocol bugs. Do not include credentials, personal messages,
+or working exploit details in a public issue.
 
 ## What is stored
 
@@ -19,7 +21,11 @@ credential or protocol bugs.
 - Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, and `media_telegram/`
 - Control socket: `$XDG_RUNTIME_DIR/omachat/daemon.sock` (0600)
 
-Directories are 0700. The socket is only reachable by your account.
+OmaChat's private directories are restricted to 0700. The socket is restricted
+to 0600. These permissions do not isolate OmaChat from other programs running
+as the same user, or from root. Stored credentials and caches are not encrypted
+by OmaChat. Trusted XDG parent directories and a trusted desktop account are
+part of the security boundary.
 
 ## What is enforced
 
@@ -27,14 +33,25 @@ Directories are 0700. The socket is only reachable by your account.
   reader. A declared `Content-Length` is never trusted as the allocation size.
 - Group avatar URLs must be `https` and must resolve to a public address.
   Loopback, private, link-local, and carrier-grade NAT ranges are refused.
-- Child processes are spawned with an argument array, never a shell, except
-  for the one-time `go build` of the helper.
+- OmaChat's direct child-process launches use argument arrays, not interpolated
+  shell commands. External tools and desktop launchers have their own behavior.
 - Cookie values are not logged. Errors name which cookie is missing.
 - View-once and ephemeral WhatsApp media are omitted from disk persistence and cannot be reopened or redownloaded.
 - Telegram self-destructing media is omitted from disk persistence and cannot be reopened or redownloaded.
 - Google Messages, WhatsApp, and Telegram maintain separate credential stores, databases, sessions, and cache directories. Unpairing one network never deletes or exposes files belonging to another.
 
 ## Accepted
+
+- Community plugins and the helper run as your user without a security sandbox.
+  Service separation prevents accidental cross-service state reuse, not access
+  by a compromised helper or another process under the same account.
+- Enabled services contact their messaging providers. Optional GIPHY search
+  sends the query and API key to GIPHY; the QML picker loads preview images
+  directly from allowed GIPHY HTTPS hosts. No claim of offline-only operation
+  or anonymity is made.
+- Source review and regression tests are limited checks, not a guarantee that
+  this project or its dependencies contain no vulnerabilities. Keep the desktop
+  toolchain and external tools current through your normal update workflow.
 
 - `libgm` is a reverse-engineered client. Google can break or detect it.
 - Links in messages open only after a confirm dialog, and only `http`/`https`
