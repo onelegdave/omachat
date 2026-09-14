@@ -418,6 +418,10 @@ func TestWhatsAppHistorySync(t *testing.T) {
 						},
 					},
 				},
+				{
+					ID:   proto.String("192148934783072@lid"),
+					Name: proto.String("Empty Companion Contact"),
+				},
 			},
 		},
 	}

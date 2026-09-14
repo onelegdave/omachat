@@ -646,12 +646,21 @@ func (b *Backend) Conversations(count int) []wire.Conversation {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	if count <= 0 || count > len(b.order) {
-		count = len(b.order)
+	limit := count
+	if limit <= 0 {
+		limit = len(b.order)
 	}
-	out := make([]wire.Conversation, count)
-	for i := 0; i < count; i++ {
-		out[i] = b.convs[b.order[i]]
+	out := make([]wire.Conversation, 0, min(limit, len(b.order)))
+	for _, id := range b.order {
+		if len(out) >= limit {
+			break
+		}
+		// Companion history can include contact stubs with no messages. Keep
+		// those out of the inbox until a real message creates the chat.
+		if len(b.messages[id]) == 0 {
+			continue
+		}
+		out = append(out, b.convs[id])
 	}
 	return out
 }

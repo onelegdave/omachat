@@ -371,6 +371,47 @@ Item {
     mediaPaths = next
   }
 
+  function _evictMedia(key) {
+    if (!key) return
+    var nextPaths = {}
+    for (var k in mediaPaths) {
+      if (k !== key) nextPaths[k] = mediaPaths[k]
+    }
+    mediaPaths = nextPaths
+    var nextReqs = {}
+    for (var rk in mediaRequests) {
+      if (rk !== key) nextReqs[rk] = mediaRequests[rk]
+    }
+    mediaRequests = nextReqs
+  }
+
+  function _clearMediaForNetwork(net) {
+    var targetNet = net || root.network
+    var nextPaths = {}
+    for (var k in mediaPaths) {
+      var separator = k.indexOf("\x1f")
+      var conversationID = separator >= 0 ? k.substring(0, separator) : k
+      var isWA = conversationID.indexOf("@") >= 0
+      if (targetNet === "whatsapp" && isWA) continue
+      if (targetNet === "gmessages" && !isWA) continue
+      nextPaths[k] = mediaPaths[k]
+    }
+    mediaPaths = nextPaths
+
+    var nextReqs = {}
+    for (var rk in mediaRequests) {
+      var requestSeparator = rk.indexOf("\x1f")
+      var requestConversationID = requestSeparator >= 0 ? rk.substring(0, requestSeparator) : rk
+      var isWAKey = requestConversationID.indexOf("@") >= 0
+      if (targetNet === "whatsapp" && isWAKey) continue
+      if (targetNet === "gmessages" && !isWAKey) continue
+      nextReqs[rk] = mediaRequests[rk]
+    }
+    mediaRequests = nextReqs
+    mediaRetry.queue = []
+    mediaRetry.stop()
+  }
+
   function setMediaRequest(key, state) {
     var next = Object.assign({}, mediaRequests)
     next[key] = state
@@ -380,7 +421,7 @@ Item {
   function requestMedia(key, attempt) {
     if (!key || !service) return
     var tries = attempt === undefined ? 0 : attempt
-    if (tries === 0 && (mediaRequests[key] === "loading" || mediaRequests[key] === "ready")) return
+    if (tries === 0 && (mediaRequests[key] === "loading" || (mediaRequests[key] === "ready" && mediaPaths[key]))) return
     setMediaRequest(key, "loading")
     service.call("media", { key: key }, function(ok, res) {
       if (ok && res && res.path) _withMedia(key, res.path)
@@ -389,6 +430,11 @@ Item {
         return
       }
       if (ok && res && (res.pending || res.thumbnail) && tries < 6) {
+        mediaRetry.schedule(key, tries + 1)
+        return
+      }
+      if (!ok && tries < 3) {
+        setMediaRequest(key, "failed")
         mediaRetry.schedule(key, tries + 1)
         return
       }
@@ -675,6 +721,11 @@ Item {
     copiedTimer.restart()
   }
 
+  readonly property var statusWA: service && typeof service.statusFor === "function" ? service.statusFor("whatsapp") : (service ? service.statusWA : null)
+  onStatusWAChanged: if (statusWA && statusWA.state === "unpaired") root.clearNetwork("whatsapp")
+  readonly property var statusGM: service && typeof service.statusFor === "function" ? service.statusFor("gmessages") : (service ? service.status : null)
+  onStatusGMChanged: if (statusGM && statusGM.state === "unpaired") root.clearNetwork("gmessages")
+
   Connections {
     target: root.service
     function onMessageReceived(msg, net) {
@@ -696,6 +747,7 @@ Item {
       var nextDrafts = Object.assign({}, root._draftsByNet)
       delete nextDrafts[net]
       root._draftsByNet = nextDrafts
+      root._clearMediaForNetwork(net)
       return
     }
     root.selectionGeneration++
@@ -710,6 +762,7 @@ Item {
     root.messages = []
     root.grouped = []
     if (root.composer) root.composer.text = ""
+    root._clearMediaForNetwork(root.network)
   }
 
   Timer {
@@ -1212,22 +1265,30 @@ Item {
               Repeater {
                 model: row.attachments
                 delegate: Item {
+                  id: attachItem
                   required property var modelData
                   readonly property bool isImage: !!(modelData && (modelData.isImage || modelData.isGif) && !modelData.isAudio && !modelData.isVideo)
                   readonly property bool isVoice: !!(modelData && modelData.isAudio)
                   readonly property bool isVideo: !!(modelData && modelData.isVideo)
                   readonly property string mediaKey: modelData && modelData.key ? modelData.key : ""
                   readonly property string mediaPath: mediaKey && root.mediaPaths[mediaKey] ? root.mediaPaths[mediaKey] : ""
+                  readonly property string mediaState: mediaKey && root.mediaRequests[mediaKey] ? root.mediaRequests[mediaKey] : ""
+                  readonly property bool mediaFailed: isImage && mediaPath === "" && mediaState === "failed"
+                  readonly property bool mediaLoading: isImage && mediaPath === "" && !mediaFailed
                   readonly property bool playingThis: isVoice && root.playingKey === mediaKey
                   readonly property bool loadingThis: isVoice && root.audioWaitingKey === mediaKey
                   width: parent.width
                   height: {
                     if (isVoice || isVideo) return Style.space(36)
-                    if (isImage) return thumb.height || Style.space(96)
+                    if (isImage) {
+                      if (mediaPath !== "" && thumb.visible) return thumb.height || Style.space(96)
+                      return Style.space(36)
+                    }
                     return 0
                   }
                   visible: isImage || isVoice || isVideo
-                  Component.onCompleted: if (isImage && mediaKey) root.requestMedia(mediaKey)
+                  onMediaKeyChanged: if (isImage && mediaKey && !mediaPath) root.requestMedia(mediaKey)
+                  Component.onCompleted: if (isImage && mediaKey && !mediaPath) root.requestMedia(mediaKey)
 
                   Rectangle {
                     visible: parent.isVoice
@@ -1280,6 +1341,49 @@ Item {
                     }
                   }
 
+                  Rectangle {
+                    visible: parent.mediaLoading
+                    width: Math.min(parent.width, Style.space(160))
+                    height: Style.space(34)
+                    radius: height / 2
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    border.width: 1
+                    border.color: row.mine ? root.mineInk : Color.popups.border
+
+                    Text {
+                      anchors.centerIn: parent
+                      text: "Loading media…"
+                      color: row.mine ? root.mineInk : root.theirsInk
+                      font.family: root.fontFamily
+                      font.pixelSize: fs(Style.font.caption)
+                    }
+                  }
+
+                  Rectangle {
+                    visible: parent.mediaFailed
+                    width: Math.min(parent.width, Style.space(220))
+                    height: Style.space(34)
+                    radius: height / 2
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    border.width: 1
+                    border.color: row.mine ? root.mineInk : Color.popups.border
+
+                    MouseArea {
+                      anchors.fill: parent
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.requestMedia(parent.parent.mediaKey, 0)
+                    }
+
+                    Text {
+                      anchors.centerIn: parent
+                      text: "Media failed. Tap to retry"
+                      color: row.mine ? root.mineInk : root.theirsInk
+                      font.family: root.fontFamily
+                      font.pixelSize: fs(Style.font.caption)
+                      font.bold: true
+                    }
+                  }
+
                   MediaThumb {
                     id: thumb
                     visible: parent.isImage && parent.mediaPath !== ""
@@ -1289,6 +1393,12 @@ Item {
                     playing: root.panelOpen
                     maxEdge: Math.min(parent.width, Style.space(280))
                     onClicked: root.openImage(parent.mediaPath)
+                    onLoadFailed: {
+                      if (parent.mediaKey) {
+                        root._evictMedia(parent.mediaKey)
+                        root.requestMedia(parent.mediaKey, 0)
+                      }
+                    }
                   }
                 }
               }

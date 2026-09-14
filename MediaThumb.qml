@@ -16,6 +16,7 @@ Item {
   property bool clickable: path !== ""
 
   signal clicked()
+  signal loadFailed()
 
   readonly property bool gif: Model.isGif(mimeType, fileName, path) || Model.isGif("", "", remoteUrl)
   readonly property string localSource: path !== "" ? "file://" + path : ""
@@ -27,10 +28,13 @@ Item {
     return u
   }
 
-  implicitWidth: Math.min(maxEdge, Math.max(1, loader.item ? loader.item.implicitWidth : maxEdge))
+  readonly property bool hasItemSize: loader.item && loader.item.implicitWidth > 0 && loader.item.implicitHeight > 0
+  readonly property bool hasError: !!(loader.item && loader.item.status === (root.gif ? AnimatedImage.Error : Image.Error))
+
+  implicitWidth: Math.min(maxEdge, Math.max(Style.space(96), hasItemSize ? loader.item.implicitWidth : Style.space(96)))
   implicitHeight: {
     var item = loader.item
-    if (!item || item.implicitWidth <= 0) return Style.space(96)
+    if (!hasItemSize) return Style.space(96)
     var h = item.implicitHeight * (implicitWidth / item.implicitWidth)
     return Math.min(maxEdge, Math.max(1, h))
   }
@@ -43,31 +47,53 @@ Item {
     sourceComponent: root.gif ? gifComp : stillComp
   }
 
+  Rectangle {
+    anchors.fill: parent
+    visible: root.hasError
+    color: Style.normalFillFor(Color.background, Color.accent)
+    border.width: 1
+    border.color: Color.popups.border
+    radius: Style.space(6)
+    Text {
+      anchors.centerIn: parent
+      text: "Media error"
+      color: Color.foreground
+      font.pixelSize: Style.font.caption
+    }
+  }
+
   MouseArea {
     anchors.fill: parent
     enabled: root.clickable
     cursorShape: Qt.PointingHandCursor
-    onClicked: root.clicked()
+    onClicked: {
+      if (root.hasError) root.loadFailed()
+      else root.clicked()
+    }
   }
 
   Component {
     id: stillComp
     Image {
+      anchors.fill: parent
       asynchronous: true
       smooth: true
       fillMode: Image.PreserveAspectFit
       source: root.source
+      onStatusChanged: if (status === Image.Error) root.loadFailed()
     }
   }
 
   Component {
     id: gifComp
     AnimatedImage {
+      anchors.fill: parent
       asynchronous: true
       cache: false
       fillMode: Image.PreserveAspectFit
       playing: root.playing && status === AnimatedImage.Ready
       source: root.source
+      onStatusChanged: if (status === AnimatedImage.Error) root.loadFailed()
     }
   }
 }
