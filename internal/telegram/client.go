@@ -68,6 +68,7 @@ type GotdClient struct {
 	log         zerolog.Logger
 
 	mu         sync.RWMutex
+	peers      map[int64]tg.InputPeerClass
 	client     *telegram.Client
 	dispatcher tg.UpdateDispatcher
 	cancel     context.CancelFunc
@@ -92,6 +93,7 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 		sessionPath: sessionPath,
 		log:         log.With().Str("component", "gotd").Logger(),
 		client:      client,
+		peers:       make(map[int64]tg.InputPeerClass),
 		dispatcher:  dispatcher,
 	}
 }
@@ -284,6 +286,7 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 		return nil, err
 	}
 	names := map[string]string{}
+	peers := make(map[int64]tg.InputPeerClass)
 	var raws []tg.DialogClass
 	var users []tg.UserClass
 	var chats []tg.ChatClass
@@ -296,14 +299,21 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 	for _, u := range users {
 		if x, ok := u.(*tg.User); ok {
 			names[fmt.Sprintf("tg:%d", x.ID)] = strings.TrimSpace(x.FirstName + " " + x.LastName)
+			if x.AccessHash != 0 {
+				peers[x.ID] = &tg.InputPeerUser{UserID: x.ID, AccessHash: x.AccessHash}
+			}
 		}
 	}
 	for _, c := range chats {
 		switch x := c.(type) {
 		case *tg.Chat:
 			names[fmt.Sprintf("tg:%d", x.ID)] = x.Title
+			peers[x.ID] = &tg.InputPeerChat{ChatID: x.ID}
 		case *tg.Channel:
 			names[fmt.Sprintf("tg:%d", x.ID)] = x.Title
+			if x.AccessHash != 0 {
+				peers[x.ID] = &tg.InputPeerChannel{ChannelID: x.ID, AccessHash: x.AccessHash}
+			}
 		}
 	}
 	out := make([]Dialog, 0, len(raws))
@@ -318,6 +328,9 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 		}
 		out = append(out, Dialog{ID: id, Name: names[fmt.Sprintf("tg:%d", id)], Unread: d.UnreadCount > 0, Timestamp: int64(d.TopMessage), IsGroup: isGroupPeer(d.Peer)})
 	}
+	g.mu.Lock()
+	g.peers = peers
+	g.mu.Unlock()
 	return out, nil
 }
 
@@ -326,7 +339,12 @@ func (g *GotdClient) Messages(ctx context.Context, conversationID int64, limit i
 	if limit <= 0 {
 		limit = 100
 	}
-	peer := &tg.InputPeerUser{UserID: conversationID}
+	g.mu.RLock()
+	peer := g.peers[conversationID]
+	g.mu.RUnlock()
+	if peer == nil {
+		return nil, fmt.Errorf("telegram peer %d is not available", conversationID)
+	}
 	res, err := g.client.API().MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{Peer: peer, Limit: limit})
 	if err != nil {
 		return nil, err
