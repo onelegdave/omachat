@@ -11,7 +11,7 @@ test:
 	go test -mod=vendor ./...
 
 test-ui:
-	node --test tests/model.test.cjs
+	node --test tests/model*.test.cjs
 	python3 tests/run-qml.py
 
 lint:

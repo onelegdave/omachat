@@ -147,3 +147,22 @@ replies during a newer pairing. No live account was unpaired to induce a failure
 The updated helper and QML were installed and matched the local build/source.
 After the shell restart, the existing account reconnected and a live inbox
 refresh succeeded with no pairing challenge.
+
+
+## Older-message pagination verification
+
+A read-only cursor check against the authorized self-chat fetched an initial
+five-message page and a second five-message page using the returned cursor ID
+and timestamp. All five records on the second page were distinct and older,
+and the cursor advanced. Counts and ordering were recorded without adding real
+message content or identifiers as repository fixtures.
+
+The new UI was tested separately with over 60 synthetic messages in actual QML.
+It preserved the visible message and pixel offset through pagination, incoming
+messages, and refresh. Stale replies, retries, overlapping pages, cursor stalls,
+and end-of-history behavior passed. The live check used small pages to validate
+the protocol without reading an unrelated conversation.
+
+The installed pagination UI matched the local QML and JavaScript sources.
+After installation and shell restart, the saved session reconnected and live
+inbox refresh succeeded without a pairing challenge in the observed status.

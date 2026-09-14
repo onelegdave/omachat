@@ -30,7 +30,7 @@ subsequently pushed to main. Later follow-ups are recorded below.
   text for rich-text rendering.
 - [x] Tie sync, recovery, browser subprocesses, and old account cache writes to
   cancellable contexts. Recovery observes the request deadline.
-- [x] Document the latest-60-message thread window. Pagination remains future work.
+- [x] Document the initial 60-message thread window. Older-history pagination was subsequently implemented; see below.
 - [x] Normalize affected user-facing strings to US English and remove em dashes.
 - [x] Guard delayed reaction errors against conversation changes.
 
@@ -134,4 +134,32 @@ implemented the change, and verified the UI.
 
 The helper and changed QML were installed and checked against the local files.
 The existing live pairing survived restart and inbox refresh passed. This
-unpair reporting follow-up is committed locally, without a new release.
+unpair reporting follow-up was pushed to main, without a new release.
+
+
+## Older-message pagination follow-up
+
+Threads now offer Load older messages using the helper's existing cursor ID and
+timestamp. Each request asks for 60 messages. Page merges deduplicate message
+and transaction IDs, preserve newer live records over older overlapping data,
+and retain loaded history during refresh. A new conversation resets the window.
+
+The QML list restores the visible message and its pixel offset after prepending
+history. Incoming events preserve that position; an intentional send scrolls to
+the end. Requests are serialized for older pages, and stale replies are rejected
+after refresh or conversation changes. Failures retain the cursor for retry.
+Repeated cursor pairs stop paging with an explanatory message; empty pages with
+advancing cursors remain pageable.
+
+Verification: 16 model tests, the existing QML suite, a dedicated real-list
+pagination suite, isolated helper-build checks, and manifest validation passed.
+The pagination suite exercises more than 60 synthetic messages and checks the
+visible message and pixel offset before and after updates. agy provided focused
+review and model regressions; the lead checked and strengthened coverage.
+A live self-chat test requested two five-message pages: the second returned five
+distinct older messages and an advancing cursor. No messages were sent for that
+test. UI rendering was inspected with synthetic content.
+
+The pagination UI was installed and matched the local sources. The helper
+reconnected after the shell restart and live inbox refresh passed. Pagination
+is committed locally pending publication.

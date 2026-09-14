@@ -115,7 +115,7 @@ Also revoke the device on your phone under **Messages → Device pairing**.
 - Reverse-engineered protocol (`libgm`). Google can break it without notice.
 - Pairing uses one Messages-for-web device slot.
 - RCS and end-to-end chats relay through your phone. The phone has to stay online.
-- Inbox of 50 conversations, with the latest 60 messages in each thread. Older-history pagination is not implemented.
+- Inbox of 50 conversations. Threads open with the latest 60 messages; **Load older messages** fetches earlier pages while keeping your reading position. Refresh retains loaded history. Switching conversations starts again with the latest page.
 - Incoming GIFs play in the thread. Pick a GIF to send the same way as a photo. Optional GIPHY search needs a personal API key in OmaChat Settings (gear in the header). Get a free key at developers.giphy.com, create an app, paste the key. It is stored in ~/.local/share/omachat/config.json, never shown back to the panel.
 - Voice notes: tap Rec to record (ffmpeg, not QtMultimedia), Play to preview, then send. Incoming voice plays with ffplay. Received video opens in the default player. Video calling is not in this release.
 

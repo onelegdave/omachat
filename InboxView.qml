@@ -60,6 +60,17 @@ Item {
   property var messages: []
   property var grouped: []
   property bool loadingMessages: false
+  property bool loadingOlder: false
+  property bool hasOlder: false
+  property bool historyExpanded: false
+  property bool historyCursorStalled: false
+  property string historyCursorID: ""
+  property double historyCursorTime: 0
+  property string historyError: ""
+  property var historyCursors: ({})
+  property int historyRequest: 0
+  property int viewportRevision: 0
+  property var pendingAnchor: null
   property string threadError: ""
   property var mediaPaths: ({})
   property var mediaRequests: ({})
@@ -114,7 +125,6 @@ Item {
     return n
   }
 
-  signal scrollRequested()
 
   onSettingsChanged: syncGiphyKey()
   onServiceChanged: syncGiphyKey()
@@ -137,6 +147,18 @@ Item {
     if (selectedConvID) saved[selectedConvID] = composer.text
     drafts = saved
     selectionGeneration++
+    historyRequest++
+    viewportRevision++
+    pendingAnchor = null
+    loadingOlder = false
+    hasOlder = false
+    historyExpanded = false
+    historyCursorStalled = false
+    loadingMessages = false
+    historyCursorID = ""
+    historyCursorTime = 0
+    historyError = ""
+    historyCursors = ({})
     stopPlayback()
     if (recording) stopRecording(false)
     discardPendingCapture()
@@ -161,20 +183,104 @@ Item {
     loadMessages()
   }
 
+  function captureViewport() {
+    if (pendingAnchor) return pendingAnchor
+    messageList.forceLayout()
+    for (var y = 1; y < messageList.height; y += 4) {
+      var index = messageList.indexAt(messageList.width / 2, messageList.contentY + y)
+      if (index < 0 || !grouped[index] || grouped[index].kind !== "msg") continue
+      var item = messageList.itemAtIndex(index)
+      if (item) return { key: grouped[index].key, offset: item.y - messageList.contentY }
+    }
+    return null
+  }
+
+  function displayMessages(next, followEnd) {
+    var anchor = followEnd ? null : captureViewport()
+    pendingAnchor = anchor
+    messages = next
+    grouped = Model.groupMessages(messages)
+    var revision = ++viewportRevision
+    var generation = selectionGeneration
+    Qt.callLater(function() {
+      if (revision !== viewportRevision || generation !== selectionGeneration) return
+      messageList.forceLayout()
+      if (followEnd) {
+        messageList.positionViewAtEnd()
+        messageList.forceLayout()
+        messageList.positionViewAtEnd()
+      }
+      else if (anchor) {
+        for (var i = 0; i < grouped.length; i++) {
+          if (grouped[i].key !== anchor.key) continue
+          messageList.positionViewAtIndex(i, ListView.Beginning)
+          messageList.forceLayout()
+          var item = messageList.itemAtIndex(i)
+          if (item) messageList.contentY = item.y - anchor.offset
+          break
+        }
+      }
+      pendingAnchor = null
+    })
+  }
+
+  function readHistoryCursor(res, older) {
+    var id = String(res.cursorID || "")
+    var time = Number(res.cursorTime || 0)
+    var key = JSON.stringify([id, time])
+    historyCursorStalled = false
+    hasOlder = res.hasMore === true && id !== ""
+    if (hasOlder && older && historyCursors[key]) {
+      hasOlder = false
+      historyCursorStalled = true
+      historyError = "Google repeated the history cursor. Refresh the conversation to try again."
+    }
+    historyCursorID = id
+    historyCursorTime = time
+    var seen = older ? Object.assign({}, historyCursors) : ({})
+    if (hasOlder) seen[key] = true
+    historyCursors = seen
+  }
+
   function loadMessages() {
     if (selectedConvID === "" || !service) return
     loadingMessages = true
+    loadingOlder = false
+    var request = ++historyRequest
     var target = selectedConvID
     var generation = selectionGeneration
-    service.call("messages", { conversationID: target, count: 60 }, function(ok, res) {
-      if (target !== selectedConvID || generation !== selectionGeneration) return
+    var source = service
+    source.call("messages", { conversationID: target, count: 60 }, function(ok, res) {
+      if (source !== service || target !== selectedConvID || generation !== selectionGeneration || request !== historyRequest) return
       loadingMessages = false
       if (!ok) { threadError = String(res); return }
       threadError = ""
-      messages = Model.refreshMessages(messages, res.messages || [])
-      grouped = Model.groupMessages(messages)
-      Qt.callLater(function() { root.scrollRequested() })
+      var initial = messages.length === 0
+      displayMessages(Model.mergePage(messages, res.messages || [], false), initial || messageList.atYEnd)
+      historyError = ""
+      if (!historyExpanded || historyCursorStalled) {
+        readHistoryCursor(res, false)
+      }
       markThreadRead()
+    })
+  }
+
+  function loadOlderMessages() {
+    if (!service || selectedConvID === "" || loadingMessages || loadingOlder || !hasOlder) return
+    loadingOlder = true
+    historyError = ""
+    var request = ++historyRequest
+    var target = selectedConvID
+    var generation = selectionGeneration
+    var source = service
+    source.call("messages", { conversationID: target, count: 60,
+      cursorID: historyCursorID, cursorTime: historyCursorTime }, function(ok, res) {
+      if (source !== service || target !== selectedConvID || generation !== selectionGeneration || request !== historyRequest) return
+      loadingOlder = false
+      if (!ok) { historyError = "Could not load older messages. Try again."; return }
+      displayMessages(Model.mergePage(messages, res.messages || [], true), false)
+      historyExpanded = true
+      readHistoryCursor(res, true)
     })
   }
 
@@ -200,16 +306,14 @@ Item {
     service.call("send", { conversationID: convID, text: text, tmpID: tmpID }, function(ok, res) {
       if (convID !== selectedConvID) return
       if (ok) { mergeMessage(res); return }
-      messages = Model.failSend(messages, tmpID)
-      grouped = Model.groupMessages(messages)
+      displayMessages(Model.failSend(messages, tmpID), messageList.atYEnd)
       threadError = String(res)
     })
   }
 
   function mergeMessage(msg) {
-    messages = Model.mergeMessage(messages, msg)
-    grouped = Model.groupMessages(messages)
-    Qt.callLater(function() { root.scrollRequested() })
+    var follow = messages.length === 0 || messageList.atYEnd || (msg.fromMe && msg.provisional)
+    displayMessages(Model.mergeMessage(messages, msg), follow)
   }
 
   function _withMedia(mediaID, value) {
@@ -517,7 +621,6 @@ Item {
       if (msg.conversationID !== root.selectedConvID) return
       root.mergeMessage(msg)
       if (root.panelOpen && !msg.fromMe) root.markThreadRead()
-      Qt.callLater(function() { root.scrollRequested() })
     }
     function onPaired() { root.selectedConvID = ""; root.drafts = ({}) }
   }
@@ -898,11 +1001,44 @@ Item {
       visible: root.selectedConvID !== ""
     }
 
-    ListView {
-      id: messageList
+    Row {
+      id: historyControls
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: threadSep.bottom
+      height: root.selectedConvID !== "" ? Style.space(40) : 0
+      spacing: Style.space(8)
+      visible: root.selectedConvID !== "" && root.messages.length > 0
+
+      Button {
+        objectName: "loadOlderButton"
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.hasOlder || root.loadingOlder
+        enabled: !root.loadingOlder && !root.loadingMessages
+        text: root.loadingOlder ? "Loading older messages..." : "Load older messages"
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        onClicked: root.loadOlderMessages()
+      }
+      Text {
+        objectName: "historyStatus"
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.max(0, parent.width - (parent.children[0].visible ? parent.children[0].width + parent.spacing : 0))
+        text: root.historyError || (!root.hasOlder && !root.loadingMessages ? "All available history loaded" : "")
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        color: root.historyError ? Color.urgent : root.dim
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
+      }
+    }
+
+    ListView {
+      id: messageList
+      objectName: "messageList"
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: historyControls.bottom
       anchors.bottom: attachmentBar.visible ? attachmentBar.top : composerRow.top
       anchors.leftMargin: Style.space(4)
       anchors.rightMargin: Style.space(4)
@@ -913,11 +1049,6 @@ Item {
       spacing: Style.space(2)
       model: root.grouped
       boundsBehavior: Flickable.StopAtBounds
-
-      Connections {
-        target: root
-        function onScrollRequested() { messageList.positionViewAtEnd() }
-      }
 
       delegate: Item {
         id: row

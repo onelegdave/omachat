@@ -198,6 +198,24 @@ function refreshMessages(current, fetched) {
   return out
 }
 
+// Older pages may overlap records already updated by live events. Keep the
+// current record on overlap, while still reconciling provisional send IDs.
+function mergePage(current, fetched, older) {
+  var out = current.slice()
+  for (var i = 0; i < fetched.length; i++) {
+    var incoming = fetched[i]
+    var preserve = false
+    if (older) {
+      for (var j = 0; j < out.length; j++) {
+        if (sameMessage(out[j], incoming) && !out[j].provisional) { preserve = true; break }
+      }
+    }
+    if (!preserve) out = mergeMessage(out, incoming)
+  }
+  out.sort(function(a, b) { return (a.timestamp || 0) - (b.timestamp || 0) })
+  return out
+}
+
 function isGif(mime, name, path) {
   var m = String(mime || "").toLowerCase()
   if (m === "image/gif") return true

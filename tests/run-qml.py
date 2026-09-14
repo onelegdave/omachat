@@ -27,6 +27,12 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     if result.returncode or "OMACHAT_QML_PASS" not in result.stdout or "OMACHAT_QML_FAIL" in result.stdout or "ERROR" in result.stdout:
         raise SystemExit(1)
 
+    (config / "shell.qml").write_text((repo / "tests/qml/pagination.qml").read_text())
+    result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+    print(result.stdout)
+    if result.returncode or "OMACHAT_PAGINATION_PASS" not in result.stdout or "OMACHAT_PAGINATION_FAIL" in result.stdout or "ERROR" in result.stdout:
+        raise SystemExit(1)
+
     build = config / "Build"
     build.mkdir()
     (build / "Service.qml").write_text((repo / "Service.qml").read_text())
