@@ -175,7 +175,12 @@ function mergeMessage(messages, message) {
     if (!sameMessage(old, message)) { out.push(old); continue }
     // A delayed send acknowledgement cannot replace a real phone event.
     if (message.provisional && !old.provisional) merged = old
-    else if (!merged.tmpID && old.tmpID) merged = Object.assign({}, merged, { tmpID: old.tmpID })
+    else {
+      var carry = {}
+      if (!merged.tmpID && old.tmpID) carry.tmpID = old.tmpID
+      if ((!merged.attachments || merged.attachments.length === 0) && old.attachments && old.attachments.length > 0) carry.attachments = old.attachments
+      if (Object.keys(carry).length > 0) merged = Object.assign({}, merged, carry)
+    }
   }
   out.push(merged)
   out.sort(function(a, b) { return (a.timestamp || 0) - (b.timestamp || 0) })

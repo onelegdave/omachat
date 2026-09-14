@@ -39,6 +39,13 @@ test('real updates keep their transaction identity and cannot cross conversation
  assert.equal(model.mergeMessage(merged,{...original,conversationID:'b'}).length,2);
 });
 
+test('metadata-free live update preserves an already rendered attachment', () => {
+ const image={id:'server',conversationID:'a',fromMe:true,timestamp:1,attachments:[{key:'tx',path:'/tmp/photo.jpg',isImage:true}]};
+ const update={id:'server',conversationID:'a',fromMe:true,timestamp:2,delivery:'sent'};
+ const merged=model.mergeMessage([image],update);
+ assert.equal(merged[0].attachments[0].path,'/tmp/photo.jpg');
+});
+
 test('generated transaction IDs have UUID format and distinguish consecutive sends', () => {
  const ids=new Set();
  for(let i=0;i<100;i++) {
