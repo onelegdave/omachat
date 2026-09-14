@@ -257,10 +257,9 @@ func (g *GotdClient) GetQRChannel(ctx context.Context) (<-chan QRChannelItem, er
 			// Deliver the transport error before closing. A non-blocking send can
 			// drop it when token refreshes filled the channel, leaving callers with
 			// the misleading "channel closed" error.
-			select {
-			case qrChan <- QRChannelItem{Event: QRChannelEventError, Error: sendErr}:
-			case <-ctx.Done():
-			}
+			// qrChan is buffered, so always preserve the underlying error even
+			// when the request context has already been canceled.
+			qrChan <- QRChannelItem{Event: QRChannelEventError, Error: sendErr}
 		}
 		close(qrChan)
 	}()
