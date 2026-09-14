@@ -19,6 +19,22 @@ type MockClient struct {
 	GetQRChannelFunc func(ctx context.Context) (<-chan QRChannelItem, error)
 	PingFunc         func(ctx context.Context) error
 	UnderlyingFunc   func() *telegram.Client
+	DialogsFunc      func(ctx context.Context, limit int) ([]Dialog, error)
+	MessagesFunc     func(ctx context.Context, conversationID int64, limit int) ([]Message, error)
+}
+
+func (m *MockClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
+	if m.DialogsFunc != nil {
+		return m.DialogsFunc(ctx, limit)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) Messages(ctx context.Context, conversationID int64, limit int) ([]Message, error) {
+	if m.MessagesFunc != nil {
+		return m.MessagesFunc(ctx, conversationID, limit)
+	}
+	return nil, nil
 }
 
 var _ Client = (*MockClient)(nil)

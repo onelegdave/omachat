@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -60,7 +61,7 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event), cf
 		configStore = appStore.NewConfigStore(paths.ConfigFile())
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Backend{
+	b := &Backend{
 		log:           log.With().Str("network", wire.NetworkTelegram).Logger(),
 		paths:         paths,
 		config:        configStore,
@@ -77,6 +78,11 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event), cf
 			Hint:    hintCredentialsRequired,
 		},
 	}
+	if paths != nil {
+		stored := loadStoredData(paths.TelegramStoreFile())
+		b.convs, b.order, b.messages = stored.Conversations, stored.Order, stored.Messages
+	}
+	return b
 }
 
 // SetConfig updates the configuration store for the backend.
@@ -603,6 +609,39 @@ func (b *Backend) Stop() {
 
 // Refresh performs a no-op refresh while unpaired.
 func (b *Backend) Refresh(ctx context.Context) error {
+	b.mu.RLock()
+	cli := b.client
+	b.mu.RUnlock()
+	reader, ok := cli.(ReadClient)
+	if !ok {
+		return nil
+	}
+	dialogs, err := reader.Dialogs(ctx, 50)
+	if err != nil {
+		return err
+	}
+	convs := mapDialogs(dialogs, 50)
+	msgs := make(map[string][]wire.Message)
+	order := make([]string, 0, len(convs))
+	for _, conv := range convs {
+		order = append(order, conv.ID)
+		id, _ := strconv.ParseInt(strings.TrimPrefix(conv.ID, "tg:"), 10, 64)
+		items, e := reader.Messages(ctx, id, 100)
+		if e != nil {
+			return e
+		}
+		msgs[conv.ID] = mapMessages(items, id)
+	}
+	b.mu.Lock()
+	b.convs, b.order, b.messages = make(map[string]wire.Conversation, len(convs)), order, msgs
+	for _, conv := range convs {
+		b.convs[conv.ID] = conv
+	}
+	snapshot := storedData{Conversations: b.convs, Order: b.order, Messages: b.messages}
+	b.mu.Unlock()
+	if b.paths != nil {
+		return saveStoredData(b.paths.TelegramStoreFile(), snapshot)
+	}
 	return nil
 }
 

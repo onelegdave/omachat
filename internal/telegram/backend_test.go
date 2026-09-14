@@ -475,6 +475,34 @@ func TestTelegramUnpairPreservesConfiguredHint(t *testing.T) {
 	}
 }
 
+func TestTelegramRefreshLoadsAndPersistsReadOnlyData(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	mock.DialogsFunc = func(context.Context, int) ([]Dialog, error) {
+		return []Dialog{{ID: 7, Name: "Alice", Preview: "hello", Timestamp: 20}}, nil
+	}
+	mock.MessagesFunc = func(context.Context, int64, int) ([]Message, error) {
+		return []Message{{ID: 2, ConversationID: 7, Text: "hello", Timestamp: 20}}, nil
+	}
+	b.SetClient(mock)
+	if err := b.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.Conversations(10); len(got) != 1 || got[0].ID != "tg:7" {
+		t.Fatalf("unexpected conversations: %+v", got)
+	}
+	data, err := os.ReadFile(paths.TelegramStoreFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "tg:7") {
+		t.Fatalf("persisted data missing conversation: %s", data)
+	}
+	reloaded := New(zerolog.Nop(), paths, nil)
+	if got := reloaded.Conversations(10); len(got) != 1 || got[0].ID != "tg:7" {
+		t.Fatalf("reload failed: %+v", got)
+	}
+}
+
 func TestStartPairingUnconfigured(t *testing.T) {
 	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
 	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")

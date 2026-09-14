@@ -1,11 +1,11 @@
 # Telegram Implementation Plan and Readiness Review
 
-## Status: Milestones 1-4 (MTProto Client and QR Pairing Backend) Complete (2026-09-14)
+## Status: Milestones 1-5 (MTProto Pairing and Read-only Sync) Complete (2026-09-14)
 - **Worktree**: `/home/onelegdave/Projects/omachat`
 - **Branch**: `feature/telegram`
 - **Human Owner / Maintainer**: OneLegDave
 - **MTProto Dependency**: `github.com/gotd/td v0.161.0`
-- **Review status**: Dependency vendoring, credential configuration, and the testable MTProto QR pairing backend are complete. Dialog sync, messaging RPCs, Telegram UI, and live device verification remain pending.
+- **Review status**: Dependency vendoring, credential configuration, MTProto QR pairing, and offline-tested read-only cache refresh are complete. Outbound messaging, media, and live device verification remain pending.
 
 ---
 
