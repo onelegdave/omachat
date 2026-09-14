@@ -1,5 +1,7 @@
 # WhatsApp service guide
 
+[Overview](../../README.md) · [Dependencies](../dependencies.md)
+
 OmaChat is a Native Omarchy Plugin. WhatsApp runs in the shell-owned
 `omachatd` helper through the vendored `whatsmeow` client. The helper is a child
 process of `omarchy-shell`; OmaChat does not install a systemd unit.
@@ -19,8 +21,8 @@ CGO and a standard C compiler such as gcc or clang.
 
 - QR pairing and reconnect handling with clear failure states.
 - Conversation and message synchronization with live incoming updates.
-- Text, image, GIF-file, sticker, and caption flows supported by the current
-  WhatsApp backend. Incoming stickers render as WebP image attachments.
+- Send text, images, GIF files, and captions. Incoming stickers render as
+  WebP image attachments; there is no dedicated outgoing sticker picker.
 - On-demand media downloads with bounded files and retry behavior.
 - View-once and ephemeral media are intentionally not cached or reopened.
 
@@ -44,6 +46,12 @@ Telegram (`telegram.session`, `telegram_store.json`, `media_telegram/`).
 Unpairing WhatsApp logs out the WhatsApp session and clears only WhatsApp
 state. It does not delete another network's credentials or cache.
 
+If the QR expires, retry from the WhatsApp tab. If the desktop was unlinked,
+scan a new QR code. Use the in-app unpair action before uninstalling, and
+check **WhatsApp > Linked devices** on your phone to remove any remaining
+device. Empty older-history pages can mean the phone has not supplied that
+history, rather than a download failure.
+
 Media downloads validate declared and actual sizes, use private cache paths,
 and avoid exposing untrusted filenames. Session and cache files are written
 with private permissions and atomic replacement where applicable.
@@ -53,7 +61,7 @@ with private permissions and atomic replacement where applicable.
 Build and test offline from the vendored dependencies:
 
 ```bash
-go build -mod=vendor ./cmd/omachatd
+make helper
 go test -mod=vendor ./...
 go test -race -mod=vendor -count=1 ./...
 make test-ui

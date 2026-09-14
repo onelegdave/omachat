@@ -1,9 +1,11 @@
 # OmaChat Code and Architecture Review
 
+Historical record. See the [current documentation](../README.md) for setup and service capabilities.
+
 Historical review of the initial implementation. See [FIX-VERIFICATION.md](FIX-VERIFICATION.md) and [LIVE-TEST-RESULTS.md](LIVE-TEST-RESULTS.md) for the fixes and current verification.
 
 Review date: 2026-09-14\
-Repository: [omachat](.)
+Repository: [omachat](../../README.md)
 
 ---
 
@@ -11,8 +13,8 @@ Repository: [omachat](.)
 
 OmaChat is well architected for the Omarchy desktop shell:
 - Protocol helper (`omachatd`) is cleanly owned by the shell as a child process via a private Unix domain socket (`$XDG_RUNTIME_DIR/omachat/daemon.sock`), avoiding unnecessary systemd user units.
-- Dependencies are vendored under [vendor/](vendor), and builds rely strictly on `go build -mod=vendor` without shipping compiled ELFs in git.
-- Strong security hardening: SSRF defense on avatar URLs via a custom dialer filtering loopback, RFC 1918, link-local, and CGNAT IP ranges; strict bounding on incoming attachments ([`download.go`](internal/daemon/download.go)); cache eviction limits; and safe file permissions (0600 / 0700).
+- Dependencies are vendored under [vendor/](../../vendor), and builds rely strictly on `go build -mod=vendor` without shipping compiled ELFs in git.
+- Strong security hardening: SSRF defense on avatar URLs via a custom dialer filtering loopback, RFC 1918, link-local, and CGNAT IP ranges; strict bounding on incoming attachments ([`download.go`](../../internal/daemon/download.go)); cache eviction limits; and safe file permissions (0600 / 0700).
 - Plugin manifest validation passes cleanly (`omarchy plugin validate .`).
 
 However, there are several concrete functional bugs, UI interaction bugs, and project convention issues that should be addressed.
@@ -22,7 +24,7 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ## 2. Critical Bugs and Broken Functionality
 
 ### 2.1 Broken Helper Build via GUI (`go build -C` flag ordering)
-- **Location**: [`Service.qml` (line 172)](Service.qml#L172)
+- **Location**: [`Service.qml` (line 172)](../../Service.qml#L172)
 - **Code**:
   ```qml
   buildProc.command = ["/usr/bin/go", "build", "-mod=vendor", "-C", root.pluginDir, "-o", root.helperPath, "./cmd/omachatd"]
@@ -41,7 +43,7 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ---
 
 ### 2.2 `PanelKeyCatcher` Hijacks Input from Text Fields
-- **Location**: [`Panel.qml` (line 85)](Panel.qml#L85), [`InboxView.qml`](InboxView.qml), [`SettingsView.qml`](SettingsView.qml)
+- **Location**: [`Panel.qml` (line 85)](../../Panel.qml#L85), [`InboxView.qml`](../../InboxView.qml), [`SettingsView.qml`](../../SettingsView.qml)
 - **Code**:
   ```qml
   PanelKeyCatcher {
@@ -58,24 +60,24 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
     }
   ```
 - **Issue**: `PanelKeyCatcher` runs with `Keys.priority: Keys.BeforeItem`, intercepting keystrokes before any child item receives them unless `blocked` is true. Currently, `blocked` only checks `composerFocus` and `linkConfirmOpen`. However:
-  1. `searchField` ("Hunt a thread" in [`InboxView.qml` lines 643-651](InboxView.qml#L643-L651)) does not update `composerFocus`.
-  2. `attachCaption` (attachment caption in [`InboxView.qml` line 1308](InboxView.qml#L1308)) does not update `composerFocus`.
-  3. `keyField` (GIPHY API key field in [`SettingsView.qml` line 210](SettingsView.qml#L210)) does not update `composerFocus`, and `composerFocus` is not defined on `SettingsView`.
+  1. `searchField` ("Hunt a thread" in [`InboxView.qml` lines 643-651](../../InboxView.qml#L643-L651)) does not update `composerFocus`.
+  2. `attachCaption` (attachment caption in [`InboxView.qml` line 1308](../../InboxView.qml#L1308)) does not update `composerFocus`.
+  3. `keyField` (GIPHY API key field in [`SettingsView.qml` line 210](../../SettingsView.qml#L210)) does not update `composerFocus`, and `composerFocus` is not defined on `SettingsView`.
 - **Impact**: While typing in the search bar, typing an attachment caption, or pasting/editing a GIPHY API key:
   - Typing `1`, `2`, or `3` immediately switches service tabs and exits Settings or closes the thread.
   - Typing `r` or `R` triggers a refresh.
   - Typing `j`, `k`, `h`, `l`, `x`, `Space`, or `Return` is intercepted by navigation and activation shortcuts.
 - **Fix**:
-  1. In [`Panel.qml`](Panel.qml#L85), set:
+  1. In [`Panel.qml`](../../Panel.qml#L85), set:
      ```qml
      blocked: root.settingsOpen || (bodyLoader.item && (bodyLoader.item.editorFocus === true || bodyLoader.item.linkConfirmOpen === true))
      ```
-  2. In [`InboxView.qml`](InboxView.qml), expose `readonly property bool editorFocus: composerFocus || (searchField && searchField.activeFocus) || (attachCaption && attachCaption.activeFocus)` and update `composerFocus` appropriately.
+  2. In [`InboxView.qml`](../../InboxView.qml), expose `readonly property bool editorFocus: composerFocus || (searchField && searchField.activeFocus) || (attachCaption && attachCaption.activeFocus)` and update `composerFocus` appropriately.
 
 ---
 
 ### 2.3 URL Truncation on Ampersands in `linkify()`
-- **Location**: [`Model.js` (lines 139-148)](Model.js#L139-L148)
+- **Location**: [`Model.js` (lines 139-148)](../../Model.js#L139-L148)
 - **Code**:
   ```javascript
   function linkify(raw) {
@@ -92,7 +94,7 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ---
 
 ### 2.4 Service Resolution Reactivity Failure in `BarWidget.qml`
-- **Location**: [`BarWidget.qml` (lines 9-11, 51-56)](BarWidget.qml#L9-L11)
+- **Location**: [`BarWidget.qml` (lines 9-11, 51-56)](../../BarWidget.qml#L9-L11)
 - **Code**:
   ```qml
   readonly property var chat: bar && bar.shell && typeof bar.shell.serviceFor === "function"
@@ -125,7 +127,7 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ## 3. Logic Quirks and Edge Cases
 
 ### 3.1 Permanent Media Lockout on Transient Network/Socket Errors
-- **Location**: [`InboxView.qml` (lines 202-215)](InboxView.qml#L202-L215)
+- **Location**: [`InboxView.qml` (lines 202-215)](../../InboxView.qml#L202-L215)
 - **Code**:
   ```qml
   function requestMedia(key, attempt) {
@@ -150,7 +152,7 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ---
 
 ### 3.2 `initialSync` Disregards Daemon Shutdown Context
-- **Location**: [`internal/daemon/daemon.go` (lines 160-183)](internal/daemon/daemon.go#L160-L183)
+- **Location**: [`internal/daemon/daemon.go` (lines 160-183)](../../internal/daemon/daemon.go#L160-L183)
 - **Code**:
   ```go
   func (d *Daemon) initialSync() {
@@ -172,7 +174,7 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ---
 
 ### 3.3 Context Timeout Mismatch During Automatic Re-Pair
-- **Location**: [`internal/daemon/server.go` (line 200)](internal/daemon/server.go#L200) vs [`internal/daemon/authretry.go` (line 138)](internal/daemon/authretry.go#L138)
+- **Location**: [`internal/daemon/server.go` (line 200)](../../internal/daemon/server.go#L200) vs [`internal/daemon/authretry.go` (line 138)](../../internal/daemon/authretry.go#L138)
 - **Issue**: In `server.go`, `dispatch()` sets a 60-second request deadline:
   ```go
   ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -190,17 +192,17 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ---
 
 ### 3.4 Composer Draft and Selection Loss on Opening Settings
-- **Location**: [`Panel.qml` (lines 236-242)](Panel.qml#L236-L242)
+- **Location**: [`Panel.qml` (lines 236-242)](../../Panel.qml#L236-L242)
 - **Issue**: Toggling `settingsOpen` switches `bodyLoader.sourceComponent` between `inboxView` and `settingsView`.
 - **Impact**: Switching components unloads and destroys `InboxView`. Any drafted message text in the composer, active search text, and selected conversation ID are lost. When returning from Settings, the user sees an unselected inbox.
 - **Fix**: Keep `inboxView` mounted and toggle visibility/stacking instead of re-creating the component, or save the draft and `selectedConvID` in parent properties.
 
 ---
 
-## 4. Project Conventions and Polish ([AGENTS.md](AGENTS.md))
+## 4. Project Conventions and Polish
 
 ### 4.1 Typo in Tooltip (`"unread fire"`)
-- **Location**: [`BarWidget.qml` (lines 75-77)](BarWidget.qml#L75-L77)
+- **Location**: [`BarWidget.qml` (lines 75-77)](../../BarWidget.qml#L75-L77)
 - **Code**:
   ```qml
   tooltipText: root.unread > 0
@@ -214,14 +216,14 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ### 4.2 Em Dashes in User-Facing Copy
 - **Rule**: `AGENTS.md`: *"US English in user-facing copy. No em dashes."*
 - **Occurrences**:
-  - [`cmd/omachatd/pair.go` (lines 25, 27)](cmd/omachatd/pair.go#L25):
+  - [`cmd/omachatd/pair.go` (lines 25, 27)](../../cmd/omachatd/pair.go#L25):
     - `by page script — they have to be copied...` -> replace with colon or comma.
     - `The easy way — read them straight...` -> replace with colon or hyphen.
-  - [`internal/wire/cookies.go` (line 38)](internal/wire/cookies.go#L38):
+  - [`internal/wire/cookies.go` (line 38)](../../internal/wire/cookies.go#L38):
     - `could not find any cookies — paste a JSON object...` -> replace with colon or semicolon.
-  - [`internal/daemon/daemon.go` (line 370)](internal/daemon/daemon.go#L370):
+  - [`internal/daemon/daemon.go` (line 370)](../../internal/daemon/daemon.go#L370):
     - `Google signed this device out — pair again` -> replace with colon or semicolon.
-  - [`internal/daemon/gaia.go` (lines 108, 118)](internal/daemon/gaia.go#L108):
+  - [`internal/daemon/gaia.go` (lines 108, 118)](../../internal/daemon/gaia.go#L108):
     - `missing required cookie(s): %s — copy them...` -> replace with semicolon or period.
     - `They expire quickly — re-copy them...` -> replace with period or semicolon.
 
@@ -230,16 +232,16 @@ However, there are several concrete functional bugs, UI interaction bugs, and pr
 ### 4.3 British/Commonwealth Spellings in User-Facing Strings
 - **Rule**: `AGENTS.md`: *"US English in user-facing copy. No em dashes."*
 - **Occurrences**:
-  - [`manifest.json` (line 40)](manifest.json#L40): `"label": "Normalise voice recording level"` -> change to `"Normalize voice recording level"`.
-  - [`cmd/omachatd/pair.go` (line 89)](cmd/omachatd/pair.go#L89): `"unrecognised arguments"` -> change to `"unrecognized arguments"`.
-  - [`internal/daemon/methods.go` (line 223)](internal/daemon/methods.go#L223) & [`internal/daemon/gaia.go` (line 39)](internal/daemon/gaia.go#L39): `"client not initialised"` -> change to `"client not initialized"`.
+  - [`manifest.json` (line 40)](../../manifest.json#L40): `"label": "Normalise voice recording level"` -> change to `"Normalize voice recording level"`.
+  - [`cmd/omachatd/pair.go` (line 89)](../../cmd/omachatd/pair.go#L89): `"unrecognised arguments"` -> change to `"unrecognized arguments"`.
+  - [`internal/daemon/methods.go` (line 223)](../../internal/daemon/methods.go#L223) & [`internal/daemon/gaia.go` (line 39)](../../internal/daemon/gaia.go#L39): `"client not initialised"` -> change to `"client not initialized"`.
 
 ---
 
 ## 5. Priority Action Items
 
-1. **Fix Helper Build Command**: Fix `-C` flag placement in [`Service.qml`](Service.qml#L172).
-2. **Fix `PanelKeyCatcher`**: Block key interception when typing in search, caption, or settings fields in [`Panel.qml`](Panel.qml#L85).
-3. **Fix Linkifier**: Prevent query parameter truncation on `&` in [`Model.js`](Model.js#L140).
+1. **Fix Helper Build Command**: Fix `-C` flag placement in [`Service.qml`](../../Service.qml#L172).
+2. **Fix `PanelKeyCatcher`**: Block key interception when typing in search, caption, or settings fields in [`Panel.qml`](../../Panel.qml#L85).
+3. **Fix Linkifier**: Prevent query parameter truncation on `&` in [`Model.js`](../../Model.js#L140).
 4. **Fix Service Resolution**: Ensure `BarWidget.qml` dynamically queries `bar.shell.serviceFor("onelegdave.omachat")`.
 5. **Fix Tooltip and Style Conventions**: Correct `"unread fire"`, remove em dashes, and standardize on US English.

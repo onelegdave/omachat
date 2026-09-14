@@ -1,5 +1,7 @@
 # OmaChat Code Review
 
+Historical record. See the [current documentation](../README.md) for setup and service capabilities.
+
 Historical review of the initial implementation. See [FIX-VERIFICATION.md](FIX-VERIFICATION.md) and [LIVE-TEST-RESULTS.md](LIVE-TEST-RESULTS.md) for the fixes and current verification.
 
 Review date: September 14, 2026\
@@ -10,7 +12,7 @@ The local checkout matched GitHub's HEAD when reviewed. This review identified 1
 
 ## 1. High: The panel's helper build always fails
 
-**Location:** [Service.qml, line 172](Service.qml#L172)
+**Location:** [Service.qml, line 172](../../Service.qml#L172)
 
 The build command places `-C` after `-mod=vendor`:
 
@@ -34,8 +36,8 @@ buildProc.command = ["/usr/bin/go", "-C", root.pluginDir, "build", "-mod=vendor"
 
 ## 2. High: Unpairing can recreate deleted credentials
 
-**Location:** [internal/daemon/methods.go, line 314](internal/daemon/methods.go#L314)\
-**Related code:** [internal/daemon/daemon.go, line 196](internal/daemon/daemon.go#L196)
+**Location:** [internal/daemon/methods.go, line 314](../../internal/daemon/methods.go#L314)\
+**Related code:** [internal/daemon/daemon.go, line 196](../../internal/daemon/daemon.go#L196)
 
 `Unpair()` deletes the session file but leaves `d.paired` true and retains the authentication data. The periodic maintenance save or shutdown subsequently calls `saveSession()`, which can write those credentials back to disk.
 
@@ -45,7 +47,7 @@ A local probe using synthetic credentials reproduced a session loading as paired
 
 ## 3. High: Session saving races with cookie updates
 
-**Location:** [internal/store/store.go, line 108](internal/store/store.go#L108)
+**Location:** [internal/store/store.go, line 108](../../internal/store/store.go#L108)
 
 `SaveSession()` JSON-encodes the live authentication object. Meanwhile, libgm can update its cookies map when processing HTTP responses. The encoder does not acquire `AuthData.CookiesLock`, so it reads the map concurrently with those writes.
 
@@ -55,8 +57,8 @@ A targeted race-enabled probe reproduced data races between `SaveSession()` and 
 
 ## 4. Medium: Re-pairing breaks attachment downloads until restart
 
-**Location:** [internal/store/store.go, line 125](internal/store/store.go#L125)\
-**Related code:** [internal/daemon/media.go, line 295](internal/daemon/media.go#L295)
+**Location:** [internal/store/store.go, line 125](../../internal/store/store.go#L125)\
+**Related code:** [internal/daemon/media.go, line 295](../../internal/daemon/media.go#L295)
 
 `ClearSession()` removes the entire media directory. That directory is created during daemon startup, but it is not recreated when pairing again in the same process. Subsequent attachment writes fail.
 
@@ -70,7 +72,7 @@ write media: open .../media/...png: no such file or directory
 
 ## 5. Medium: Drafts carry over to another recipient
 
-**Location:** [InboxView.qml, line 129](InboxView.qml#L129)
+**Location:** [InboxView.qml, line 129](../../InboxView.qml#L129)
 
 `selectConversation()` changes the selected recipient and clears the message list, but it neither clears the composer text nor saves drafts per conversation. Text written for one person therefore remains ready to send to the next selected person. Attachment captions also persist across conversation changes.
 
@@ -80,7 +82,7 @@ This finding follows from the conversation-selection and composer code; it was n
 
 ## 6. Medium: Incoming messages can replace outgoing bubbles
 
-**Location:** [InboxView.qml, line 484](InboxView.qml#L484)
+**Location:** [InboxView.qml, line 484](../../InboxView.qml#L484)
 
 Pending-message reconciliation checks whether an existing outgoing bubble has the same text as an event, but does not check whether that event is itself outgoing:
 
@@ -96,7 +98,7 @@ A JavaScript probe reproduced an incoming `OK` replacing a pending outgoing `OK`
 
 ## 7. Medium: Older message history is inaccessible
 
-**Location:** [InboxView.qml, line 149](InboxView.qml#L149)
+**Location:** [InboxView.qml, line 149](../../InboxView.qml#L149)
 
 The UI requests the latest 60 messages and replaces the thread with that page. It ignores the pagination cursor and `hasMore` information returned by the daemon. There is no older-page loading path, despite the README advertising full thread history.
 
@@ -104,8 +106,8 @@ The UI requests the latest 60 messages and replaces the thread with that page. I
 
 ## 8. Medium: Refresh does not refresh the inbox from Google
 
-**Location:** [Service.qml, line 70](Service.qml#L70)\
-**Related code:** [internal/daemon/methods.go, line 41](internal/daemon/methods.go#L41) and [line 189](internal/daemon/methods.go#L189)
+**Location:** [Service.qml, line 70](../../Service.qml#L70)\
+**Related code:** [internal/daemon/methods.go, line 41](../../internal/daemon/methods.go#L41) and [line 189](../../internal/daemon/methods.go#L189)
 
 `refreshConversations()` calls the daemon's `conversations` method, which returns only its cached list. It does not invoke the separate `refresh` method that fetches conversations from the phone. Consequently, the manual Refresh action cannot repair a stale inbox, although refreshing an open thread separately fetches its messages.
 
@@ -113,7 +115,7 @@ The UI requests the latest 60 messages and replaces the thread with that page. I
 
 ## 9. Medium: Failed image downloads become stuck
 
-**Location:** [InboxView.qml, line 202](InboxView.qml#L202)
+**Location:** [InboxView.qml, line 202](../../InboxView.qml#L202)
 
 `requestMedia()` inserts an empty entry in `mediaPaths` before requesting an attachment. On failure, the entry remains. Subsequent initial attempts return immediately because the key is already present. Reopening or refreshing a thread within the same view does not reset this state.
 
@@ -123,7 +125,7 @@ A JavaScript probe simulated a transient failure and confirmed that two attempts
 
 ## 10. Medium: Links lose query parameters after an ampersand
 
-**Location:** [Model.js, line 138](Model.js#L138)
+**Location:** [Model.js, line 138](../../Model.js#L138)
 
 `linkify()` escapes HTML before matching URLs. Escaping changes `&` to `&amp;`, while the URL regular expression stops at `&`.
 

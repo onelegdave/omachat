@@ -1,5 +1,7 @@
 # OmaChat live test results
 
+Historical record. See the [current documentation](../README.md) for setup and service capabilities.
+
 Date: 2026-09-14
 
 The user authorized live pairing, revocation, and message tests to their own

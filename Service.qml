@@ -248,7 +248,7 @@ Item {
         var tail = root.buildLog.trim()
         root.helperError = tail !== ""
           ? "Build failed (exit " + code + "):\n" + tail
-          : "Build failed (exit " + code + "). Install Go with: omarchy pkg add go. WhatsApp needs a C compiler (gcc or clang) because the helper links mattn/go-sqlite3 with CGO."
+          : "Build failed (exit " + code + "). The shared helper needs Go and a C compiler (gcc or clang) for all services. You can install missing tools yourself with: omarchy pkg add go gcc. OmaChat never installs dependencies."
       }
     }
   }

@@ -1,5 +1,7 @@
 # OmaChat v0.3.0
 
+Historical record. See the [current documentation](../README.md) for setup and service capabilities.
+
 OmaChat now supports Telegram alongside Google Messages and WhatsApp.
 
 ## Highlights

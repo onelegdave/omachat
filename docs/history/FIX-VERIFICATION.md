@@ -1,5 +1,7 @@
 # OmaChat review fixes and verification
 
+Historical record. See the [current documentation](../README.md) for setup and service capabilities.
+
 Date: 2026-09-14
 
 The review and image fixes were published in v0.1.1. The reconnect fix was

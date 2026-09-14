@@ -1,5 +1,7 @@
 # OmaChat v0.3.1
 
+Historical record. See the [current documentation](../README.md) for setup and service capabilities.
+
 This patch release restores offline buildability for the vendored Telegram
 client by including the required `gotd/td/bin` package.
 

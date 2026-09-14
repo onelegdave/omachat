@@ -1,5 +1,7 @@
 # OmaChat review audit
 
+Historical record. See the [current documentation](../README.md) for setup and service capabilities.
+
 Historical review of the initial implementation. See [FIX-VERIFICATION.md](FIX-VERIFICATION.md) and [LIVE-TEST-RESULTS.md](LIVE-TEST-RESULTS.md) for the fixes and current verification.
 
 Date: 2026-09-14\

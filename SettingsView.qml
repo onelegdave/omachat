@@ -272,7 +272,7 @@ Flickable {
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: "Default Omarchy does not ship a Go compiler. Install it yourself with omarchy pkg add go, then press Build helper. OmaChat will not apt-get your life."
+      text: "All services share a helper that needs Go and a C compiler (gcc or clang) to build. If you want to use OmaChat, install missing tools yourself, then press Build helper. For example: omarchy pkg add go gcc. Build helper only compiles vendored source; OmaChat never installs dependencies."
       color: root.copyColor
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.body)
@@ -290,7 +290,7 @@ Flickable {
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: "Open messages.google.com/web in Chromium at least once. A generic Google login is not enough. The cookie Google actually cares about is issued there."
+      text: "For Google Messages, open messages.google.com/web in your selected Chromium-family browser first. Browser pairing needs sqlite3, secret-tool (libsecret), and an unlocked desktop keyring. Install missing tools yourself only if you choose to use this service."
       color: root.copyColor
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.body)
@@ -326,7 +326,7 @@ Flickable {
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: "Record and playback need the full ffmpeg package (ffmpeg and ffplay). Omarchy only ships ffmpegthumbnailer. Optional. omarchy pkg add ffmpeg if you want it."
+      text: "Google Messages and Telegram voice notes need ffmpeg and ffplay. If you want voice notes, you can install them yourself with omarchy pkg add ffmpeg. Text and photos work without them. WhatsApp voice notes are unavailable. OmaChat never installs dependencies."
       color: root.copyColor
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.body)
@@ -344,7 +344,7 @@ Flickable {
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: "Google Messages, WhatsApp, and Telegram are available as independent services. Each service has its own pairing, session, cache, and composer drafts."
+      text: "QR pairing needs qrencode, which you can install yourself if you want to link a service. WhatsApp links through Linked devices on your phone. For Telegram, create your own API credentials at my.telegram.org, run python3 scripts/configure-telegram.py from the plugin folder, then restart the shell before pairing. The script needs Python 3. Each service has its own session, cache, and drafts. OmaChat never installs tools or creates accounts for you."
       color: root.copyColor
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.body)

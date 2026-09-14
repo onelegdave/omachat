@@ -1,5 +1,7 @@
 # OmaChat v0.2.0
 
+Historical record. See the [current documentation](../README.md) for setup and service capabilities.
+
 OmaChat v0.2.0 adds native WhatsApp support alongside Google Messages, featuring
 dual-network isolation, QR pairing, inbound stickers, and persisted media.
 

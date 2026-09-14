@@ -15,7 +15,7 @@ credential or protocol bugs.
 - WhatsApp device store: `~/.local/share/omachat/whatsapp.db` (0600 from creation)
 - WhatsApp chat cache: `~/.local/share/omachat/whatsapp_store.json` (0600)
 - Telegram session and chat cache: `~/.local/share/omachat/telegram.session` and `telegram_store.json` (0600)
-- Config (chosen browser profile): `~/.local/share/omachat/config.json` (0600)
+- Config (browser profile, GIPHY key, Telegram API credentials): `~/.local/share/omachat/config.json` (0600)
 - Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, and `media_telegram/`
 - Control socket: `$XDG_RUNTIME_DIR/omachat/daemon.sock` (0600)
 

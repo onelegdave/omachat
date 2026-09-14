@@ -1,5 +1,6 @@
 # Build output at the repository root. Keep vendored packages under version control.
 /bin/
+/AGENTS.md
 *.sock
 session.json
 config.json
