@@ -204,6 +204,15 @@ func (b *Backend) Start(ctx context.Context) error {
 		b.setState(wire.StateDisconnected, "restore session: "+startErr.Error())
 		return nil
 	}
+	// A successful client.Start means the persisted session is authorized and
+	// the transport is ready. Publish the connected state and hydrate the local
+	// inbox before the panel asks for conversations.
+	b.setState(wire.StateConnected, "")
+	syncCtx, syncCancel := context.WithTimeout(b.ctx, 30*time.Second)
+	if err := b.Refresh(syncCtx); err != nil {
+		b.log.Warn().Err(err).Msg("Telegram initial dialog refresh failed")
+	}
+	syncCancel()
 	return nil
 }
 

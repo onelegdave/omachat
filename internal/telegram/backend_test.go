@@ -110,8 +110,8 @@ func TestBackendStartWithSession(t *testing.T) {
 	}
 
 	st := b.Status()
-	if st.State != wire.StateConnecting {
-		t.Errorf("expected state %q when session exists, got %q", wire.StateConnecting, st.State)
+	if st.State != wire.StateConnected {
+		t.Errorf("expected state %q when session exists, got %q", wire.StateConnected, st.State)
 	}
 }
 
@@ -170,8 +170,8 @@ func TestBackendStartWithSessionRestoresViaAbstraction(t *testing.T) {
 	if !startCalled {
 		t.Error("expected mock client Start to be called during session restore")
 	}
-	if b.Status().State != wire.StateConnecting {
-		t.Errorf("expected state %q, got %q", wire.StateConnecting, b.Status().State)
+	if b.Status().State != wire.StateConnected {
+		t.Errorf("expected state %q, got %q", wire.StateConnected, b.Status().State)
 	}
 }
 
@@ -459,8 +459,8 @@ func TestTelegramUnpairPreservesConfiguredHint(t *testing.T) {
 	if err := b.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if b.Status().State != wire.StateConnecting {
-		t.Fatalf("expected StateConnecting with session, got %s", b.Status().State)
+	if b.Status().State != wire.StateConnected {
+		t.Fatalf("expected StateConnected with session, got %s", b.Status().State)
 	}
 
 	if err := b.Unpair(ctx); err != nil {
