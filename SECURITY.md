@@ -53,3 +53,6 @@ requests, and changing token-dictionary entries can alter WhatsApp wire indexes.
 Track upstream fixes and update the vendored dependencies when they are
 available. User credentials remain local under `~/.local/share/omachat/` and are
 never committed.
+
+Upstream tracking: [mautrix/gmessages#94](https://github.com/mautrix/gmessages/issues/94)
+and [whatsmeow#1266](https://github.com/tulir/whatsmeow/issues/1266).
