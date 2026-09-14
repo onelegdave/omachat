@@ -54,6 +54,9 @@ Item {
     function onStatusWAChanged() {
       root.syncQR()
     }
+    function onStatusTGChanged() {
+      root.syncQR()
+    }
   }
 
   Component.onCompleted: root.syncQR()
