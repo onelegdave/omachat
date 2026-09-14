@@ -410,7 +410,7 @@ Panel {
             if (root.service && root.service.building)
               return "Compiling omachatd from this plugin folder. No extra downloads."
             if (needGo)
-              return "OmaChat talks to Google Messages and WhatsApp through a small helper. It is not on a default Omarchy install. Install Go yourself, then come back and build. WhatsApp also needs a C compiler (gcc or clang) for sqlite."
+              return "OmaChat is a Native Omarchy Plugin for Google Messages, WhatsApp, and Telegram. The helper is not bundled. Install Go yourself, then build it here. WhatsApp also needs a C compiler (gcc or clang) for sqlite."
             if (canBuild)
               return "Go is installed. Build omachatd from the files in this plugin. That happens once. WhatsApp linking uses CGO and needs gcc or clang."
             return "The protocol helper runs as a child of the Omarchy shell."

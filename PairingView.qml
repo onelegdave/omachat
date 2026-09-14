@@ -97,7 +97,7 @@ Item {
         if (root.isTelegram) {
           if (root.isQR) return "Open Telegram on your phone, go to Settings, Devices, Link Desktop Device, then scan this QR code."
           if (root.isError) return root.status && root.status.hint ? root.status.hint : ""
-          if (root.status && root.status.state === "connected") return "Telegram is connected. Chat synchronization will be enabled in a later milestone."
+          if (root.status && root.status.state === "connected") return "Telegram is connected. Chats, media, and voice notes are ready."
           return root.status && root.status.hint ? root.status.hint : "Configure Telegram API credentials before pairing."
         }
         if (root.isWhatsApp) {

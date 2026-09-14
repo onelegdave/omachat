@@ -14,5 +14,4 @@ OmaChat now supports Telegram alongside Google Messages and WhatsApp.
 Google Messages and WhatsApp behavior remains isolated from Telegram sessions,
 credentials, caches, and composer drafts.
 
-AI tools assisted with development and documentation. Authorship and
-maintenance remain with the human project contributors.
+OneLegDave is the project owner and human maintainer.

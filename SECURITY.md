@@ -1,8 +1,8 @@
 # Security
 
-This plugin talks to Google Messages and WhatsApp, reads browser cookies once at Google
-pairing time, pairs WhatsApp via QR code, and decrypts message content on this
-machine so the bar can show it.
+This Native Omarchy Plugin talks to Google Messages, WhatsApp, and Telegram. It
+reads browser cookies once at Google pairing time, pairs WhatsApp and Telegram
+through their QR flows, and keeps message content on this machine.
 
 ## Report a vulnerability
 
@@ -14,8 +14,9 @@ credential or protocol bugs.
 - Pairing credentials: `~/.local/share/omachat/session.json` (0600)
 - WhatsApp device store: `~/.local/share/omachat/whatsapp.db` (0600 from creation)
 - WhatsApp chat cache: `~/.local/share/omachat/whatsapp_store.json` (0600)
+- Telegram session and chat cache: `~/.local/share/omachat/telegram.session` and `telegram_store.json` (0600)
 - Config (chosen browser profile): `~/.local/share/omachat/config.json` (0600)
-- Attachment cache: `~/.cache/omachat/media/` and `~/.cache/omachat/media_whatsapp/`
+- Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, and `media_telegram/`
 - Control socket: `$XDG_RUNTIME_DIR/omachat/daemon.sock` (0600)
 
 Directories are 0700. The socket is only reachable by your account.
@@ -30,7 +31,8 @@ Directories are 0700. The socket is only reachable by your account.
   for the one-time `go build` of the helper.
 - Cookie values are not logged. Errors name which cookie is missing.
 - View-once and ephemeral WhatsApp media are omitted from disk persistence and cannot be reopened or redownloaded.
-- Dual-network isolation: Google Messages and WhatsApp maintain separate credential stores, database files, and cache directories. Unpairing one network never deletes or exposes files belonging to the other.
+- Telegram self-destructing media is omitted from disk persistence and cannot be reopened or redownloaded.
+- Google Messages, WhatsApp, and Telegram maintain separate credential stores, databases, sessions, and cache directories. Unpairing one network never deletes or exposes files belonging to another.
 
 ## Accepted
 

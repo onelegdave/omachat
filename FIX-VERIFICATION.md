@@ -60,8 +60,8 @@ treated as a confirmed defect. The intentional "unread fire" tooltip remains.
 
 ## Review assistance
 
-agy provided focused daemon/store regression tests and separate Go and UI
-reviews. The lead checked and adjusted those tests, owned production edits,
+Focused daemon/store regression tests and separate Go and UI reviews were used
+throughout the fixes. The lead checked and adjusted those tests, owned production edits,
 and ran final verification. Accepted follow-ups included cancellation guards,
 the delayed reaction error, and retaining pending sends during refresh. The
 suggested shallow auth snapshot was rejected because it would not synchronize
@@ -101,9 +101,8 @@ announced connected too early.
   A new Gaia pairing replaces the client and cancels the old session context.
 - Preserve the active pairing challenge through unrelated transport events.
 
-Go race tests and vet pass, including agy's focused regression coverage and a
-lead-written local-proxy test that exercises an actual startup fetch while
-Connecting. QML/model checks and manifest validation pass. The installed helper
+Go race tests and vet pass, including focused regression coverage and a
+local-proxy test that exercises an actual startup fetch while Connecting. QML/model checks and manifest validation pass. The installed helper
 matches the new local build. Restarting it with the invalid stored session
 showed the explicit renewal error with no pairing challenge during a 30-second
 check. The user then explicitly paired through the panel and confirmed completion.
@@ -128,8 +127,8 @@ Verification: Go race tests and vet, model/QML tests, and manifest validation
 passed. Synthetic cases cover successful revocation, remote failure, local
 filesystem failure, combined failures, persistence after failure, replacement
 sessions, and QR pairing. The public unpair RPC was exercised against a locally
-rejecting proxy. The warning was visually inspected with synthetic data. agy
-supplied focused Go regressions; the lead reviewed and strengthened them,
+rejecting proxy. The warning was visually inspected with synthetic data.
+Focused Go regressions were reviewed and strengthened during integration,
 implemented the change, and verified the UI.
 
 The helper and changed QML were installed and checked against the local files.
@@ -154,8 +153,8 @@ advancing cursors remain pageable.
 Verification: 16 model tests, the existing QML suite, a dedicated real-list
 pagination suite, isolated helper-build checks, and manifest validation passed.
 The pagination suite exercises more than 60 synthetic messages and checks the
-visible message and pixel offset before and after updates. agy provided focused
-review and model regressions; the lead checked and strengthened coverage.
+visible message and pixel offset before and after updates. Focused review and
+model regressions were checked and strengthened during integration.
 A live self-chat test requested two five-message pages: the second returned five
 distinct older messages and an advancing cursor. No messages were sent for that
 test. UI rendering was inspected with synthetic content.

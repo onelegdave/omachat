@@ -2,19 +2,23 @@
 
 Version **0.3.1**. See the [GitHub release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.1) or the local [release notes](RELEASE-0.3.1.md).
 
-Chat from the Omarchy bar for Google Messages, WhatsApp, and Telegram. OmaChat provides conversation lists, paginated history, inline media, voice notes, static WebP stickers, dual-network isolation, and a keyboard-friendly composer.
+OmaChat is a Native Omarchy Plugin for Google Messages, WhatsApp, and Telegram. It provides conversation lists, paginated history, inline media, voice notes, static WebP stickers, isolated service sessions, and a keyboard-friendly composer.
 
 ![OmaChat inbox with fake demo contacts](preview.png)
 
 The preview uses invented names. Real numbers, messages, and photos stay off GitHub.
 
-This is a native Omarchy shell plugin. `omarchy plugin add` is the install. The protocol helper is a child process of `omarchy-shell`, not a systemd user unit.
+This is a Native Omarchy Plugin. `omarchy plugin add` is the install. The protocol helper is a child process of `omarchy-shell`, not a systemd user unit.
+
+Service-specific setup and implementation notes are in the [Telegram service
+guide](TELEGRAM-IMPLEMENTATION.md) and [WhatsApp service guide](WHATSAPP-IMPLEMENTATION.md).
+Google Messages setup is documented below because it is the original service.
 
 ## Features
 
-- **Google Messages and WhatsApp:** Switch between networks with dedicated tabs in one bar panel.
+- **Three independent services:** Switch between Google Messages, WhatsApp, and Telegram with dedicated tabs in one plugin panel.
 - **Telegram:** Pair with Telegram through its MTProto QR flow, sync chats and messages, send text, photos, captions, and voice notes, and receive photos, voice notes, and static WebP stickers.
-- **Dual-network isolation:** Independent session stores, credentials, media directories, and composer drafts. Actions or unpairing on one network never affect the other.
+- **Service isolation:** Independent session stores, credentials, media directories, and composer drafts. Actions or unpairing on one service never affect another.
 - **QR pairing for WhatsApp:** Explicit QR code pairing directly in the panel using WhatsApp Linked Devices on your phone.
 - **Inbound stickers:** Incoming WhatsApp stickers render inline as image attachments and persist in local storage.
 - **Telegram media limits:** Animated TGS/video stickers are reported as unsupported. Telegram self-destructing media is never cached.
@@ -31,19 +35,19 @@ On an Omarchy desktop with the Quickshell plugin system:
 omarchy plugin add https://github.com/onelegdave/omachat --enable
 ```
 
-Open the bar icon. If the helper is missing, the panel tells you. Go is not on a default Omarchy install. You install it; OmaChat does not.
+Open the plugin from the Omarchy bar. If the helper is missing, the panel explains what is needed. OmaChat does not install dependencies or run package-manager commands for you.
 
-The helper is **not** in git and is **not** downloaded. The panel will say so and wait. **Go is not part of a default Omarchy install.** If you want OmaChat to talk to Google Messages or WhatsApp, install Go yourself, then press **Build helper**. That compiles `omachatd` from this repo (`vendor/`, no extra module download). WhatsApp linking also needs a C compiler (`gcc` or `clang`) because the helper uses CGO sqlite:
+The helper is **not** in git and is **not** downloaded. The panel will say so and wait. **Go is not part of a default Omarchy install.** If you choose to build the helper for any service, install Go yourself, then press **Build helper**. That compiles `omachatd` from this repo (`vendor/`, with no module download). WhatsApp linking also needs a C compiler (`gcc` or `clang`) because the helper uses CGO sqlite:
 
 ```bash
 omarchy pkg add go
 ```
 
-Package: [extra/go](https://archlinux.org/packages/extra/x86_64/go/). You choose whether to install it. Nothing is installed for you.
+Package: [extra/go](https://archlinux.org/packages/extra/x86_64/go/). This is an optional user choice. OmaChat never installs it.
 
 ## What a default Omarchy install already has
 
-These are in the Omarchy ISO / base set. OmaChat uses them as-is:
+These are commonly available on an Omarchy desktop. OmaChat uses them as-is and does not install or update them:
 
 | Need | Tool | Default Omarchy |
 |------|------|-----------------|
@@ -54,7 +58,16 @@ These are in the Omarchy ISO / base set. OmaChat uses them as-is:
 | QR pairing fallback | `qrencode` | Yes |
 | Cookie DB / keyring | `sqlite3`, `secret-tool` | Yes |
 
-You still have to pair each network yourself. For Google, open [https://messages.google.com/web](https://messages.google.com/web) in Chromium at least once, then **Pair with Google** in the panel. For WhatsApp, open the WhatsApp tab and **Use a QR code**, then scan it from **Linked devices** on your phone. The helper does not pair automatically.
+You still choose, install, and pair each service yourself. For Google, open [https://messages.google.com/web](https://messages.google.com/web) in Chromium at least once, then **Pair with Google** in the panel. For WhatsApp, open the WhatsApp tab and **Use a QR code**, then scan it from **Linked devices** on your phone. For Telegram, configure your own API credentials, then choose **Pair with Telegram** and scan its QR code. The helper does not pair automatically.
+
+| Service | User-provided setup | Tools used by that service |
+| --- | --- | --- |
+| Google Messages | Chromium-family browser signed in to Messages; phone online | `sqlite3` and `secret-tool` for browser cookies |
+| WhatsApp | Phone with **Linked devices** available; phone online | `gcc` or `clang` for the CGO SQLite build |
+| Telegram | `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org); Telegram app for QR linking | `ffmpeg` and `ffplay` for voice notes |
+
+The panel reports a missing tool and waits for you to decide whether to install
+it. OmaChat never installs, updates, or downloads a dependency on your behalf.
 
 ## Optional extras (you choose)
 
@@ -70,13 +83,21 @@ Package: [extra/ffmpeg](https://archlinux.org/packages/extra/x86_64/ffmpeg/). Te
 
 ### Pairing
 
-Click the bar icon and press **Pair with Google**. The helper reads Google Messages cookies from a Chromium-family browser profile you are already signed in to. Your phone shows several emoji; tap the one that matches.
+Open the plugin and press **Pair with Google**. The helper reads Google Messages cookies from a Chromium-family browser profile you are already signed in to. Your phone shows several emoji; tap the one that matches.
 
 You must have opened [https://messages.google.com/web](https://messages.google.com/web) in that browser at least once. Signing in to Google generally is not enough: the `OSID` cookie is issued by messages.google.com itself.
 
 **Use a QR code** remains available for older phones that still have a QR scanner under Device pairing. Scan it only with that scanner. The phone camera opens Google's help page (`support.google.com/messages`) and does not pair. Newer Messages builds removed the scanner; use **Pair with Google** on those.
 
 On the WhatsApp tab, **Use a QR code** is the pairing path. Open WhatsApp on your phone, **Linked devices**, **Link a device**, and scan the code shown in the panel. Do not scan it with the ordinary camera app.
+
+On the Telegram tab, first create an API application at
+[my.telegram.org](https://my.telegram.org). In a terminal in this checkout,
+run `python3 scripts/configure-telegram.py` and enter the `api_id` and
+`api_hash` yourself. OmaChat stores them in the private config file, then the
+**Pair with Telegram** button shows a QR code. In Telegram, open **Settings >
+Devices > Link Desktop Device** and scan it. A Telegram session is separate
+from the Google and WhatsApp sessions.
 
 Google credentials land in `~/.local/share/omachat/session.json` (mode `0600`) after pairing actually completes. WhatsApp device keys land in `~/.local/share/omachat/whatsapp.db` (mode `0600` from creation) plus a private chat cache `whatsapp_store.json`.
 
@@ -87,14 +108,14 @@ OmaChat never starts pairing automatically during startup or authentication reco
 Omarchy's shell is one Quickshell process. It also owns the bar, notifications, and the lock screen. Embedding `messages.google.com` with Qt WebEngine aborts that process. QtMultimedia camera backends have the same class of crash. So:
 
 - UI is QML against Omarchy's `qs.Ui` / `qs.Commons` kit (`Panel`, `BarWidget`, `PanelHero`, live theme colors)
-- Protocol work runs in `omachatd`, started and restarted by the plugin `service`. Google and WhatsApp share that helper; they do not share sessions or inboxes.
+- Protocol work runs in `omachatd`, started and restarted by the plugin `service`. All three services share that helper process but never share sessions, credentials, or inboxes.
 - Webcam and voice capture, when added, stay in child `ffmpeg` processes
 
 ## Using it
 
-Click the bar icon. Switch between Google Messages and WhatsApp using the header tabs. Pick a conversation, read the thread, type, and press Enter.
+Open the plugin. Switch between Google Messages, WhatsApp, and Telegram using the header tabs. Pick a conversation, read the thread, type, and press Enter.
 
-Middle-click the bar icon to refresh. The badge shows unread conversations across active networks, not a third notification daemon. Your phone already notifies you.
+Middle-click the bar icon to refresh. The badge shows unread conversations across active services. Your phone already notifies you.
 
 Right-click a bubble to copy it.
 
@@ -170,7 +191,7 @@ printf '{"id":"1","method":"status"}\n' | socat - UNIX-CONNECT:/tmp/gm.sock
 
 Protocol work is the [mautrix](https://github.com/mautrix/gmessages) project's. The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin) (MIT). The Omarchy service lifecycle and panel are mine.
 
-OneLegDave is the project owner and human maintainer. AI tools assisted with development under that direction. That is assistance, not project ownership, Git authorship, or an upstream license change.
+OneLegDave is the project owner and human maintainer.
 
 ## License
 

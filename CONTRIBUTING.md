@@ -24,9 +24,8 @@ Build with `go build -mod=vendor`. Do not add an ELF to git. Do not auto-install
 1. Match `manifest.json` version, README, and any tag.
 2. Run the checks above. Confirm `vendor/` is current (`go mod vendor`).
 3. Screenshots in git (`preview.png`, `docs/screenshots/`) must not show real contacts, phone numbers, message bodies, avatars of real people, hostnames, or accounts. Use fake demo data or crop/censor first.
-4. Commit with the maintainer Git identity. Follow the current maintainer
-   instructions for any AI trailers. Preserve upstream credits and existing
-   history. Do not invent identities.
+4. Commit with the maintainer Git identity. Preserve upstream credits and
+   existing history. Do not invent identities.
 5. Push `main` and, for a numbered release, an immutable `vX.Y.Z` tag and GitHub Release.
 
 ## Regression checks

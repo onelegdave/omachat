@@ -344,7 +344,7 @@ Flickable {
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: "Placeholders. Google Messages is the live radio. Those frequencies are reserved, not transmitting."
+      text: "Google Messages, WhatsApp, and Telegram are available as independent services. Each service has its own pairing, session, cache, and composer drafts."
       color: root.copyColor
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.body)
@@ -367,7 +367,7 @@ Flickable {
     Text {
       width: parent.width
       wrapMode: Text.WordWrap
-      text: "OmaChat is a bar-native inbox for Omarchy. Google Messages first. No WebEngine. No systemd unit. One child process, one Unix socket, one bad idea executed cleanly."
+      text: "OmaChat is a Native Omarchy Plugin for Omarchy. It uses QML for the panel and one shell-owned helper process for service connections. No WebEngine and no systemd unit are required."
       color: root.copyColor
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.body)

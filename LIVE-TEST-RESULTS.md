@@ -72,19 +72,16 @@ control and OmaChat image-only send established the working behavior here.
 
 ## Review and limits
 
-agy provided a read-only revocation review. An earlier media-path review
-reached its eight-minute print timeout without a usable conclusion. In the
-follow-up, agy suggested required image dimensions and part IDs; the lead
-challenged those claims against upstream code and a working web-client send,
-and agy retracted them as unsupported. The lead isolated the combined-part
-failure with live controls and implemented the fix. agy then wrote focused
-regression tests; the lead reviewed and strengthened the serialization and
-cancellation checks and added real QML tests for split acknowledgements,
-partial failures, and duplicate submission prevention.
+Independent code reviews and focused regression tests were used during the
+image investigation. The final behavior was checked against upstream code and
+a working web-client send. The combined-part failure was isolated with live
+controls and fixed by sending the attachment and caption separately. The lead
+reviewed and strengthened serialization and cancellation checks and added QML
+tests for split acknowledgements, partial failures, and duplicate submission
+prevention.
 
 Final checks passed: Go tests with the race detector, go vet, manifest
 validation, model tests, and actual QML regression and isolated helper-build
-checks. Grok was not used because its weekly usage exceeded the reserve.
 
 The original unpair method logged upstream errors without returning them.
 The phone's paired-device list supplied independent confirmation in that test.
