@@ -635,10 +635,13 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 	if document, ok := m.Media.(*tg.MessageMediaDocument); ok {
 		if d, ok := document.Document.(*tg.Document); ok {
 			isAudio := false
+			isSticker := false
 			for _, attr := range d.Attributes {
 				if _, ok := attr.(*tg.DocumentAttributeAudio); ok {
 					isAudio = true
-					break
+				}
+				if _, ok := attr.(*tg.DocumentAttributeSticker); ok {
+					isSticker = true
 				}
 			}
 			if isAudio {
@@ -650,6 +653,11 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 				}
 				g.mediaExts[key] = telegramMediaExt(mimeType)
 				out.MediaKey, out.MediaMime, out.MediaAudio = key, mimeType, true
+			} else if isSticker && strings.EqualFold(d.MimeType, "image/webp") {
+				key := fmt.Sprintf("tg:%d", m.ID)
+				g.mediaRefs[key] = &tg.InputDocumentFileLocation{ID: d.ID, AccessHash: d.AccessHash, FileReference: d.FileReference}
+				g.mediaExts[key] = ".webp"
+				out.MediaKey, out.MediaMime, out.MediaSticker = key, "image/webp", true
 			}
 		}
 	}

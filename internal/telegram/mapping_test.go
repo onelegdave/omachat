@@ -38,6 +38,13 @@ func TestMapAudioAttachment(t *testing.T) {
 	}
 }
 
+func TestMapStickerAttachmentUsesImageRenderer(t *testing.T) {
+	msg := mapMessage(Message{ID: 5, ConversationID: 2, MediaKey: "tg:5", MediaMime: "image/webp", MediaSticker: true})
+	if len(msg.Attachments) != 1 || !msg.Attachments[0].IsImage || msg.Attachments[0].MimeType != "image/webp" {
+		t.Fatalf("unexpected sticker attachment: %+v", msg.Attachments)
+	}
+}
+
 func TestMapImageAttachmentDefaultsMime(t *testing.T) {
 	msg := mapMessage(Message{ID: 5, ConversationID: 2, MediaKey: "tg:5"})
 	if len(msg.Attachments) != 1 || !msg.Attachments[0].IsImage || msg.Attachments[0].IsAudio || msg.Attachments[0].MimeType != "image/jpeg" {

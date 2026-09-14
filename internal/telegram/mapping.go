@@ -31,6 +31,7 @@ type Message struct {
 	MediaKey       string
 	MediaMime      string
 	MediaAudio     bool
+	MediaSticker   bool
 }
 
 // ReadClient is the future read-only synchronization seam. Implementations may
