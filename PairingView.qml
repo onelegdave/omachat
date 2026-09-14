@@ -48,6 +48,7 @@ Item {
 
   Connections {
     target: root.service
+    ignoreUnknownSignals: true
     function onStatusChanged() {
       root.syncQR()
     }
