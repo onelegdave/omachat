@@ -77,9 +77,15 @@ it. OmaChat never installs, updates, or downloads a dependency on your behalf.
 omarchy pkg add ffmpeg
 ```
 
-Package: [extra/ffmpeg](https://archlinux.org/packages/extra/x86_64/ffmpeg/). Text, photos, GIFs from a file, copy, and reactions work without it.
+Package: [extra/ffmpeg](https://archlinux.org/packages/extra/x86_64/ffmpeg/). Text, photos, GIF files, copy, and Google Messages reactions work without it. WhatsApp voice notes are unavailable in this version.
 
 **GIF search** needs a free GIPHY API key that you create and paste in OmaChat Settings (gear). Get one at [developers.giphy.com](https://developers.giphy.com/dashboard/). You can still pick a GIF to send with no key.
+
+### Service notes
+
+- **Google Messages:** text, photos, GIF files, captions, reactions, and voice notes are available when the browser session is paired. Incoming media is downloaded on demand.
+- **WhatsApp:** text, images, GIF files, captions, inbound stickers, and media downloads are available. Voice notes, GIF search, reactions, and calling are not available in this version.
+- **Telegram:** text, photos, captions, voice notes, inbound photos and audio, and static WebP stickers are available after API setup and QR pairing. Animated TGS and video stickers are not supported.
 
 ### Pairing
 
