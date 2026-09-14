@@ -41,3 +41,15 @@ Directories are 0700. The socket is only reachable by your account.
   be read while the browser holds a lock, then deletes it.
 
 Revoke the paired device on your phone when you stop using this machine.
+
+## Vendored upstream API-key findings
+
+GitHub Secret Scanning reports two Google API-key patterns in vendored protocol
+code: the Google Messages relay constant from `mautrix-gmessages` and a
+Google-looking string in the `whatsmeow` token dictionary. These are inherited
+upstream client/protocol constants, not OmaChat user credentials. Do not remove
+or obfuscate them locally: the relay constant is required for Google Messages
+requests, and changing token-dictionary entries can alter WhatsApp wire indexes.
+Track upstream fixes and update the vendored dependencies when they are
+available. User credentials remain local under `~/.local/share/omachat/` and are
+never committed.
