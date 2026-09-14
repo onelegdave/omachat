@@ -326,7 +326,7 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 		}
 		id := peerID(m.PeerID)
 		if id != 0 {
-			previews[id] = Message{ID: int64(m.ID), ConversationID: id, Text: m.Message, Timestamp: int64(m.Date), FromMe: m.Out}
+			previews[id] = Message{ID: int64(m.ID), ConversationID: id, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out}
 		}
 	}
 	for _, raw := range raws {
@@ -375,7 +375,7 @@ func (g *GotdClient) Messages(ctx context.Context, conversationID int64, limit i
 		if !ok {
 			continue
 		}
-		out = append(out, Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: int64(m.Date), FromMe: m.Out})
+		out = append(out, Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out})
 	}
 	return out, nil
 }
@@ -395,6 +395,12 @@ func (g *GotdClient) MarkRead(ctx context.Context, conversationID int64, message
 	}
 	_, err := g.client.API().MessagesReadHistory(ctx, &tg.MessagesReadHistoryRequest{Peer: peer, MaxID: maxID})
 	return err
+}
+
+// gotd exposes Telegram dates as Unix seconds; OmaChat wire timestamps use
+// Unix microseconds so the shared QML formatter can render every network.
+func telegramTimestamp(seconds int) int64 {
+	return int64(seconds) * 1_000_000
 }
 
 func peerID(p tg.PeerClass) int64 {
