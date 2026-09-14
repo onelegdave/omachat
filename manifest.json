@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "onelegdave.omachat",
   "name": "OmaChat",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "OneLegDave",
   "license": "MIT",
   "description": "Chat from the Omarchy bar. Google Messages first, with room to grow. The shell owns the protocol helper; no systemd unit.",

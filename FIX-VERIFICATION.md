@@ -161,5 +161,5 @@ distinct older messages and an advancing cursor. No messages were sent for that
 test. UI rendering was inspected with synthetic content.
 
 The pagination UI was installed and matched the local sources. The helper
-reconnected after the shell restart and live inbox refresh passed. Pagination
-is committed locally pending publication.
+reconnected after the shell restart and live inbox refresh passed. Pagination is included with the reconnect and unpair reporting fixes in
+v0.1.2. See the Git tag and GitHub Release for publication history.

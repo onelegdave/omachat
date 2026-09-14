@@ -1,6 +1,6 @@
 # OmaChat
 
-Version **0.1.1**. See [release notes](https://github.com/onelegdave/omachat/releases/tag/v0.1.1).
+Version **0.1.2**. See [release notes](https://github.com/onelegdave/omachat/releases/tag/v0.1.2).
 
 Chat from the Omarchy bar. Google Messages first, with room for more networks later: an unread badge, a conversation list, the latest 60 messages per conversation, inline images, and a composer.
 
