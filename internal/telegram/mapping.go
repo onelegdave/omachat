@@ -58,7 +58,7 @@ func mapDialog(d Dialog) wire.Conversation {
 	return wire.Conversation{
 		ID: d.IDString(), Name: name, Preview: d.Preview,
 		Timestamp: d.Timestamp, Unread: d.Unread, IsGroup: d.IsGroup,
-		ReadOnly: true, Initials: initials(name),
+		ReadOnly: false, Initials: initials(name),
 	}
 }
 

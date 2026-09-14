@@ -18,7 +18,8 @@ Item {
   property var settings: null
   property string network: "gmessages"
   readonly property bool isWhatsApp: network === "whatsapp"
-  property string networkLabel: isWhatsApp ? "WhatsApp" : "Google Messages"
+  readonly property bool isTelegram: network === "telegram"
+  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : "Google Messages")
 
   readonly property color dim: Color.muted
   readonly property color panelBg: Color.popups.background
@@ -1739,14 +1740,14 @@ Item {
         tooltipText: "Attach a photo or GIF"
         foreground: root.foreground
         fontFamily: root.fontFamily
-        enabled: composer.enabled && !root.sendingMedia
+        enabled: composer.enabled && !root.sendingMedia && !root.isTelegram
         onClicked: root.attachFromDisk()
       }
 
       PanelActionButton {
         id: micButton
         objectName: "micButton"
-        visible: !root.isWhatsApp
+        visible: !root.isWhatsApp && !root.isTelegram
         anchors.left: attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter
@@ -1763,7 +1764,7 @@ Item {
       PanelActionButton {
         id: gifButton
         objectName: "gifButton"
-        visible: !root.isWhatsApp
+        visible: !root.isWhatsApp && !root.isTelegram
         anchors.left: micButton.visible ? micButton.right : attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter

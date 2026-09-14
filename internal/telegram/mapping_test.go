@@ -7,7 +7,7 @@ func TestMapDialogsOrdersAndLimits(t *testing.T) {
 	if len(got) != 2 || got[0].ID != "tg:3" || got[1].ID != "tg:2" {
 		t.Fatalf("unexpected dialogs: %+v", got)
 	}
-	if got[1].Name != "Telegram chat 2" || got[1].ReadOnly != true {
+	if got[1].Name != "Telegram chat 2" || got[1].ReadOnly {
 		t.Fatalf("fallback mapping missing: %+v", got[1])
 	}
 }
