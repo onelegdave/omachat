@@ -574,8 +574,8 @@ func TestTelegramSendTextRoutesAndCaches(t *testing.T) {
 		gotID = id
 		return Message{ID: 12, ConversationID: id, Text: text, Timestamp: 44, FromMe: true}, nil
 	}
-	msg, err := b.Send(context.Background(), wire.SendParams{ConversationID: "tg:7", Text: "hello"})
-	if err != nil || msg == nil || msg.ID != "tg:12" || msg.Text != "hello" || !msg.FromMe || msg.Delivery != wire.DeliverySent {
+	msg, err := b.Send(context.Background(), wire.SendParams{TmpID: "tx-1", ConversationID: "tg:7", Text: "hello"})
+	if err != nil || msg == nil || msg.ID != "tg:12" || msg.TmpID != "tx-1" || msg.Text != "hello" || !msg.FromMe || msg.Delivery != wire.DeliverySent {
 		t.Fatalf("unexpected send result: %+v err=%v", msg, err)
 	}
 	if gotID != 7 {

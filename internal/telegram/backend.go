@@ -424,6 +424,7 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, e
 		return nil, err
 	}
 	converted := mapMessage(msg)
+	converted.TmpID = p.TmpID
 	converted.Status = wire.DeliverySent
 	converted.Delivery = wire.DeliverySent
 	b.ingestMessage(msg)
