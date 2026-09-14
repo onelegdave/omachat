@@ -1,6 +1,6 @@
 # OmaChat
 
-Version **0.3.0**. See the [GitHub release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.0) or the local [release notes](RELEASE-0.3.0.md).
+Version **0.3.1**. See the [GitHub release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.1) or the local [release notes](RELEASE-0.3.1.md).
 
 Chat from the Omarchy bar for Google Messages, WhatsApp, and Telegram. OmaChat provides conversation lists, paginated history, inline media, voice notes, static WebP stickers, dual-network isolation, and a keyboard-friendly composer.
 
