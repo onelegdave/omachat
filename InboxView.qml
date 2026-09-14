@@ -1278,7 +1278,8 @@ Item {
                   readonly property bool isVoice: !!(modelData && modelData.isAudio)
                   readonly property bool isVideo: !!(modelData && modelData.isVideo)
                   readonly property string mediaKey: modelData && modelData.key ? modelData.key : ""
-                  readonly property string mediaPath: mediaKey && root.mediaPaths[mediaKey] ? root.mediaPaths[mediaKey] : ""
+                  readonly property string mediaPath: mediaKey && root.mediaPaths[mediaKey]
+                    ? root.mediaPaths[mediaKey] : (modelData && modelData.path ? modelData.path : "")
                   readonly property string mediaState: mediaKey && root.mediaRequests[mediaKey] ? root.mediaRequests[mediaKey] : ""
                   readonly property bool mediaFailed: isImage && mediaPath === "" && mediaState === "failed"
                   readonly property bool mediaLoading: isImage && mediaPath === "" && !mediaFailed
