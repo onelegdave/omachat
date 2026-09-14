@@ -60,7 +60,7 @@ Panel {
     root.activeService = v
     if (root.service) {
       root.service.currentNetwork = v
-      if (v === "gmessages" || v === "whatsapp") root.service.loadConversations(v)
+      if (v === "gmessages" || v === "whatsapp" || v === "telegram") root.service.loadConversations(v)
     }
   }
 
@@ -308,7 +308,7 @@ Panel {
         anchors.bottom: parent.bottom
         anchors.topMargin: Style.space(10)
         active: root.service && root.service.connected && (parent.anyAccountReady || !root.needsPair)
-        visible: active && root.serviceLive && !root.settingsOpen && !root.needsPair
+        visible: active && (root.serviceLive || root.telegramLive) && !root.settingsOpen && !root.needsPair
         sourceComponent: inboxView
       }
 
@@ -325,7 +325,7 @@ Panel {
           if (!root.serviceLive && !root.telegramLive) return comingSoonView
           if (!root.service) return missingServiceView
           if (!root.service.connected) return helperView
-          if (root.telegramLive) return pairingView
+          if (root.telegramLive && root.connState !== "connected") return pairingView
           if (root.needsPair) return pairingView
           return null
         }

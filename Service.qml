@@ -100,6 +100,7 @@ Item {
     call("conversations", { count: 50 }, function(ok, res) {
       if (ok && res) {
         if (net === "whatsapp") root.conversationsWA = res
+        else if (net === "telegram") root.conversationsTG = res
         else root.conversations = res
       }
     }, net)

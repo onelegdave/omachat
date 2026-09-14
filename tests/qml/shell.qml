@@ -350,7 +350,7 @@ ShellRoot {
     panel.activeService = "gmessages"
     var beforeTelegram = fake.calls.length
     panel.setActiveService("telegram")
-    root.check(!inspect.findChild(panel, "inboxLoader").visible, "unknown network hides the live inbox")
+    root.check(inspect.findChild(panel, "inboxLoader").visible, "connected Telegram shows the live inbox")
     root.check(fake.calls.length === beforeTelegram, "telegram tab does not issue chat RPCs")
     fake.call("status", null, function() {}, "telegram")
     var tel = fake.calls[fake.calls.length-1]
