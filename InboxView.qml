@@ -549,6 +549,12 @@ Item {
         if (!ok) { threadError = String(res); return }
         if (pendingAttachment === path) pendingAttachment = ""
         pendingVoiceSeconds = 0
+        if (res.message && res.message.attachments) {
+          for (var ai = 0; ai < res.message.attachments.length; ai++) {
+            var sentAttachment = res.message.attachments[ai]
+            if (sentAttachment && sentAttachment.key) root._withMedia(sentAttachment.key, path)
+          }
+        }
         mergeMessage(res.message)
         if (res.captionMessage) mergeMessage(res.captionMessage)
         if (res.captionError) {
