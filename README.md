@@ -146,6 +146,7 @@ Also revoke the device on your phone under **Messages > Device pairing** and, if
 - Deliberate view-once behavior: view-once and ephemeral media are intentionally not stored, cached, or reopened, presenting a placeholder in the thread to respect sender privacy.
 - WhatsApp voice notes, GIF search, reactions, and calling are currently disabled with clear UI notices rather than falling through to Google Messages.
 - Incoming GIFs play in the thread. Pick a GIF to send the same way as a photo. Optional GIPHY search needs a personal API key in OmaChat Settings (gear in the header). Get a free key at developers.giphy.com, create an app, paste the key. It is stored in ~/.local/share/omachat/config.json, never shown back to the panel.
+- To configure Telegram API credentials locally, run `python3 scripts/configure-telegram.py` from the project checkout. The script prompts locally and stores the values with mode 0600.
 - Voice notes (Google Messages): tap Rec to record (ffmpeg, not QtMultimedia), Play to preview, then send. Incoming voice plays with ffplay. Received video opens in the default player. Video calling is not in this release.
 
 ## Development
