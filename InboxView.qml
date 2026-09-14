@@ -10,10 +10,10 @@ Item {
   id: root
 
   property var service: null
-  property color foreground: Color.foreground
+  property color foreground: Model.readableInk(Color.popups.background, Color.popups.text, 7)
   property string fontFamily: Style.font.family
   property real uiScale: 1
-  function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
+  function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
   property var host: null
   property var settings: null
   property string network: "gmessages"
@@ -21,7 +21,8 @@ Item {
   readonly property bool isTelegram: network === "telegram"
   property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : "Google Messages")
 
-  readonly property color dim: Color.muted
+  readonly property color dim: Model.readableInk(panelBg, Color.muted)
+  readonly property color errorInk: Model.readableInk(panelBg, Color.urgent)
   readonly property color panelBg: Color.popups.background
   readonly property color mineFill: Model.outgoingFill(panelBg, Color.accent, foreground)
   readonly property color mineInk: Model.inkOn(mineFill, foreground, panelBg)
@@ -914,6 +915,7 @@ Item {
       anchors.right: parent.right
       anchors.top: parent.top
       text: "INBOX"
+      color: root.dim
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
@@ -925,7 +927,9 @@ Item {
       anchors.right: parent.right
       anchors.top: inboxHeader.bottom
       anchors.topMargin: Style.space(6)
-      placeholderText: "Hunt a thread"
+      placeholderText: "Search conversations"
+      placeholderTextColor: root.dim
+      font.pixelSize: fs(Style.font.body)
       foreground: root.foreground
       onTextChanged: root.searchQuery = text
       onActiveFocusChanged: root.composerFocus = activeFocus
@@ -983,7 +987,7 @@ Item {
         required property var modelData
         readonly property bool selected: modelData.id === root.selectedConvID
         width: convList.width
-        height: Style.space(52)
+        height: Math.max(Style.space(60), fs(Style.font.bodySmall) + fs(Style.font.caption) + Style.space(24))
         radius: Style.space(4)
         color: selected
           ? root.selectedFill
@@ -1088,8 +1092,11 @@ Item {
 
     Text {
       anchors.centerIn: parent
+      width: Math.max(0, parent.width - Style.space(32))
+      horizontalAlignment: Text.AlignHCenter
+      wrapMode: Text.Wrap
       visible: root.selectedConvID === ""
-      text: root.conversations.length === 0 ? "Dead air." : "Pick a thread. Try not to start a war."
+      text: root.conversations.length === 0 ? "No conversations yet. Refresh after your service finishes syncing." : "Choose a conversation to read and reply."
       color: root.foreground
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.body)
@@ -1137,7 +1144,7 @@ Item {
           width: parent.width
           elide: Text.ElideRight
           text: root.networkLabel
-          color: Color.muted
+          color: root.dim
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.caption)
         }
@@ -1158,7 +1165,7 @@ Item {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: threadSep.bottom
-      height: root.selectedConvID !== "" ? Style.space(40) : 0
+      height: root.selectedConvID !== "" ? Math.max(Style.space(40), historyStatus.implicitHeight + Style.space(12), children[0].implicitHeight) : 0
       spacing: Style.space(8)
       visible: root.selectedConvID !== "" && root.messages.length > 0
 
@@ -1173,13 +1180,14 @@ Item {
         onClicked: root.loadOlderMessages()
       }
       Text {
+        id: historyStatus
         objectName: "historyStatus"
         anchors.verticalCenter: parent.verticalCenter
         width: Math.max(0, parent.width - (parent.children[0].visible ? parent.children[0].width + parent.spacing : 0))
         text: root.historyError || (!root.hasOlder && !root.loadingMessages ? (root.isWhatsApp ? "Showing cached WhatsApp history. On-demand phone history is not requested in this version." : "All available history loaded") : "")
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
-        color: root.historyError ? Color.urgent : root.dim
+        color: root.historyError ? root.errorInk : root.dim
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.caption)
       }
@@ -1431,7 +1439,7 @@ Item {
                 }
                 linkColor: {
                   if (row.mine) return root.mineInk
-                  return Model.contrastRatio(Color.accent, root.theirsFill) >= 3.0 ? Color.accent : root.theirsInk
+                  return Model.readableInk(root.theirsFill, Color.accent)
                 }
                 font.italic: row.msg && row.msg.deleted === true
                 font.family: root.fontFamily
@@ -1495,7 +1503,7 @@ Item {
                   text: Model.receiptLabel(row.msg)
                   color: {
                     var s = String(row.msg && (row.msg.delivery || row.msg.status) || "")
-                    if (s === "failed") return Color.urgent
+                    if (s === "failed") return Model.readableInk(row.mine ? root.mineFill : root.theirsFill, Color.urgent)
                     return root.mineMeta
                   }
                   font.family: root.fontFamily
@@ -1682,6 +1690,8 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: Style.space(10)
         placeholderText: "Add a caption (optional)"
+        placeholderTextColor: root.dim
+        font.pixelSize: fs(Style.font.body)
         foreground: root.foreground
         enabled: !root.sendingMedia
         onAccepted: root.sendAttachment(text)
@@ -1766,7 +1776,7 @@ Item {
         fontSize: fs(Style.space(16))
         iconText: root.recording ? "󰓛" : "󰍬"
         tooltipText: root.recording ? "Stop recording" : "Record a voice message"
-        foreground: root.recording ? Color.urgent : root.foreground
+        foreground: root.recording ? root.errorInk : root.foreground
         fontFamily: root.fontFamily
         enabled: visible && composer.enabled && !root.sendingMedia
         onClicked: root.recording ? root.stopRecording(true) : root.startRecording()
@@ -1811,6 +1821,8 @@ Item {
       TextField {
         id: composer
         objectName: "composer"
+        placeholderTextColor: root.dim
+        font.pixelSize: fs(Style.font.body)
         anchors.left: emojiButton.right
         anchors.leftMargin: Style.space(4)
         anchors.right: sendButton.left
@@ -1820,7 +1832,7 @@ Item {
         placeholderText: {
           if (root.selectedConv && root.selectedConv.readOnly) return "This conversation is read-only"
           if (root.recording) return "Recording " + Model.formatDuration(root.recordSeconds)
-          return "Transmit"
+          return "Write a message"
         }
         enabled: root.service && root.service.connected && (typeof root.service.stateFor === "function" ? root.service.stateFor(root.network) : root.service.state) === "connected" && !(root.selectedConv && root.selectedConv.readOnly)
         onAccepted: {
@@ -1856,6 +1868,7 @@ Item {
           width: parent.width
           visible: !root.gifNeedsKey
           placeholderText: "Search GIPHY"
+          placeholderTextColor: root.dim
           foreground: root.foreground
           onAccepted: root.searchGifs(text)
           onTextChanged: gifDebounce.restart()
@@ -1866,7 +1879,7 @@ Item {
           width: parent.width
           visible: root.gifNeedsKey
           wrapMode: Text.WordWrap
-          text: "GIF search is locked until you drop a GIPHY key in Settings. You can still pick a GIF to send like a civilized person."
+          text: "Add your own GIPHY API key in Settings to search GIFs. You can attach a local GIF without a key."
           color: root.theirsInk
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.caption)
@@ -1889,7 +1902,7 @@ Item {
           visible: root.gifError !== ""
           wrapMode: Text.WordWrap
           text: root.gifError
-          color: Color.urgent
+          color: root.errorInk
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.caption)
         }
@@ -1926,7 +1939,7 @@ Item {
           width: parent.width
           visible: !root.gifNeedsKey
           text: root.gifAttribution
-          color: Color.muted
+          color: root.dim
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.caption)
         }
@@ -1993,7 +2006,7 @@ Item {
       anchors.bottom: composerRow.top
       anchors.bottomMargin: Style.space(8)
       visible: root.copied
-      text: "Yanked."
+      text: "Copied"
       color: root.foreground
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.caption)
@@ -2007,7 +2020,7 @@ Item {
       anchors.bottomMargin: Style.space(4)
       visible: text !== "" && !attachmentBar.visible
       text: root.threadError || (root.service ? root.service.refreshError : "")
-      color: Color.urgent
+      color: root.errorInk
       wrapMode: Text.WordWrap
       font.family: root.fontFamily
       font.pixelSize: fs(Style.font.caption)

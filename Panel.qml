@@ -33,20 +33,30 @@ Panel {
   readonly property int unread: service ? (typeof service.unreadFor === "function" ? service.unreadFor(activeService) : (service.unread || 0)) : 0
   readonly property string connState: service ? (typeof service.stateFor === "function" ? service.stateFor(activeService) : (service.state || "")) : ""
   readonly property var activeStatus: service ? (typeof service.statusFor === "function" ? service.statusFor(activeService) : service.status) : null
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+
+  function readableInk(surface, preferred, minRatio) {
+    return Model.readableInk(surface, preferred, minRatio)
+  }
+
+  readonly property color popupBg: Color.popups.background
+  readonly property color foreground: readableInk(popupBg, Color.popups.text, 7)
+  readonly property color mutedInk: readableInk(popupBg, Color.muted, 7)
+  readonly property color accentInk: readableInk(popupBg, Color.accent, 4.5)
+  readonly property color urgentInk: readableInk(popupBg, Color.urgent, 4.5)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+
   readonly property bool needsPair: connState === "unpaired" || connState === "pairing"
     || connState === "gaiaPairing" || connState === "error"
   readonly property bool linkUp: service && service.connected && connState === "connected"
   readonly property string linkLabel: {
-    if (!service) return "GHOST PROC"
-    if (!service.connected) return "NO CARRIER"
+    if (!service) return "SERVICE OFFLINE"
+    if (!service.connected) return "HELPER OFFLINE"
     if (connState === "connected" && activeStatus && activeStatus.phoneOK === false)
-      return "HANDSET GHOST"
-    if (connState === "connected") return "ON THE WIRE"
+      return "PHONE OFFLINE"
+    if (connState === "connected") return "CONNECTED"
     if (connState === "connecting" || connState === "pairing" || connState === "gaiaPairing")
-      return "HANDSHAKING"
-    if (connState === "unpaired") return "AIR GAP"
+      return "CONNECTING"
+    if (connState === "unpaired") return "NOT PAIRED"
     return Model.statusLine(activeStatus).toUpperCase()
   }
 
@@ -162,9 +172,9 @@ Panel {
             width: Style.space(22)
             height: Style.space(22)
             text: root.activeService === "whatsapp" ? "󰖣" : (root.activeService === "telegram" ? "\uf2c6" : "󰭹")
-            color: Color.accent
+            color: root.accentInk
             fontFamily: root.fontFamily
-            fontSize: fs(Style.font.heading)
+            fontSize: root.fs(Style.font.heading)
           }
 
           Text {
@@ -174,7 +184,7 @@ Panel {
             text: "OmaChat"
             color: root.foreground
             font.family: root.fontFamily
-            font.pixelSize: fs(Style.font.heading)
+            font.pixelSize: root.fs(Style.font.heading)
             font.bold: true
           }
 
@@ -195,7 +205,7 @@ Panel {
             anchors.rightMargin: Style.space(2)
             anchors.verticalCenter: parent.verticalCenter
             iconText: root.settingsOpen ? "󰁍" : "󰒓"
-            tooltipText: root.settingsOpen ? "Leave the lab" : "Settings"
+            tooltipText: root.settingsOpen ? "Back to chats" : "Settings"
             foreground: root.foreground
             fontFamily: root.fontFamily
             onClicked: root.settingsOpen = !root.settingsOpen
@@ -224,9 +234,9 @@ Panel {
             height: Style.space(20)
             width: chipRow.implicitWidth + Style.space(12)
             radius: height / 2
-            color: Style.normalFillFor(root.foreground, Color.accent)
+            color: Style.normalFillFor(root.foreground, root.accentInk)
             border.width: 1
-            border.color: root.linkUp ? Color.accent : Color.urgent
+            border.color: root.linkUp ? root.accentInk : root.urgentInk
 
             Row {
               id: chipRow
@@ -238,15 +248,15 @@ Panel {
                 height: Style.space(6)
                 radius: width / 2
                 anchors.verticalCenter: parent.verticalCenter
-                color: root.linkUp ? Color.accent : Color.urgent
+                color: root.linkUp ? root.accentInk : root.urgentInk
               }
 
               Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.linkLabel
-                color: root.linkUp ? Color.accent : Color.urgent
+                color: root.linkUp ? root.accentInk : root.urgentInk
                 font.family: root.fontFamily
-                font.pixelSize: fs(Style.font.caption)
+                font.pixelSize: root.fs(Style.font.caption)
                 font.bold: true
               }
             }
@@ -259,21 +269,21 @@ Panel {
           visible: root.unpairError !== "" && !(root.needsPair && !root.settingsOpen && root.serviceLive && root.service && root.service.status && root.service.status.error)
           text: root.unpairError
           textFormat: Text.PlainText
-          color: Color.urgent
+          color: root.urgentInk
           font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.bodySmall)
+          font.pixelSize: root.fs(Style.font.bodySmall)
           wrapMode: Text.Wrap
         }
 
-        ButtonGroup {
+        ChoiceGroup {
           width: parent.width
           options: root.serviceTabs
           value: root.activeService
           foreground: root.foreground
           background: Color.popups.background
-          accent: Color.accent
+          accent: root.accentInk
           fontFamily: root.fontFamily
-          fontSize: fs(Style.font.body)
+          fontSize: root.fs(Style.font.body)
           focusable: false
           onChanged: function(v) { root.setActiveService(v) }
         }
@@ -356,28 +366,41 @@ Panel {
   Component {
     id: missingServiceView
     Item {
-      Column {
-        anchors.centerIn: parent
-        spacing: Style.space(10)
-        width: Math.min(parent.width - Style.space(40), Style.space(420))
-        Text {
-          width: parent.width
-          horizontalAlignment: Text.AlignHCenter
-          wrapMode: Text.WordWrap
-          text: "OmaChat service is not loaded"
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.heading)
-          font.bold: true
-        }
-        Text {
-          width: parent.width
-          horizontalAlignment: Text.AlignHCenter
-          wrapMode: Text.WordWrap
-          text: "Enable the plugin, then restart the shell: omarchy plugin enable onelegdave.omachat"
-          color: Color.muted
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.bodySmall)
+      Flickable {
+        anchors.fill: parent
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        contentWidth: width
+        contentHeight: Math.max(height, missingCol.implicitHeight + Style.space(32))
+
+        Column {
+          id: missingCol
+          anchors.horizontalCenter: parent.horizontalCenter
+          y: Math.max(Style.space(16), Math.round((parent.height - implicitHeight) / 2))
+          spacing: Style.space(12)
+          width: Math.min(parent.width - Style.space(40), Style.space(460))
+
+          Text {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            text: "OmaChat service is not loaded"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: root.fs(Style.font.heading)
+            font.bold: true
+          }
+
+          Text {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            text: "Enable the plugin, then restart the shell:\nomarchy plugin enable onelegdave.omachat\nomarchy restart shell"
+            color: root.mutedInk
+            font.family: root.fontFamily
+            font.pixelSize: root.fs(Style.font.body)
+            lineHeight: 1.25
+          }
         }
       }
     }
@@ -389,91 +412,104 @@ Panel {
       readonly property bool needGo: root.service && !root.service.goPresent && !root.service.helperPresent
       readonly property bool canBuild: root.service && root.service.goPresent && !root.service.helperPresent
 
-      Column {
-        anchors.centerIn: parent
-        spacing: Style.space(12)
-        width: Math.min(parent.width - Style.space(40), Style.space(460))
+      Flickable {
+        anchors.fill: parent
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        contentWidth: width
+        contentHeight: Math.max(height, helperCol.implicitHeight + Style.space(32))
 
-        PanelHero {
-          width: parent.width
-          title: {
-            if (!root.service) return "Helper not running"
-            if (root.service.building) return "Building helper"
-            if (root.service.helperState === "starting" || root.service.helperState === "running")
-              return "Connecting"
-            if (needGo) return "Go is required once"
-            if (canBuild) return "Build the helper"
-            return "Helper not running"
-          }
-          meta: {
-            if (root.service && root.service.helperError) return root.service.helperError
-            if (root.service && root.service.building)
-              return "Compiling omachatd from this plugin folder. No extra downloads."
-            if (needGo)
-              return "OmaChat is a Native Omarchy Plugin for Google Messages, WhatsApp, and Telegram. The helper is not bundled. Install Go yourself, then build it here. WhatsApp also needs a C compiler (gcc or clang) for sqlite."
-            if (canBuild)
-              return "Go is installed. Build omachatd from the files in this plugin. That happens once. WhatsApp linking uses CGO and needs gcc or clang."
-            return "The protocol helper runs as a child of the Omarchy shell."
-          }
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          iconComponent: Component {
-            OpticalGlyph {
-              implicitWidth: fs(Style.font.display)
-              implicitHeight: fs(Style.font.display)
-              text: "󰭹"
-              color: Color.accent
-              fontFamily: root.fontFamily
-              fontSize: fs(Style.font.display)
+        Column {
+          id: helperCol
+          anchors.horizontalCenter: parent.horizontalCenter
+          y: Math.max(Style.space(16), Math.round((parent.height - implicitHeight) / 2))
+          spacing: Style.space(14)
+          width: Math.min(parent.width - Style.space(40), Style.space(480))
+
+          ReadableHero {
+            width: parent.width
+            uiScale: root.uiScale
+            title: {
+              if (!root.service) return "Helper not running"
+              if (root.service.building) return "Building helper"
+              if (root.service.helperState === "starting" || root.service.helperState === "running")
+                return "Connecting to helper"
+              if (needGo) return "Build tools required"
+              if (canBuild) return "Build protocol helper"
+              return "Helper not running"
+            }
+            meta: {
+              if (root.service && root.service.helperError) return root.service.helperError
+              if (root.service && root.service.building)
+                return "Compiling omachatd from the vendored source files in this plugin. No external downloads are performed."
+              if (needGo)
+                return "OmaChat requires a locally compiled helper (omachatd) to connect to Google Messages, WhatsApp, and Telegram. Install Go and a C compiler (gcc or clang) using your system package manager, then choose Build helper below."
+              if (canBuild)
+                return "Go is installed. Build the shared helper from this plugin's vendored source. All services also require a C compiler (gcc or clang) to build. Rebuild after updates that change the helper."
+              return "The protocol helper runs as a background process owned by the Omarchy shell."
+            }
+            foreground: root.foreground
+            metaColor: root.mutedInk
+            fontFamily: root.fontFamily
+            iconComponent: Component {
+              OpticalGlyph {
+                implicitWidth: root.fs(Style.font.display)
+                implicitHeight: root.fs(Style.font.display)
+                text: "󰭹"
+                color: root.accentInk
+                fontFamily: root.fontFamily
+                fontSize: root.fs(Style.font.display)
+              }
             }
           }
-        }
 
-        Text {
-          width: parent.width
-          visible: needGo
-          wrapMode: Text.WordWrap
-          horizontalAlignment: Text.AlignHCenter
-          text: "In a terminal:\nomarchy pkg add go\n\nPackage page: archlinux.org extra/go\nWhatsApp needs gcc or clang as well (CGO sqlite). Nothing is installed for you."
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.body)
-        }
-
-        Row {
-          anchors.horizontalCenter: parent.horizontalCenter
-          spacing: Style.space(8)
-
-          Button {
+          Text {
+            width: parent.width
             visible: needGo
-            text: "Open Go package"
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: Util.execArgv(["xdg-open", "https://archlinux.org/packages/extra/x86_64/go/"])
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+            text: "In your terminal:\nomarchy pkg add go gcc\n\nPackage information: archlinux.org extra/go\nOmaChat never installs software automatically. You choose whether to install tools and enable services."
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: root.fs(Style.font.body)
+            lineHeight: 1.25
           }
 
-          Button {
-            visible: canBuild || (root.service && root.service.building)
-            objectName: "buildHelperButton"
-            text: root.service && root.service.building ? "Building" : "Build helper"
-            bordered: true
-            enabled: root.service && !root.service.building && root.service.goPresent
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: if (root.service) root.service.buildHelper()
-          }
+          Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Style.space(8)
 
-          Button {
-            text: "Retry"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            onClicked: {
-              if (!root.service) return
-              root.service.checkGo()
-              if (root.service.helperPresent) {
-                root.service.rebuildSocket()
-                root.service.startHelper()
+            Button {
+              visible: needGo
+              text: "Open Go package"
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: Util.execArgv(["xdg-open", "https://archlinux.org/packages/extra/x86_64/go/"])
+            }
+
+            Button {
+              visible: canBuild || (root.service && root.service.building)
+              objectName: "buildHelperButton"
+              text: root.service && root.service.building ? "Building" : "Build helper"
+              bordered: true
+              enabled: root.service && !root.service.building && root.service.goPresent
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: if (root.service) root.service.buildHelper()
+            }
+
+            Button {
+              text: "Retry"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: {
+                if (!root.service) return
+                root.service.checkGo()
+                if (root.service.helperPresent) {
+                  root.service.rebuildSocket()
+                  root.service.startHelper()
+                }
               }
             }
           }
@@ -489,6 +525,7 @@ Panel {
       network: root.activeService
       foreground: root.foreground
       fontFamily: root.fontFamily
+      uiScale: root.uiScale
     }
   }
 

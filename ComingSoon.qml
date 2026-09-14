@@ -1,12 +1,13 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "Model.js" as Model
 
 Item {
   id: root
 
   property string serviceId: ""
-  property color foreground: Color.foreground
+  property color foreground: Model.readableInk(Color.popups.background, Color.popups.text, 7)
   property string fontFamily: Style.font.family
 
   readonly property var copy: {
@@ -21,13 +22,13 @@ Item {
       return {
         title: "Telegram",
         glyph: "\uf2c6",
-        meta: "Paper planes stay grounded for now. Google and WhatsApp answer on the other tabs."
+        meta: "Telegram is available after API credential setup and QR pairing."
       }
     default:
       return {
-        title: "Dark frequency",
+        title: "Service unavailable",
         glyph: "󰭹",
-        meta: "On the map. Not on the air."
+        meta: "Choose an available service from the tabs above."
       }
     }
   }
@@ -37,11 +38,12 @@ Item {
     spacing: Style.space(12)
     width: Math.min(parent.width - Style.space(40), Style.space(420))
 
-    PanelHero {
+    ReadableHero {
       width: parent.width
       title: root.copy.title
       meta: root.copy.meta
       foreground: root.foreground
+      metaColor: Model.readableInk(Color.popups.background, Color.muted)
       fontFamily: root.fontFamily
       iconOpacity: 0.7
       iconComponent: Component {
@@ -60,7 +62,7 @@ Item {
       width: parent.width
       horizontalAlignment: Text.AlignHCenter
       wrapMode: Text.WordWrap
-      text: "Hit Google or WhatsApp when you actually want to talk to a human."
+      text: "Google Messages, WhatsApp, and Telegram have separate pairing and account settings."
       color: root.foreground
       font.family: root.fontFamily
       font.pixelSize: Style.font.body

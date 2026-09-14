@@ -82,6 +82,11 @@ evidence and its limits.
 
 ## Everyday use
 
+Settings includes text-size choices, service setup guides, optional-tool
+instructions, and upstream credits. Setup messages wrap and scroll, including
+at larger text sizes. Popup and message text adapt to the current theme's
+background for readable contrast.
+
 Switch services with the header tabs, choose a conversation, and press Enter
 to send. Drafts stay with their service and conversation. Right-click a bubble
 to copy it. Middle-click the bar icon to refresh; the badge counts unread
@@ -155,8 +160,9 @@ Google Messages uses [mautrix libgm](https://github.com/mautrix/gmessages),
 WhatsApp uses [whatsmeow](https://github.com/tulir/whatsmeow), and Telegram uses
 [gotd/td](https://github.com/gotd/td).
 
-MIT for OmaChat. Preserve upstream licenses and notices, including vendored
-whatsmeow's MPL-2.0 license. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+MIT for original OmaChat code. Vendored dependencies retain their own terms,
+including libgm's AGPL license and whatsmeow's MPL-2.0 license. See
+[Credits and third-party notices](CREDITS.md), [LICENSE](LICENSE), and [NOTICE](NOTICE).
 
 Other plugins: [OmaDroid](https://github.com/onelegdave/omadroid) and
 [System QuikView](https://github.com/onelegdave/system-quikview).

@@ -32,7 +32,24 @@ function mix(a, b, t) {
 }
 
 function inkOn(surface, light, dark) {
-  return contrastRatio(light, surface) >= contrastRatio(dark, surface) ? light : dark
+  return readableInk(surface, contrastRatio(light, surface) >= contrastRatio(dark, surface) ? light : dark)
+}
+
+// Keep a theme's hue where possible, but never let two low-contrast theme
+// colors be the only candidates. Return opaque ink with a readable fallback.
+function readableInk(surface, preferred, minRatio) {
+  var floor = minRatio || 4.5
+  var ink = preferred || Qt.rgba(1, 1, 1, 1)
+  if (ink.a !== undefined && ink.a < 1) ink = mix(surface, ink, ink.a)
+  if (contrastRatio(ink, surface) >= floor) return ink
+  var black = Qt.rgba(0, 0, 0, 1)
+  var white = Qt.rgba(1, 1, 1, 1)
+  var fallback = contrastRatio(black, surface) > contrastRatio(white, surface) ? black : white
+  for (var i = 1; i <= 32; i++) {
+    var candidate = mix(ink, fallback, i / 32)
+    if (contrastRatio(candidate, surface) >= floor) return candidate
+  }
+  return fallback
 }
 
 // Pull a tinted surface toward `base` until one of the inks clears minRatio.
@@ -64,8 +81,7 @@ function incomingFill(bg, fg) {
 
 function metaInk(ink, surface) {
   var faded = mix(surface, ink, 0.72)
-  if (contrastRatio(faded, surface) >= 3.0) return faded
-  return ink
+  return readableInk(surface, faded, 4.5)
 }
 
 function toDate(micros) {

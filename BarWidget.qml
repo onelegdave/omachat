@@ -1,6 +1,8 @@
 import QtQuick
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "Model.js" as Model
 
 BarWidget {
   id: root
@@ -37,6 +39,22 @@ BarWidget {
   function open() { if (panelLoader.item && panelLoader.item.open) panelLoader.item.open() }
   function close() { if (panelLoader.item && panelLoader.item.close) panelLoader.item.close() }
 
+  function openSettings() {
+    if (!panelLoader.item) return
+    panelLoader.item.settingsOpen = true
+    open()
+  }
+
+  IpcHandler {
+    target: "onelegdave.omachat"
+    function showSettings(): void { root.openSettings() }
+    function showService(network: string): void {
+      if (["gmessages", "whatsapp", "telegram"].indexOf(network) < 0 || !panelLoader.item) return
+      panelLoader.item.setActiveService(network)
+      root.open()
+    }
+  }
+
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
   function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
 
@@ -72,7 +90,7 @@ BarWidget {
     text: "󰭹"
     slotSize: Style.bar.statusSlot
     tooltipText: root.unread > 0
-      ? root.unread + (root.unread === 1 ? " unread fire" : " unread fires")
+      ? root.unread + (root.unread === 1 ? " unread conversation" : " unread conversations")
       : "OmaChat"
     opacity: root.live ? 1.0 : 0.55
 
@@ -96,7 +114,7 @@ BarWidget {
         id: badgeText
         anchors.centerIn: parent
         text: root.unread > 9 ? "9+" : String(root.unread)
-        color: Color.background
+        color: Model.readableInk(parent.color, Color.background)
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.space(9)
         font.bold: true

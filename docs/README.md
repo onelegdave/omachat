@@ -10,5 +10,7 @@ for Google Messages, WhatsApp, and Telegram.
 - [Telegram setup and recovery](services/telegram.md)
 - [Development and release workflow](../CONTRIBUTING.md)
 - [Security and local data](../SECURITY.md)
+- [Credits and third-party notices](../CREDITS.md)
+- [Optional service selection proposal](service-selection-plan.md) (not yet implemented)
 - [Release notes](https://github.com/onelegdave/omachat/releases)
 - [Historical reviews and verification](history/README.md)

@@ -206,7 +206,7 @@ ShellRoot {
     unpairCall.callback(false,warning)
     root.check(loader.item === null, "unpair destroys account UI state")
     var warningLabel=inspect.findChild(panel,"unpairWarningText")
-    root.check(warningLabel && warningLabel.text === warning && warningLabel.wrapMode === Text.WordWrap, "unpaired screen retains remote revocation warning and phone instructions")
+    root.check(warningLabel && warningLabel.text === warning && warningLabel.wrapMode !== Text.NoWrap, "unpaired screen retains remote revocation warning and phone instructions")
     root.check(!panel.unpairing, "failed unpair releases pending state")
 
     fake.state="connected"

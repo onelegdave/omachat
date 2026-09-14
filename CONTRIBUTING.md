@@ -45,3 +45,10 @@ the Omarchy shell UI modules.
 It also exercises the panel's Build helper button in a temporary checkout and
 checks the refresh RPC against an isolated, unpaired daemon.
 It does not pair with Google, use real conversations, or send messages.
+
+The UI suite also checks long setup explanations and Settings on dark and
+light palettes at a larger text size, selected-choice contrast, and recovery
+when the helper starts after the first socket connection attempt. Set
+`OMACHAT_UI_ARTIFACTS` to an existing local directory to save synthetic UI
+screenshots for visual review. Never substitute real conversations in these
+fixtures.

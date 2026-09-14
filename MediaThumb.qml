@@ -48,6 +48,7 @@ Item {
   }
 
   Rectangle {
+    id: errorSurface
     anchors.fill: parent
     visible: root.hasError
     color: Style.normalFillFor(Color.background, Color.accent)
@@ -57,7 +58,7 @@ Item {
     Text {
       anchors.centerIn: parent
       text: "Media error"
-      color: Color.foreground
+      color: Model.readableInk(errorSurface.color, Color.popups.text)
       font.pixelSize: Style.font.caption
     }
   }

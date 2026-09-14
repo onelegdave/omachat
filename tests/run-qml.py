@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise real QML with a short-lived demo window and a mock service."""
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -33,6 +34,12 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     if result.returncode or "OMACHAT_PAGINATION_PASS" not in result.stdout or "OMACHAT_PAGINATION_FAIL" in result.stdout or "ERROR" in result.stdout:
         raise SystemExit(1)
 
+    (config / "shell.qml").write_text((repo / "tests/qml/readability.qml").read_text())
+    result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+    print(result.stdout)
+    if result.returncode or "OMACHAT_READABILITY_PASS" not in result.stdout or "OMACHAT_READABILITY_FAIL" in result.stdout or "ERROR" in result.stdout:
+        raise SystemExit(1)
+
     build = config / "Build"
     build.mkdir()
     (build / "Service.qml").write_text((repo / "Service.qml").read_text())
@@ -51,3 +58,16 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
         raise SystemExit(1)
     if not (build / "bin/omachatd").is_file():
         raise SystemExit("Build succeeded without the expected helper artifact")
+
+    # Real desktop startup can be slower than the first socket attempt.
+    # Delay only this temporary helper, using isolated data and runtime paths.
+    binary = build / "bin/omachatd-real"
+    (build / "bin/omachatd").rename(binary)
+    launcher = build / "bin/omachatd"
+    launcher.write_text("#!/bin/sh\nsleep 2\nexec " + shlex.quote(str(binary)) + ' "$@"\n')
+    launcher.chmod(0o700)
+    (config / "shell.qml").write_text((repo / "tests/qml/connection.qml").read_text())
+    result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+    print(result.stdout)
+    if result.returncode or "OMACHAT_CONNECTION_PASS" not in result.stdout or "OMACHAT_CONNECTION_FAIL" in result.stdout:
+        raise SystemExit(1)

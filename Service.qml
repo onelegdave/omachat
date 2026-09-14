@@ -324,6 +324,9 @@ Item {
       onError: function(err) {
         root.connected = false
         root.transportError("socket error: " + err)
+        // A failed initial connection may never change connectionState.
+        // Keep retrying while the shell-owned helper finishes startup.
+        reconnectTimer.start()
       }
 
       Component.onCompleted: root.connected = connected

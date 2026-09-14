@@ -1,18 +1,30 @@
 import QtQuick
+import QtQuick.Controls as Controls
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "Model.js" as Model
 
 Flickable {
   id: root
 
   property var service: null
-  property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property real uiScale: 1
   signal scaleSaved(real scale)
-  function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
-  readonly property color copyColor: Color.foreground
+  function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
+
+  function readableInk(surface, preferred, minRatio) {
+    return Model.readableInk(surface, preferred, minRatio)
+  }
+
+  readonly property color popupBg: Color.popups.background
+  property color foreground: readableInk(popupBg, Color.popups.text, 7)
+  readonly property color copyColor: readableInk(popupBg, Color.popups.text, 7)
+  readonly property color mutedColor: readableInk(popupBg, Color.muted, 7)
+  readonly property color accentColor: readableInk(popupBg, Color.accent, 4.5)
+  readonly property color urgentColor: readableInk(popupBg, Color.urgent, 4.5)
+
   readonly property string siteUrl: "https://www.onelegdave.dev/"
   readonly property string repoUrl: "https://github.com/onelegdave/omachat"
   readonly property string issuesUrl: "https://github.com/onelegdave/omachat/issues"
@@ -25,7 +37,12 @@ Flickable {
   clip: true
   boundsBehavior: Flickable.StopAtBounds
   contentWidth: width
-  contentHeight: col.implicitHeight + Style.space(16)
+  contentHeight: col.implicitHeight + Style.space(32)
+  Controls.ScrollBar.vertical: Controls.ScrollBar { policy: Controls.ScrollBar.AsNeeded }
+
+  function jumpTo(section) {
+    contentY = Math.max(0, Math.min(section.y, contentHeight - height))
+  }
 
   function load() {
     if (!service) return
@@ -50,7 +67,7 @@ Flickable {
       }
       root.giphyKeySet = res && res.giphyKeySet === true
       root.keyDraft = ""
-      root.statusText = "Key locked in. Try not to paste it in a group chat."
+      root.statusText = "GIPHY API key saved."
     }, "gmessages")
   }
 
@@ -65,7 +82,7 @@ Flickable {
       }
       root.giphyKeySet = false
       root.keyDraft = ""
-      root.statusText = "Key vaporized."
+      root.statusText = "GIPHY API key removed."
     }, "gmessages")
   }
 
@@ -79,171 +96,32 @@ Flickable {
   Column {
     id: col
     width: root.width
-    spacing: Style.space(14)
+    spacing: Style.space(16)
 
-    Text {
-      text: "The lab"
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.heading)
-      font.bold: true
-    }
-
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Knobs that actually do something. Tabs up top still dump you back to a network if you get lost in here."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-    }
-
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Type size"
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-
-    ButtonGroup {
-      width: parent.width
-      options: [
-        { value: "0.85", label: "Tiny" },
-        { value: "1", label: "Sane" },
-        { value: "1.15", label: "Loud" },
-        { value: "1.3", label: "Billboard" }
-      ]
-      value: {
-        var s = Number(root.uiScale).toFixed(2)
-        if (s === "0.85") return "0.85"
-        if (s === "1.15") return "1.15"
-        if (s === "1.30" || s === "1.3") return "1.3"
-        return "1"
-      }
-      foreground: root.foreground
-      background: Color.popups.background
-      accent: Color.accent
-      fontFamily: root.fontFamily
-      fontSize: fs(Style.font.body)
-      focusable: false
-      onChanged: function(v) {
-        var n = Number(v)
-        if (!isFinite(n) || !root.service) return
-        root.service.call("setUiScale", { scale: n }, function(ok, res) {
-          if (!ok) {
-            root.statusText = String(res)
-            return
-          }
-          var s = res && res.uiScale ? Number(res.uiScale) : n
-          root.uiScale = s
-          root.scaleSaved(s)
-        }, "gmessages")
-      }
-    }
-
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "GIPHY (optional, chaotic)"
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: root.giphyKeySet
-        ? "A key is already living in ~/.local/share/omachat. Paste a new one to rotate it."
-        : "Search is locked until you bring your own GIPHY key. You can still pick a GIF to send. This is not Omarchy Setup. This is the only place the key goes."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-    }
-
+    // Section 1: Header
     Column {
       width: parent.width
-      spacing: Style.space(6)
+      spacing: Style.space(4)
 
       Text {
         width: parent.width
-        wrapMode: Text.WordWrap
-        text: "1. Hit Open GIPHY and make a free account."
+        wrapMode: Text.Wrap
+        text: "Settings"
         color: root.copyColor
         font.family: root.fontFamily
-        font.pixelSize: fs(Style.font.body)
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
       }
+
       Text {
         width: parent.width
-        wrapMode: Text.WordWrap
-        text: "2. Create an app. Name it after your cat. GIPHY does not care."
-        color: root.copyColor
+        wrapMode: Text.Wrap
+        text: "Preferences, dependency guidance, service documentation, and upstream attribution. Use the service tabs above to return to your conversations."
+        color: root.mutedColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
+        lineHeight: 1.25
       }
-      Text {
-        width: parent.width
-        wrapMode: Text.WordWrap
-        text: "3. Copy the API key, paste it below, Save. Do not commit it. Do not text it to yourself on a group thread."
-        color: root.copyColor
-        font.family: root.fontFamily
-        font.pixelSize: fs(Style.font.body)
-      }
-    }
-
-    Button {
-      text: "Open GIPHY"
-      bordered: true
-      foreground: root.foreground
-      fontFamily: root.fontFamily
-      onClicked: root.openUrl("https://developers.giphy.com/dashboard/")
-    }
-
-    Row {
-      spacing: Style.space(6)
-      width: parent.width
-      TextField {
-        id: keyField
-        objectName: "keyField"
-        width: parent.width - saveBtn.implicitWidth - Style.space(6)
-        placeholderText: root.giphyKeySet ? "Replacement key" : "Paste API key"
-        foreground: root.foreground
-        password: true
-        onAccepted: root.saveKey()
-        onTextChanged: root.keyDraft = text
-      }
-      Button {
-        id: saveBtn
-        text: root.saving ? "Saving" : "Save"
-        bordered: true
-        enabled: !root.saving && root.keyDraft.trim() !== ""
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.saveKey()
-      }
-    }
-
-    Button {
-      visible: root.giphyKeySet
-      text: "Delete key"
-      foreground: root.copyColor
-      fontFamily: root.fontFamily
-      onClicked: root.clearKey()
-    }
-
-    Text {
-      width: parent.width
-      visible: root.statusText !== ""
-      wrapMode: Text.WordWrap
-      text: root.statusText
-      color: root.statusText.indexOf("fail") >= 0 || root.statusText.indexOf("error") >= 0
-        ? Color.urgent : Color.accent
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
     }
 
     Rectangle {
@@ -252,102 +130,88 @@ Flickable {
       color: Color.popups.border
     }
 
-    Text {
-      text: "Field manual"
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.heading)
-      font.bold: true
+    Flow {
+      width: parent.width
+      spacing: Style.space(8)
+      Repeater {
+        model: [
+          {label:"Services", section:servicesSection},
+          {label:"Tools", section:toolsSection},
+          {label:"GIF search", section:gifSection},
+          {label:"Credits", section:creditsSection},
+          {label:"About", section:aboutSection}
+        ]
+        Button {
+          required property var modelData
+          text: modelData.label
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.jumpTo(modelData.section)
+        }
+      }
     }
 
-    Text {
+    // Section 2: Interface Scale
+    Column {
+      id: appearanceSection
       width: parent.width
-      wrapMode: Text.WordWrap
-      text: "The panel says Go is required."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "All services share a helper that needs Go and a C compiler (gcc or clang) to build. If you want to use OmaChat, install missing tools yourself, then press Build helper. For example: omarchy pkg add go gcc. Build helper only compiles vendored source; OmaChat never installs dependencies."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-    }
+      spacing: Style.space(8)
 
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Pairing does nothing."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "For Google Messages, open messages.google.com/web in your selected Chromium-family browser first. Browser pairing needs sqlite3, secret-tool (libsecret), and an unlocked desktop keyring. Install missing tools yourself only if you choose to use this service."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-    }
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Text size"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
 
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "The QR opened a help page."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "That is Google being Google. Use Pair with Google. Camera apps and Lens will never pair this desktop."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-    }
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Choose a comfortable reading size. Setup instructions wrap and scroll at every size."
+        color: root.mutedColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+      }
 
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Voice is dead."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Google Messages and Telegram voice notes need ffmpeg and ffplay. If you want voice notes, you can install them yourself with omarchy pkg add ffmpeg. Text and photos work without them. WhatsApp voice notes are unavailable. OmaChat never installs dependencies."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-    }
-
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "WhatsApp and Telegram tabs."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "QR pairing needs qrencode, which you can install yourself if you want to link a service. WhatsApp links through Linked devices on your phone. For Telegram, create your own API credentials at my.telegram.org, run python3 scripts/configure-telegram.py from the plugin folder, then restart the shell before pairing. The script needs Python 3. Each service has its own session, cache, and drafts. OmaChat never installs tools or creates accounts for you."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
+      ChoiceGroup {
+        width: parent.width
+        options: [
+          { value: "0.85", label: "Small" },
+          { value: "1", label: "Default" },
+          { value: "1.15", label: "Large" },
+          { value: "1.3", label: "Extra Large" }
+        ]
+        value: {
+          var s = Number(root.uiScale).toFixed(2)
+          if (s === "0.85") return "0.85"
+          if (s === "1.15") return "1.15"
+          if (s === "1.30" || s === "1.3") return "1.3"
+          return "1"
+        }
+        foreground: root.foreground
+        background: Color.popups.background
+        accent: root.accentColor
+        fontFamily: root.fontFamily
+        fontSize: fs(Style.font.body)
+        focusable: false
+        onChanged: function(v) {
+          var n = Number(v)
+          if (!isFinite(n) || !root.service) return
+          root.service.call("setUiScale", { scale: n }, function(ok, res) {
+            if (!ok) {
+              root.statusText = String(res)
+              return
+            }
+            var s = res && res.uiScale ? Number(res.uiScale) : n
+            root.uiScale = s
+            root.scaleSaved(s)
+          }, "gmessages")
+        }
+      }
     }
 
     Rectangle {
@@ -356,141 +220,672 @@ Flickable {
       color: Color.popups.border
     }
 
-    Text {
-      text: "About"
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.heading)
-      font.bold: true
+    // Section 3: Dependencies and User Choice
+    Column {
+      id: toolsSection
+      width: parent.width
+      spacing: Style.space(10)
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Dependencies and User Choice"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
+      }
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "OmaChat is a native Omarchy plugin and never automatically installs packages, runs sudo, or downloads helper binaries. When tools are missing, OmaChat explains what is required so you can choose whether to install them using your system package manager."
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        lineHeight: 1.25
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(10)
+
+        Column {
+          width: parent.width
+          spacing: Style.space(3)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Shared Helper Build Tools (Go and C compiler)"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "All three services share a single Go helper binary (omachatd) compiled locally from vendored source. Building requires Go (1.27+) and a standard C compiler (gcc or clang) for CGO SQLite. No Go modules are downloaded at runtime.\n\nExample installation:\nomarchy pkg add go gcc"
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            lineHeight: 1.25
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(3)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "QR Code Pairing (qrencode)"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "qrencode is required to render pairing QR codes for WhatsApp, Telegram, and the Google Messages QR fallback.\n\nExample installation:\nomarchy pkg add qrencode"
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            lineHeight: 1.25
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(3)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Voice Notes (ffmpeg and ffplay)"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Optional voice note recording and playback for Google Messages and Telegram use ffmpeg and ffplay. Text and photos function without them. WhatsApp voice notes are not supported by its protocol client.\n\nExample installation:\nomarchy pkg add ffmpeg"
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            lineHeight: 1.25
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(3)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Google Browser Pairing (sqlite3 and secret-tool)"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Google Messages browser pairing reads web session cookies from your selected Chromium-family profile using sqlite3 and secret-tool (libsecret). Your desktop keyring must be unlocked."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            lineHeight: 1.25
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(3)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Clipboard Copying (wl-copy)"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Copying bubble text uses wl-copy from the wl-clipboard package."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+      }
     }
 
-    Text {
+    Rectangle {
       width: parent.width
-      wrapMode: Text.WordWrap
-      text: "OmaChat is a Native Omarchy Plugin for Omarchy. It uses QML for the panel and one shell-owned helper process for service connections. No WebEngine and no systemd unit are required."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
+      height: 1
+      color: Color.popups.border
     }
 
-    Text {
+    // Section 4: Service Guides
+    Column {
+      id: servicesSection
       width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Author"
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "OneLegDave. I ship it. I break it. I patch it."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-    }
-    Row {
-      spacing: Style.space(8)
-      Button {
-        text: "onelegdave.dev"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.openUrl(root.siteUrl)
+      spacing: Style.space(12)
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Service Guides"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
       }
-      Button {
-        text: "OmaDroid"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.openUrl("https://github.com/onelegdave/omadroid")
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "OmaChat supports Google Messages, WhatsApp, and Telegram with isolated credentials, caches, and drafts. Each service connects only when you explicitly configure it."
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        lineHeight: 1.25
       }
-      Button {
-        text: "QuikView"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.openUrl("https://github.com/onelegdave/system-quikview")
+
+      Column {
+        width: parent.width
+        spacing: Style.space(6)
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "Google Messages"
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "• Setup: Open Messages for web (messages.google.com/web) in your Chromium browser and sign in. Unlock your desktop keyring, select Pair with Google in OmaChat, and confirm the matching emoji on your phone. Keep your Android phone online.\n• Features: 50-conversation inbox, older history paging, text, photos, captions, reactions, local GIF files, inline GIF playback, and voice notes (with ffmpeg/ffplay).\n• Limitations: Calling is unavailable. The QR pairing fallback only works with older Messages builds that include an in-app scanner; standard camera apps will not pair."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          lineHeight: 1.25
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(6)
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "WhatsApp"
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "• Setup: Select WhatsApp in OmaChat, choose Use a QR code, open WhatsApp on your phone > Linked devices > Link a device, and scan the displayed QR code. Keep your phone online during linking and initial sync.\n• Features: Real-time conversation sync, text, photos, captions, local GIF files, retryable media downloads, and incoming static WebP stickers.\n• Limitations: History reflects initial phone sync and live messages; additional history cannot be requested from the phone, but cached history can be paged. Ephemeral and view-once media are intentionally not saved or reopened. Reactions, voice notes, GIF search, and calling are currently unavailable."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          lineHeight: 1.25
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(6)
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "Telegram"
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "• Setup: Obtain your api_id and api_hash from my.telegram.org. Run 'python3 scripts/configure-telegram.py' in the plugin folder and restart the Omarchy shell. Then choose Pair with Telegram and scan the QR code from Telegram > Settings > Devices on your phone.\n• Features: Dialog synchronization, older history paging, text, photos, captions, static WebP stickers, read receipts, and voice notes (with ffmpeg/ffplay).\n• Limitations: Animated TGS and video stickers are unsupported. Self-destructing/TTL media is not saved. Calling is unsupported."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          lineHeight: 1.25
+        }
       }
     }
 
-    Text {
+    Rectangle {
       width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Credits"
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Protocol guts: mautrix libgm (go.mau.fi/mautrix-gmessages). Helper shape adapted from Marc Ford's gmessages-omarchy-plugin (MIT). Desktop kit: Omarchy and Quickshell. GIF search, when you opt in: GIPHY."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
+      height: 1
+      color: Color.popups.border
     }
 
-    Row {
-      spacing: Style.space(8)
-      Button {
-        text: "mautrix"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.openUrl("https://github.com/mautrix/gmessages")
+    // Section 5: GIPHY GIF Search
+    Column {
+      id: gifSection
+      width: parent.width
+      spacing: Style.space(10)
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Google Messages GIF search (optional)"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
       }
-      Button {
-        text: "Marc Ford"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.openUrl("https://github.com/MarcFord/gmessages-omarchy-plugin")
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: root.giphyKeySet
+          ? "A personal GIPHY API key is currently configured in ~/.local/share/omachat/config.json. Enter a new key below to update it, or choose Delete key to remove it."
+          : "In-app GIF search requires a personal GIPHY API key. Sending local GIF files from your computer works without an API key."
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        lineHeight: 1.25
       }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(4)
+
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "1. Open the GIPHY Developer Dashboard and create a free account."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "2. Create a new app to generate an API key."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "3. Copy the API key, paste it below, and choose Save. OmaChat stores the key only in your local configuration."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+        }
+      }
+
       Button {
-        text: "Omarchy"
+        text: "Open GIPHY Dashboard"
         bordered: true
         foreground: root.foreground
         fontFamily: root.fontFamily
-        onClicked: root.openUrl("https://omarchy.org/")
+        onClicked: root.openUrl("https://developers.giphy.com/dashboard/")
+      }
+
+      Row {
+        spacing: Style.space(6)
+        width: parent.width
+        TextField {
+          id: keyField
+          objectName: "keyField"
+          width: parent.width - saveBtn.implicitWidth - Style.space(6)
+          placeholderText: root.giphyKeySet ? "Replacement API key" : "Paste GIPHY API key"
+          placeholderTextColor: root.mutedColor
+          font.pixelSize: fs(Style.font.body)
+          foreground: root.foreground
+          password: true
+          onAccepted: root.saveKey()
+          onTextChanged: root.keyDraft = text
+        }
+        Button {
+          id: saveBtn
+          text: root.saving ? "Saving" : "Save"
+          bordered: true
+          enabled: !root.saving && root.keyDraft.trim() !== ""
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.saveKey()
+        }
+      }
+
+      Button {
+        visible: root.giphyKeySet
+        text: "Delete key"
+        foreground: root.urgentColor
+        fontFamily: root.fontFamily
+        onClicked: root.clearKey()
+      }
+
+      Text {
+        width: parent.width
+        visible: root.statusText !== ""
+        wrapMode: Text.Wrap
+        text: root.statusText
+        color: root.statusText.indexOf("fail") >= 0 || root.statusText.indexOf("error") >= 0
+          ? root.urgentColor : root.accentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
       }
     }
 
-    Text {
+    Rectangle {
       width: parent.width
-      wrapMode: Text.WordWrap
-      text: "Bugs, patches, unhinged ideas"
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
-      font.bold: true
-    }
-    Text {
-      width: parent.width
-      wrapMode: Text.WordWrap
-      text: "File an issue or a PR on GitHub. Include Omarchy version, what you clicked, and whether the helper was actually running. Screenshots of dead air welcome."
-      color: root.copyColor
-      font.family: root.fontFamily
-      font.pixelSize: fs(Style.font.body)
+      height: 1
+      color: Color.popups.border
     }
 
-    Row {
-      spacing: Style.space(8)
-      Button {
-        text: "File a bug"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.openUrl(root.issuesUrl)
+    // Section 6: Upstream Credits and Honest Attribution
+    Column {
+      id: creditsSection
+      width: parent.width
+      spacing: Style.space(10)
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Upstream Credits and Licenses"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
       }
-      Button {
-        text: "Open the repo"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.openUrl(root.repoUrl)
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Original OmaChat code is MIT licensed. Included third-party code retains its own terms, including libgm's AGPL license and whatsmeow's MPL license."
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        lineHeight: 1.25
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(8)
+
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Daemon Architecture"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Helper architecture adapted from Marc Ford's gmessages-omarchy-plugin (MIT)."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Google Messages"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Google Messages uses the mautrix project's libgm client. Its AGPL license and upstream exception notices remain in vendor/go.mau.fi/mautrix-gmessages/."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "WhatsApp"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "WhatsApp support vendors whatsmeow (go.mau.fi/whatsmeow) under the Mozilla Public License 2.0 (MPL-2.0). WhatsApp session database uses go-sqlite3 (MIT) via CGO."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Telegram"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Telegram uses gotd/td (MIT, Aleksandr Razumov and contributors). Its dependencies retain their own license notices."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Desktop Environment"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Native Omarchy desktop plugin kit and Quickshell QtQuick components."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+      }
+
+      Flow {
+        width: parent.width
+        spacing: Style.space(8)
+        Button {
+          text: "Marc Ford"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl("https://github.com/MarcFord/gmessages-omarchy-plugin")
+        }
+        Button {
+          text: "mautrix"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl("https://github.com/mautrix/gmessages")
+        }
+        Button {
+          text: "whatsmeow"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl("https://github.com/tulir/whatsmeow")
+        }
+        Button {
+          text: "gotd/td"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl("https://github.com/gotd/td")
+        }
+        Button {
+          text: "Omarchy"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl("https://omarchy.org/")
+        }
+        Button {
+          text: "All credits and licenses"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl(root.repoUrl + "/blob/main/CREDITS.md")
+        }
+      }
+    }
+
+    Rectangle {
+      width: parent.width
+      height: 1
+      color: Color.popups.border
+    }
+
+    // Section 7: About and Maintenance
+    Column {
+      id: aboutSection
+      width: parent.width
+      spacing: Style.space(10)
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "About OmaChat"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
+      }
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "OmaChat (onelegdave.omachat) is a Native Omarchy Plugin providing unified messaging across Google Messages, WhatsApp, and Telegram. Created and maintained by OneLegDave. Codex contributes as AI development lead under OneLegDave's direction, with AI assistance from Antigravity and Grok."
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        lineHeight: 1.25
+      }
+
+      Row {
+        spacing: Style.space(8)
+        Button {
+          text: "onelegdave.dev"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl(root.siteUrl)
+        }
+        Button {
+          text: "OmaDroid"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl("https://github.com/onelegdave/omadroid")
+        }
+        Button {
+          text: "System QuikView"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl("https://github.com/onelegdave/system-quikview")
+        }
+      }
+    }
+
+    Rectangle {
+      width: parent.width
+      height: 1
+      color: Color.popups.border
+    }
+
+    // Section 8: Feedback and Bug Reports
+    Column {
+      width: parent.width
+      spacing: Style.space(10)
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Feedback and Bug Reports"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
+      }
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Report issues or submit pull requests on GitHub. Please include your Omarchy version, desktop environment, and helper status."
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        lineHeight: 1.25
+      }
+
+      Row {
+        spacing: Style.space(8)
+        Button {
+          text: "Report an issue"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl(root.issuesUrl)
+        }
+        Button {
+          text: "GitHub repository"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl(root.repoUrl)
+        }
       }
     }
   }
