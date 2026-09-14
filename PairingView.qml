@@ -38,12 +38,24 @@ Item {
     qrProc.running = true
   }
 
+  function syncQR() {
+    var current = root.service
+      ? (typeof root.service.statusFor === "function" ? root.service.statusFor(root.network) : root.service.status)
+      : null
+    if (current && current.qrURL) root.renderQR(current.qrURL)
+  }
+
   Connections {
     target: root.service
     function onStatusChanged() {
-      if (root.status && root.status.qrURL) root.renderQR(root.status.qrURL)
+      root.syncQR()
+    }
+    function onStatusWAChanged() {
+      root.syncQR()
     }
   }
+
+  Component.onCompleted: root.syncQR()
 
   Process {
     id: qrProc
