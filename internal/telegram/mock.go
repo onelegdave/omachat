@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 
 	"github.com/gotd/td/telegram"
@@ -12,18 +13,19 @@ type MockClient struct {
 	connected  atomic.Bool
 	authorized atomic.Bool
 
-	StartFunc        func(ctx context.Context) error
-	StopFunc         func() error
-	IsConnectedFunc  func() bool
-	IsAuthorizedFunc func(ctx context.Context) (bool, error)
-	GetQRChannelFunc func(ctx context.Context) (<-chan QRChannelItem, error)
-	PingFunc         func(ctx context.Context) error
-	UnderlyingFunc   func() *telegram.Client
-	DialogsFunc      func(ctx context.Context, limit int) ([]Dialog, error)
-	MessagesFunc     func(ctx context.Context, conversationID int64, limit int) ([]Message, error)
-	MarkReadFunc     func(ctx context.Context, conversationID int64, messageID int64) error
-	SendTextFunc     func(ctx context.Context, conversationID int64, text string) (Message, error)
-	SendImageFunc    func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
+	StartFunc         func(ctx context.Context) error
+	StopFunc          func() error
+	IsConnectedFunc   func() bool
+	IsAuthorizedFunc  func(ctx context.Context) (bool, error)
+	GetQRChannelFunc  func(ctx context.Context) (<-chan QRChannelItem, error)
+	PingFunc          func(ctx context.Context) error
+	UnderlyingFunc    func() *telegram.Client
+	DialogsFunc       func(ctx context.Context, limit int) ([]Dialog, error)
+	MessagesFunc      func(ctx context.Context, conversationID int64, limit int) ([]Message, error)
+	MarkReadFunc      func(ctx context.Context, conversationID int64, messageID int64) error
+	SendTextFunc      func(ctx context.Context, conversationID int64, text string) (Message, error)
+	SendImageFunc     func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
+	DownloadMediaFunc func(ctx context.Context, key, dir string) (string, error)
 }
 
 func (m *MockClient) SendText(ctx context.Context, conversationID int64, text string) (Message, error) {
@@ -38,6 +40,13 @@ func (m *MockClient) SendImage(ctx context.Context, conversationID int64, path, 
 		return m.SendImageFunc(ctx, conversationID, path, caption)
 	}
 	return Message{}, nil
+}
+
+func (m *MockClient) DownloadMedia(ctx context.Context, key, dir string) (string, error) {
+	if m.DownloadMediaFunc != nil {
+		return m.DownloadMediaFunc(ctx, key, dir)
+	}
+	return "", errors.New("mock media download not configured")
 }
 
 func (m *MockClient) MarkRead(ctx context.Context, conversationID int64, messageID int64) error {

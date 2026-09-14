@@ -6,7 +6,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -79,6 +81,7 @@ type GotdClient struct {
 	running    bool
 	connected  bool
 	onMessage  func(Message)
+	mediaRefs  map[string]tg.InputFileLocationClass
 }
 
 // SetMessageHandler registers the callback used for live incoming updates.
@@ -119,10 +122,11 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 				wrapper.peers[channelID] = &tg.InputPeerChannel{ChannelID: channelID, AccessHash: channel.AccessHash}
 			}
 		}
+		converted := wrapper.mediaMessage(m, id)
 		handler := wrapper.onMessage
 		wrapper.mu.Unlock()
 		if handler != nil {
-			handler(Message{ID: int64(m.ID), ConversationID: id, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out})
+			handler(converted)
 		}
 		return nil
 	}
@@ -144,6 +148,7 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 		log:         log.With().Str("component", "gotd").Logger(),
 		client:      client,
 		peers:       make(map[int64]tg.InputPeerClass),
+		mediaRefs:   make(map[string]tg.InputFileLocationClass),
 		dispatcher:  dispatcher,
 	}
 	return wrapper
@@ -377,7 +382,9 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 		}
 		id := peerID(m.PeerID)
 		if id != 0 {
-			previews[id] = Message{ID: int64(m.ID), ConversationID: id, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out}
+			g.mu.Lock()
+			previews[id] = g.mediaMessage(m, id)
+			g.mu.Unlock()
 		}
 	}
 	for _, raw := range raws {
@@ -426,7 +433,9 @@ func (g *GotdClient) Messages(ctx context.Context, conversationID int64, limit i
 		if !ok {
 			continue
 		}
-		out = append(out, Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out})
+		g.mu.Lock()
+		out = append(out, g.mediaMessage(m, conversationID))
+		g.mu.Unlock()
 	}
 	return out, nil
 }
@@ -544,6 +553,74 @@ func (g *GotdClient) SendImage(ctx context.Context, conversationID int64, path, 
 		}
 	}
 	return Message{}, errors.New("Telegram image send succeeded without a message response")
+}
+
+func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
+	out := Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out}
+	if photo, ok := m.Media.(*tg.MessageMediaPhoto); ok {
+		if p, ok := photo.Photo.(*tg.Photo); ok {
+			for _, raw := range p.Sizes {
+				if s, ok := raw.(*tg.PhotoSize); ok {
+					key := fmt.Sprintf("tg:%d", m.ID)
+					g.mediaRefs[key] = &tg.InputPhotoFileLocation{ID: p.ID, AccessHash: p.AccessHash, FileReference: p.FileReference, ThumbSize: s.Type}
+					out.MediaKey = key
+					break
+				}
+			}
+		}
+	}
+	return out
+}
+
+func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string, error) {
+	g.mu.RLock()
+	location := g.mediaRefs[key]
+	g.mu.RUnlock()
+	if location == nil {
+		return "", errors.New("Telegram media reference is unavailable; refresh the conversation")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	final := filepath.Join(dir, safeMediaName(key)+".jpg")
+	if st, err := os.Stat(final); err == nil && st.Mode().IsRegular() {
+		return final, nil
+	}
+	tmp, err := os.CreateTemp(dir, ".telegram-media-*")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	_, err = g.client.Download(location).Stream(ctx, io.Writer(tmp))
+	closeErr := tmp.Close()
+	if err != nil {
+		return "", err
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	st, err := os.Stat(tmpName)
+	if err != nil || st.Size() == 0 || st.Size() > 32*1024*1024 {
+		return "", errors.New("downloaded Telegram media is invalid or too large")
+	}
+	if err := os.Rename(tmpName, final); err != nil {
+		return "", err
+	}
+	return final, nil
+}
+
+func safeMediaName(key string) string {
+	var b strings.Builder
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "media"
+	}
+	return b.String()
 }
 
 // gotd exposes Telegram dates as Unix seconds; OmaChat wire timestamps use

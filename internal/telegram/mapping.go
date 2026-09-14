@@ -28,6 +28,7 @@ type Message struct {
 	FromMe         bool
 	SenderID       int64
 	SenderName     string
+	MediaKey       string
 }
 
 // ReadClient is the future read-only synchronization seam. Implementations may
@@ -52,6 +53,7 @@ type SendClient interface {
 
 type MediaClient interface {
 	SendImage(ctx context.Context, conversationID int64, path, caption string) (Message, error)
+	DownloadMedia(ctx context.Context, key, dir string) (string, error)
 }
 
 func mapDialog(d Dialog) wire.Conversation {
@@ -69,11 +71,15 @@ func mapDialog(d Dialog) wire.Conversation {
 func (d Dialog) IDString() string { return fmt.Sprintf("tg:%d", d.ID) }
 
 func mapMessage(m Message) wire.Message {
-	return wire.Message{
+	out := wire.Message{
 		ID: fmt.Sprintf("tg:%d", m.ID), ConversationID: fmt.Sprintf("tg:%d", m.ConversationID),
 		Text: m.Text, Timestamp: m.Timestamp, FromMe: m.FromMe,
 		SenderID: fmt.Sprintf("tg:%d", m.SenderID), SenderName: m.SenderName,
 	}
+	if m.MediaKey != "" {
+		out.Attachments = []wire.Attachment{{Key: m.MediaKey, MimeType: "image/jpeg", IsImage: true}}
+	}
+	return out
 }
 
 func mapDialogs(in []Dialog, limit int) []wire.Conversation {

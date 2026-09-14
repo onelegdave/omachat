@@ -465,9 +465,26 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.
 	return &wire.SendMediaResult{Message: &out}, nil
 }
 
-// Media rejects fetching media as protocol media exchange is pending subsequent milestones.
 func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaResult, error) {
-	return nil, ErrNotConfigured
+	key := p.Key
+	if key == "" {
+		key = p.MediaID
+	}
+	if key == "" {
+		return nil, fmt.Errorf("empty Telegram media key: %w", ErrNotConfigured)
+	}
+	b.mu.RLock()
+	cli := b.client
+	b.mu.RUnlock()
+	media, ok := cli.(MediaClient)
+	if !ok {
+		return nil, ErrNotConfigured
+	}
+	path, err := media.DownloadMedia(ctx, key, b.paths.TelegramMediaDir())
+	if err != nil {
+		return nil, err
+	}
+	return &wire.MediaResult{Key: key, Path: path}, nil
 }
 
 // MarkRead acknowledges Telegram history and clears the local unread flag.
