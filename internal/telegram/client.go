@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,6 +76,7 @@ type GotdClient struct {
 }
 
 var _ Client = (*GotdClient)(nil)
+var _ ReadClient = (*GotdClient)(nil)
 
 // NewGotdClient constructs a GotdClient wrapping gotd/td MTProto client.
 func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Logger) *GotdClient {
@@ -266,6 +268,100 @@ func (g *GotdClient) GetQRChannel(ctx context.Context) (<-chan QRChannelItem, er
 // Ping pings the Telegram DC to check connectivity.
 func (g *GotdClient) Ping(ctx context.Context) error {
 	return g.client.Ping(ctx)
+}
+
+// Dialogs fetches a bounded read-only dialog page from Telegram.
+func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	res, err := g.client.API().MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]string{}
+	var raws []tg.DialogClass
+	var users []tg.UserClass
+	var chats []tg.ChatClass
+	switch x := res.(type) {
+	case *tg.MessagesDialogs:
+		raws, users, chats = x.Dialogs, x.Users, x.Chats
+	case *tg.MessagesDialogsSlice:
+		raws, users, chats = x.Dialogs, x.Users, x.Chats
+	}
+	for _, u := range users {
+		if x, ok := u.(*tg.User); ok {
+			names[fmt.Sprintf("tg:%d", x.ID)] = strings.TrimSpace(x.FirstName + " " + x.LastName)
+		}
+	}
+	for _, c := range chats {
+		switch x := c.(type) {
+		case *tg.Chat:
+			names[fmt.Sprintf("tg:%d", x.ID)] = x.Title
+		case *tg.Channel:
+			names[fmt.Sprintf("tg:%d", x.ID)] = x.Title
+		}
+	}
+	out := make([]Dialog, 0, len(raws))
+	for _, raw := range raws {
+		d, ok := raw.(*tg.Dialog)
+		if !ok || d.Peer == nil {
+			continue
+		}
+		id := peerID(d.Peer)
+		if id == 0 {
+			continue
+		}
+		out = append(out, Dialog{ID: id, Name: names[fmt.Sprintf("tg:%d", id)], Unread: d.UnreadCount > 0, Timestamp: int64(d.TopMessage), IsGroup: isGroupPeer(d.Peer)})
+	}
+	return out, nil
+}
+
+// Messages fetches text messages for a user or basic group peer.
+func (g *GotdClient) Messages(ctx context.Context, conversationID int64, limit int) ([]Message, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	peer := &tg.InputPeerUser{UserID: conversationID}
+	res, err := g.client.API().MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{Peer: peer, Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	var raws []tg.MessageClass
+	switch x := res.(type) {
+	case *tg.MessagesMessages:
+		raws = x.Messages
+	case *tg.MessagesMessagesSlice:
+		raws = x.Messages
+	}
+	out := make([]Message, 0, len(raws))
+	for _, raw := range raws {
+		m, ok := raw.(*tg.Message)
+		if !ok {
+			continue
+		}
+		out = append(out, Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: int64(m.Date), FromMe: m.Out})
+	}
+	return out, nil
+}
+
+func peerID(p tg.PeerClass) int64 {
+	switch x := p.(type) {
+	case *tg.PeerUser:
+		return x.UserID
+	case *tg.PeerChat:
+		return x.ChatID
+	case *tg.PeerChannel:
+		return x.ChannelID
+	}
+	return 0
+}
+func isGroupPeer(p tg.PeerClass) bool {
+	switch p.(type) {
+	case *tg.PeerChat, *tg.PeerChannel:
+		return true
+	}
+	return false
 }
 
 // Underlying returns the underlying gotd *telegram.Client.

@@ -5,7 +5,7 @@
 - **Branch**: `feature/telegram`
 - **Human Owner / Maintainer**: OneLegDave
 - **MTProto Dependency**: `github.com/gotd/td v0.161.0`
-- **Review status**: Dependency vendoring, credential configuration, MTProto QR pairing, and offline-tested read-only cache refresh are complete. Outbound messaging, media, and live device verification remain pending.
+- **Review status**: Dependency vendoring, credential configuration, MTProto QR pairing, and gotd-backed read-only cache refresh are complete. Peer resolution for every Telegram chat type, outbound messaging, media, and live device verification remain pending.
 
 ---
 
