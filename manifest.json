@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "onelegdave.omachat",
+  "name": "OmaChat",
+  "version": "0.1.0",
+  "author": "OneLegDave",
+  "license": "MIT",
+  "description": "Chat from the Omarchy bar. Google Messages first, with room to grow. The shell owns the protocol helper; no systemd unit.",
+  "kinds": ["service", "bar-widget"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "OmaChat",
+    "description": "Unread badge with a conversation panel: threads, history, images, and replies",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "cameraDevice": "/dev/video0",
+      "audioDevice": "default",
+      "normalizeVoice": true
+    },
+    "schema": [
+      {
+        "key": "cameraDevice",
+        "type": "string",
+        "label": "Webcam device for photo capture"
+      },
+      {
+        "key": "audioDevice",
+        "type": "string",
+        "label": "PulseAudio/PipeWire source for voice messages"
+      },
+      {
+        "key": "normalizeVoice",
+        "type": "boolean",
+        "label": "Normalise voice recording level"
+      }
+    ]
+  }
+}

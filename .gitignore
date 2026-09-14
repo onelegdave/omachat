@@ -1,0 +1,9 @@
+bin/
+*.sock
+session.json
+config.json
+cookies.json
+*.qslog
+webcam-*.jpg
+voice-*.m4a
+pairing-qr.png
