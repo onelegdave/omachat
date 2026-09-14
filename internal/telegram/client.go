@@ -74,6 +74,15 @@ type GotdClient struct {
 	cancel     context.CancelFunc
 	running    bool
 	connected  bool
+	onMessage  func(Message)
+}
+
+// SetMessageHandler registers the callback used for live incoming updates.
+// It is intentionally a small seam so Backend can own cache and event policy.
+func (g *GotdClient) SetMessageHandler(handler func(Message)) {
+	g.mu.Lock()
+	g.onMessage = handler
+	g.mu.Unlock()
 }
 
 var _ Client = (*GotdClient)(nil)
@@ -82,12 +91,49 @@ var _ ReadClient = (*GotdClient)(nil)
 // NewGotdClient constructs a GotdClient wrapping gotd/td MTProto client.
 func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Logger) *GotdClient {
 	dispatcher := tg.NewUpdateDispatcher()
+	var wrapper *GotdClient
+	dispatch := func(_ context.Context, entities tg.Entities, raw tg.MessageClass) error {
+		m, ok := raw.(*tg.Message)
+		if !ok || m.PeerID == nil {
+			return nil
+		}
+		id := peerID(m.PeerID)
+		if id == 0 {
+			return nil
+		}
+		wrapper.mu.Lock()
+		for userID, user := range entities.Users {
+			if user.AccessHash != 0 {
+				wrapper.peers[userID] = &tg.InputPeerUser{UserID: userID, AccessHash: user.AccessHash}
+			}
+		}
+		for chatID := range entities.Chats {
+			wrapper.peers[chatID] = &tg.InputPeerChat{ChatID: chatID}
+		}
+		for channelID, channel := range entities.Channels {
+			if channel.AccessHash != 0 {
+				wrapper.peers[channelID] = &tg.InputPeerChannel{ChannelID: channelID, AccessHash: channel.AccessHash}
+			}
+		}
+		handler := wrapper.onMessage
+		wrapper.mu.Unlock()
+		if handler != nil {
+			handler(Message{ID: int64(m.ID), ConversationID: id, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out})
+		}
+		return nil
+	}
+	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, u *tg.UpdateNewMessage) error {
+		return dispatch(ctx, e, u.Message)
+	})
+	dispatcher.OnNewChannelMessage(func(ctx context.Context, e tg.Entities, u *tg.UpdateNewChannelMessage) error {
+		return dispatch(ctx, e, u.Message)
+	})
 	storage := NewFileSessionStorage(sessionPath)
 	client := telegram.NewClient(appID, appHash, telegram.Options{
 		UpdateHandler:  dispatcher,
 		SessionStorage: storage,
 	})
-	return &GotdClient{
+	wrapper = &GotdClient{
 		appID:       appID,
 		appHash:     appHash,
 		sessionPath: sessionPath,
@@ -96,6 +142,7 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 		peers:       make(map[int64]tg.InputPeerClass),
 		dispatcher:  dispatcher,
 	}
+	return wrapper
 }
 
 // DefaultClientFactory constructs GotdClient instances for live MTProto operations.

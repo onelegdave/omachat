@@ -541,6 +541,30 @@ func TestTelegramMarkReadRejectsMalformedIDs(t *testing.T) {
 	}
 }
 
+func TestTelegramIncomingMessageUpdatesCacheAndPublishes(t *testing.T) {
+	b, paths, events := setupTestTelegram(t)
+	b.ingestMessage(Message{ID: 9, ConversationID: 7, Text: "live", Timestamp: 123, SenderID: 7, SenderName: "Alice"})
+	convs := b.Conversations(1)
+	if len(convs) != 1 || convs[0].ID != "tg:7" || convs[0].Preview != "live" || !convs[0].Unread {
+		t.Fatalf("unexpected incoming conversation: %+v", convs)
+	}
+	result, err := b.Messages(context.Background(), wire.MessagesParams{ConversationID: "tg:7"})
+	if err != nil || len(result.Messages) != 1 || result.Messages[0].ID != "tg:9" {
+		t.Fatalf("unexpected incoming message cache: %+v err=%v", result.Messages, err)
+	}
+	select {
+	case event := <-events:
+		if event.Event != wire.EventMessage || event.Network != wire.NetworkTelegram {
+			t.Fatalf("unexpected event: %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("incoming message event was not published")
+	}
+	if _, err := os.Stat(paths.TelegramStoreFile()); err != nil {
+		t.Fatalf("incoming message was not persisted: %v", err)
+	}
+}
+
 func TestStartPairingUnconfigured(t *testing.T) {
 	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
 	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")

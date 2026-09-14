@@ -52,6 +52,10 @@ type Backend struct {
 	messages map[string][]wire.Message
 }
 
+type incomingHandlerClient interface {
+	SetMessageHandler(func(Message))
+}
+
 // New creates an unstarted Telegram backend.
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event), cfg ...*appStore.ConfigStore) *Backend {
 	var configStore *appStore.ConfigStore
@@ -233,7 +237,50 @@ func (b *Backend) getOrCreateClientLocked(creds appStore.TelegramCredentials) (C
 		return nil, err
 	}
 	b.client = cli
+	if incoming, ok := cli.(incomingHandlerClient); ok {
+		incoming.SetMessageHandler(b.ingestMessage)
+	}
 	return cli, nil
+}
+
+func (b *Backend) ingestMessage(msg Message) {
+	if msg.ConversationID == 0 || msg.ID == 0 {
+		return
+	}
+	converted := mapMessage(msg)
+	conversationID := fmt.Sprintf("tg:%d", msg.ConversationID)
+	b.mu.Lock()
+	if _, exists := b.convs[conversationID]; !exists {
+		name := msg.SenderName
+		if name == "" {
+			name = fmt.Sprintf("Telegram chat %d", msg.ConversationID)
+		}
+		b.convs[conversationID] = mapDialog(Dialog{ID: msg.ConversationID, Name: name, Preview: msg.Text, Timestamp: msg.Timestamp})
+		b.order = append([]string{conversationID}, b.order...)
+	}
+	items := b.messages[conversationID]
+	seen := false
+	for _, item := range items {
+		if item.ID == converted.ID {
+			seen = true
+			break
+		}
+	}
+	if !seen {
+		items = append(items, converted)
+	}
+	b.messages[conversationID] = items
+	conv := b.convs[conversationID]
+	conv.Preview, conv.Timestamp, conv.Unread = msg.Text, msg.Timestamp, !msg.FromMe
+	b.convs[conversationID] = conv
+	snapshot := storedData{Conversations: b.convs, Order: b.order, Messages: b.messages}
+	b.mu.Unlock()
+	if b.paths != nil {
+		_ = saveStoredData(b.paths.TelegramStoreFile(), snapshot)
+	}
+	if b.publish != nil {
+		b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkTelegram, Data: converted})
+	}
 }
 
 // Status returns the current Telegram status.
