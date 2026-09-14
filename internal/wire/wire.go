@@ -6,11 +6,18 @@
 // stream lets the QML side hold a single Socket with a SplitParser.
 package wire
 
+// Network names.
+const (
+	NetworkGMessages = "gmessages"
+	NetworkWhatsApp  = "whatsapp"
+)
+
 // Request is a call from the plugin to the daemon.
 type Request struct {
-	ID     string `json:"id"`
-	Method string `json:"method"`
-	Params any    `json:"params,omitempty"`
+	ID      string `json:"id"`
+	Network string `json:"network,omitempty"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
 }
 
 // Response answers exactly one Request.
@@ -23,8 +30,9 @@ type Response struct {
 
 // Event is an unsolicited push from the daemon.
 type Event struct {
-	Event string `json:"event"`
-	Data  any    `json:"data,omitempty"`
+	Event   string `json:"event"`
+	Network string `json:"network,omitempty"`
+	Data    any    `json:"data,omitempty"`
 }
 
 // Event names.
@@ -87,6 +95,7 @@ const (
 
 // Status is both the reply to MethodStatus and the payload of EventStatus.
 type Status struct {
+	Network string    `json:"network,omitempty"`
 	State   ConnState `json:"state"`
 	Unread  int       `json:"unread"`
 	PhoneOK bool      `json:"phoneOK"`

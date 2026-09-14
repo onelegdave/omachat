@@ -2,7 +2,7 @@
 
 Version **0.1.2**. See [release notes](https://github.com/onelegdave/omachat/releases/tag/v0.1.2).
 
-Chat from the Omarchy bar. Google Messages first, with room for more networks later: an unread badge, a conversation list, the latest 60 messages per conversation, inline images, and a composer.
+Chat from the Omarchy bar. Google Messages and WhatsApp: an unread badge, a conversation list, the latest 60 messages per conversation, inline images, and a composer.
 
 ![OmaChat inbox with fake demo contacts](preview.png)
 
@@ -20,7 +20,7 @@ omarchy plugin add https://github.com/onelegdave/omachat --enable
 
 Open the bar icon. If the helper is missing, the panel tells you. Go is not on a default Omarchy install. You install it; OmaChat does not.
 
-The helper is **not** in git and is **not** downloaded. The panel will say so and wait. **Go is not part of a default Omarchy install.** If you want OmaChat to talk to Google Messages, install Go yourself, then press **Build helper**. That compiles `omachatd` from this repo (`vendor/`, no extra module download):
+The helper is **not** in git and is **not** downloaded. The panel will say so and wait. **Go is not part of a default Omarchy install.** If you want OmaChat to talk to Google Messages or WhatsApp, install Go yourself, then press **Build helper**. That compiles `omachatd` from this repo (`vendor/`, no extra module download). WhatsApp linking also needs a C compiler (`gcc` or `clang`) because the helper uses CGO sqlite:
 
 ```bash
 omarchy pkg add go
@@ -41,7 +41,7 @@ These are in the Omarchy ISO / base set. OmaChat uses them as-is:
 | QR pairing fallback | `qrencode` | Yes |
 | Cookie DB / keyring | `sqlite3`, `secret-tool` | Yes |
 
-You still have to pair: open [https://messages.google.com/web](https://messages.google.com/web) in Chromium at least once, then **Pair with Google** in the panel. That is a Google step, not a package.
+You still have to pair each network yourself. For Google, open [https://messages.google.com/web](https://messages.google.com/web) in Chromium at least once, then **Pair with Google** in the panel. For WhatsApp, open the WhatsApp tab and **Use a QR code**, then scan it from **Linked devices** on your phone. The helper does not pair automatically.
 
 ## Optional extras (you choose)
 
@@ -63,16 +63,18 @@ You must have opened [https://messages.google.com/web](https://messages.google.c
 
 **Use a QR code** remains available for older phones that still have a QR scanner under Device pairing. Scan it only with that scanner. The phone camera opens Google's help page (`support.google.com/messages`) and does not pair. Newer Messages builds removed the scanner; use **Pair with Google** on those.
 
-Credentials land in `~/.local/share/omachat/session.json` (mode `0600`) after pairing actually completes.
+On the WhatsApp tab, **Use a QR code** is the pairing path. Open WhatsApp on your phone, **Linked devices**, **Link a device**, and scan the code shown in the panel. Do not scan it with the ordinary camera app.
 
-OmaChat never starts pairing automatically during startup or authentication recovery. If Google invalidates the session, the panel asks you to select **Pair with Google** again. A reconnect stays **Connecting** until an authenticated conversation sync succeeds.
+Google credentials land in `~/.local/share/omachat/session.json` (mode `0600`) after pairing actually completes. WhatsApp device keys land in `~/.local/share/omachat/whatsapp.db` (mode `0600` from creation) plus a private chat cache `whatsapp_store.json`.
+
+OmaChat never starts pairing automatically during startup or authentication recovery. If Google invalidates the session, the panel asks you to select **Pair with Google** again. If WhatsApp unlinks the desktop, the panel asks you to scan a QR code again. A reconnect stays **Connecting** until an authenticated session succeeds.
 
 ## Why this is not a web view
 
 Omarchy's shell is one Quickshell process. It also owns the bar, notifications, and the lock screen. Embedding `messages.google.com` with Qt WebEngine aborts that process. QtMultimedia camera backends have the same class of crash. So:
 
 - UI is QML against Omarchy's `qs.Ui` / `qs.Commons` kit (`Panel`, `BarWidget`, `PanelHero`, live theme colors)
-- Protocol work runs in `omachatd`, started and restarted by the plugin `service`
+- Protocol work runs in `omachatd`, started and restarted by the plugin `service`. Google and WhatsApp share that helper; they do not share sessions or inboxes.
 - Webcam and voice capture, when added, stay in child `ffmpeg` processes
 
 ## Using it
@@ -97,9 +99,12 @@ pairing** on your phone. A local cleanup failure is reported separately.
 | Path | Contents |
 |------|----------|
 | `~/.config/omarchy/plugins/onelegdave.omachat/` | Plugin checkout |
-| `~/.local/share/omachat/session.json` | Pairing credentials, secret |
+| `~/.local/share/omachat/session.json` | Google pairing credentials, secret |
+| `~/.local/share/omachat/whatsapp.db` | WhatsApp device store (sqlite, 0600) |
+| `~/.local/share/omachat/whatsapp_store.json` | Cached WhatsApp chats and downloadable media metadata |
 | `~/.local/share/omachat/config.json` | Browser profile preference, secret |
-| `~/.cache/omachat/media/` | Downloaded attachments |
+| `~/.cache/omachat/media/` | Google downloaded attachments |
+| `~/.cache/omachat/media_whatsapp/` | WhatsApp downloaded attachments |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Plugin to helper socket |
 
 Uninstall with `omarchy plugin remove onelegdave.omachat`. That does not delete credentials. Remove those with:
@@ -108,7 +113,7 @@ Uninstall with `omarchy plugin remove onelegdave.omachat`. That does not delete 
 rm -rf ~/.local/share/omachat ~/.cache/omachat
 ```
 
-Also revoke the device on your phone under **Messages → Device pairing**.
+Also revoke the device on your phone under **Messages → Device pairing** and, if you used WhatsApp, **WhatsApp → Linked devices**.
 
 ## Limits
 
@@ -116,6 +121,7 @@ Also revoke the device on your phone under **Messages → Device pairing**.
 - Pairing uses one Messages-for-web device slot.
 - RCS and end-to-end chats relay through your phone. The phone has to stay online.
 - Inbox of 50 conversations. Threads open with the latest 60 messages; **Load older messages** fetches earlier pages while keeping your reading position. Refresh retains loaded history. Switching conversations starts again with the latest page.
+- WhatsApp in this version pages cached companion history (initial phone sync plus live messages). whatsmeow can request on-demand phone history with `BuildHistorySyncRequest`; OmaChat does not send that request yet. View-once media is not stored or reopened. Voice, GIFs, reactions, and calling are disabled on the WhatsApp tab with a clear message rather than falling through to Google.
 - Incoming GIFs play in the thread. Pick a GIF to send the same way as a photo. Optional GIPHY search needs a personal API key in OmaChat Settings (gear in the header). Get a free key at developers.giphy.com, create an app, paste the key. It is stored in ~/.local/share/omachat/config.json, never shown back to the panel.
 - Voice notes: tap Rec to record (ffmpeg, not QtMultimedia), Play to preview, then send. Incoming voice plays with ffplay. Received video opens in the default player. Video calling is not in this release.
 
@@ -138,10 +144,10 @@ printf '{"id":"1","method":"status"}\n' | socat - UNIX-CONNECT:/tmp/gm.sock
 
 Protocol work is the [mautrix](https://github.com/mautrix/gmessages) project's. The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin) (MIT). The Omarchy service lifecycle and panel are mine.
 
-OneLegDave is the project owner and human maintainer. Codex (OpenAI) is an AI development lead and contributor, working under OneLegDave's direction. agy assisted with focused reviews and regression tests. AI assistance does not imply OpenAI endorsement or change the upstream authorship and license notices.
+OneLegDave is the project owner and human maintainer. AI tools assisted with development under that direction. That is assistance, not project ownership, Git authorship, or an upstream license change.
 
 ## License
 
 Created and maintained by [OneLegDave](https://www.onelegdave.dev/). Other Omarchy plugins: [OmaDroid](https://github.com/onelegdave/omadroid), [System QuikView](https://github.com/onelegdave/system-quikview).
 
-MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Helper protocol code adapted from Marc Ford remains under MIT with his copyright. mautrix libgm remains theirs.
+MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Helper protocol code adapted from Marc Ford remains under MIT with his copyright. mautrix libgm remains theirs. Vendored whatsmeow remains MPL-2.0.

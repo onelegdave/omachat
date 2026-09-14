@@ -11,8 +11,10 @@ credential or protocol bugs.
 ## What is stored
 
 - Pairing credentials: `~/.local/share/omachat/session.json` (0600)
+- WhatsApp device store: `~/.local/share/omachat/whatsapp.db` (0600 from creation)
+- WhatsApp chat cache: `~/.local/share/omachat/whatsapp_store.json` (0600)
 - Config (chosen browser profile): `~/.local/share/omachat/config.json` (0600)
-- Attachment cache: `~/.cache/omachat/media/`
+- Attachment cache: `~/.cache/omachat/media/` and `~/.cache/omachat/media_whatsapp/`
 - Control socket: `$XDG_RUNTIME_DIR/omachat/daemon.sock` (0600)
 
 Directories are 0700. The socket is only reachable by your account.

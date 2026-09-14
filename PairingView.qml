@@ -8,13 +8,15 @@ Item {
   id: root
 
   property var service: null
+  property string network: "gmessages"
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
 
   readonly property color dim: Color.muted
-  readonly property var status: service ? service.status : ({})
-  readonly property string connState: service ? (service.state || "") : ""
-  readonly property bool isGaia: connState === "gaiaPairing"
+  readonly property bool isWhatsApp: network === "whatsapp"
+  readonly property var status: service ? (typeof service.statusFor === "function" ? service.statusFor(network) : service.status) : ({})
+  readonly property string connState: service ? (typeof service.stateFor === "function" ? service.stateFor(network) : (service.state || "")) : ""
+  readonly property bool isGaia: !isWhatsApp && connState === "gaiaPairing"
   readonly property bool isQR: connState === "pairing"
   readonly property bool isError: connState === "error"
   readonly property string unpairWarning: connState === "unpaired" && status && status.error ? status.error : ""
@@ -57,6 +59,12 @@ Item {
       objectName: "pairingHero"
       width: parent.width
       title: {
+        if (root.isWhatsApp) {
+          if (root.isQR) return "Scan with WhatsApp on your phone"
+          if (root.unpairWarning !== "") return "Attention required"
+          if (root.isError) return root.status && root.status.error ? root.status.error : "Pairing failed"
+          return "Link with WhatsApp"
+        }
         if (root.isGaia) return "Tap this emoji on your phone"
         if (root.isQR) return "Use the Messages pairing scanner"
         if (root.unpairWarning !== "") return "Attention required"
@@ -64,6 +72,12 @@ Item {
         return "Handshake required"
       }
       meta: {
+        if (root.isWhatsApp) {
+          if (root.isQR) return "Open WhatsApp on your phone, tap Menu or Settings, select Linked devices, then Link a device and scan this QR code."
+          if (root.unpairWarning !== "") return ""
+          if (root.isError) return root.status && root.status.hint ? root.status.hint : ""
+          return "Link this desktop to your WhatsApp account using a QR code. Your phone must stay connected to the internet."
+        }
         if (root.isGaia) {
           return root.emoji !== ""
             ? "Google Messages on your phone is showing several emoji. Tap the matching one. It expires in about a minute."
@@ -80,7 +94,7 @@ Item {
         OpticalGlyph {
           implicitWidth: Style.font.display
           implicitHeight: Style.font.display
-          text: "󰭹"
+          text: root.isWhatsApp ? "󰖣" : "󰭹"
           color: Color.accent
           fontFamily: root.fontFamily
           fontSize: Style.font.display
@@ -130,14 +144,14 @@ Item {
     Row {
       anchors.horizontalCenter: parent.horizontalCenter
       spacing: Style.space(8)
-      visible: !root.isGaia
+      visible: !root.isGaia && !root.isWhatsApp
 
       Button {
         text: root.isQR ? "Pair with Google instead" : (root.isError ? "Try again" : "Pair with Google")
         foreground: root.foreground
         fontFamily: root.fontFamily
         bordered: true
-        onClicked: if (root.service) root.service.call("pairFromBrowser", null, null)
+        onClicked: if (root.service) root.service.call("pairFromBrowser", null, null, "gmessages")
       }
 
       Button {
@@ -145,14 +159,28 @@ Item {
         text: "Use a QR code"
         foreground: root.dim
         fontFamily: root.fontFamily
-        onClicked: if (root.service) root.service.call("startPairing", null, null)
+        onClicked: if (root.service) root.service.call("startPairing", null, null, "gmessages")
+      }
+    }
+
+    Row {
+      anchors.horizontalCenter: parent.horizontalCenter
+      spacing: Style.space(8)
+      visible: root.isWhatsApp && !root.isQR
+
+      Button {
+        text: root.isError ? "Try again" : "Use a QR code"
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        bordered: true
+        onClicked: if (root.service) root.service.call("startPairing", null, null, "whatsapp")
       }
     }
 
     Column {
       width: parent.width
       spacing: Style.space(4)
-      visible: !root.isGaia
+      visible: !root.isGaia && !root.isWhatsApp
 
       Row {
         anchors.horizontalCenter: parent.horizontalCenter
@@ -206,7 +234,7 @@ Item {
             onClicked: if (root.service) root.service.call("setProfile", { name: modelData.name }, function(ok, res) {
               if (ok && res) root.service.browserProfiles = res
               root.profilePickerOpen = false
-            })
+            }, "gmessages")
           }
 
           Text {

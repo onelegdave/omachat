@@ -13,3 +13,8 @@ The vendored libgm client includes a local synchronization patch: tachyon
 token updates share the cookie lock used when saving the session. This keeps
 token rotation from racing with JSON serialization. Preserve this patch when
 updating the vendored dependency. Upstream authorship and license remain intact.
+
+WhatsApp support vendors go.mau.fi/whatsmeow and related go.mau.fi modules
+under the Mozilla Public License 2.0. Those files remain MPL-2.0; this plugin
+does not relicense them. github.com/mattn/go-sqlite3 is MIT and is linked
+through CGO for the WhatsApp session database.

@@ -51,7 +51,7 @@ func NewPaths() (*Paths, error) {
 		runtime = filepath.Join(v, appDir)
 	}
 	p := &Paths{Data: data, Cache: cache, Runtime: runtime}
-	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir()} {
+	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
 		}
@@ -62,11 +62,17 @@ func NewPaths() (*Paths, error) {
 // SessionFile holds the paired-device credentials. Treat as a secret.
 func (p *Paths) SessionFile() string { return filepath.Join(p.Data, "session.json") }
 
+// WhatsAppDBFile is where the SQLite database for WhatsApp session is stored.
+func (p *Paths) WhatsAppDBFile() string { return filepath.Join(p.Data, "whatsapp.db") }
+
 // SocketPath is where the plugin connects.
 func (p *Paths) SocketPath() string { return filepath.Join(p.Runtime, "daemon.sock") }
 
-// MediaDir caches downloaded attachments and avatars.
+// MediaDir caches downloaded attachments and avatars for Google Messages.
 func (p *Paths) MediaDir() string { return filepath.Join(p.Cache, "media") }
+
+// WhatsAppMediaDir caches downloaded attachments and avatars for WhatsApp.
+func (p *Paths) WhatsAppMediaDir() string { return filepath.Join(p.Cache, "media_whatsapp") }
 
 // LoadSession reads persisted auth data. A missing file is not an error; it
 // returns fresh auth data and paired=false so the caller can start pairing.
@@ -119,7 +125,7 @@ func (p *Paths) SaveSession(auth *libgm.AuthData) error {
 
 }
 
-// ClearSession removes stored credentials, returning the daemon to unpaired.
+// ClearSession removes stored Google credentials, returning the Google client to unpaired.
 func (p *Paths) ClearSession() error {
 	p.sessionMu.Lock()
 	defer p.sessionMu.Unlock()
@@ -132,9 +138,31 @@ func (p *Paths) ClearSession() error {
 	return os.MkdirAll(p.MediaDir(), 0o700)
 }
 
-// writePrivateJSON uses a unique private temporary file in the destination
+// WhatsAppStoreFile holds the local cache of WhatsApp conversations and messages.
+func (p *Paths) WhatsAppStoreFile() string { return filepath.Join(p.Data, "whatsapp_store.json") }
+
+// ClearWhatsAppSession removes stored WhatsApp credentials/database, conversation cache, and media caches, returning WhatsApp to unpaired.
+func (p *Paths) ClearWhatsAppSession() error {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+	for _, ext := range []string{"", "-wal", "-shm", "-journal"} {
+		f := p.WhatsAppDBFile() + ext
+		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if err := os.Remove(p.WhatsAppStoreFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.RemoveAll(p.WhatsAppMediaDir()); err != nil {
+		return err
+	}
+	return os.MkdirAll(p.WhatsAppMediaDir(), 0o700)
+}
+
+// WritePrivateJSON uses a unique private temporary file (0600) in the destination
 // directory. Readers see either the old complete document or the new one.
-func writePrivateJSON(path string, data []byte) error {
+func WritePrivateJSON(path string, data []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".omachat-*.tmp")
 	if err != nil {
 		return err
@@ -148,4 +176,31 @@ func writePrivateJSON(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(f.Name(), path)
+}
+
+func writePrivateJSON(path string, data []byte) error {
+	return WritePrivateJSON(path, data)
+}
+
+// WritePrivateFile writes data to path using a 0600 tempfile and rename so a
+// destination symlink is not followed.
+func WritePrivateFile(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".omachat-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err = f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err = f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

@@ -34,7 +34,7 @@ Flickable {
       root.giphyKeySet = res.giphyKeySet === true
       var s = Number(res.uiScale)
       if (isFinite(s) && s > 0) root.uiScale = s
-    })
+    }, "gmessages")
   }
 
   function saveKey() {
@@ -51,7 +51,7 @@ Flickable {
       root.giphyKeySet = res && res.giphyKeySet === true
       root.keyDraft = ""
       root.statusText = "Key locked in. Try not to paste it in a group chat."
-    })
+    }, "gmessages")
   }
 
   function clearKey() {
@@ -66,7 +66,7 @@ Flickable {
       root.giphyKeySet = false
       root.keyDraft = ""
       root.statusText = "Key vaporized."
-    })
+    }, "gmessages")
   }
 
   function openUrl(url) {
@@ -140,7 +140,7 @@ Flickable {
           var s = res && res.uiScale ? Number(res.uiScale) : n
           root.uiScale = s
           root.scaleSaved(s)
-        })
+        }, "gmessages")
       }
     }
 

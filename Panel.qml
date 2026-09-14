@@ -21,16 +21,17 @@ Panel {
   property int accountGeneration: 0
   readonly property var serviceTabs: [
     { value: "gmessages", label: "Google", icon: "󰭹", tooltip: "Google Messages" },
-    { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "Coming later" },
+    { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "WhatsApp" },
     { value: "telegram", label: "Telegram", icon: "\uf2c6", tooltip: "Coming later" }
   ]
   property real uiScale: 1
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
-  readonly property bool serviceLive: activeService === "gmessages"
+  readonly property bool serviceLive: activeService === "gmessages" || activeService === "whatsapp"
 
   readonly property var chat: service
-  readonly property int unread: service ? (service.unread || 0) : 0
-  readonly property string connState: service ? (service.state || "") : ""
+  readonly property int unread: service ? (typeof service.unreadFor === "function" ? service.unreadFor(activeService) : (service.unread || 0)) : 0
+  readonly property string connState: service ? (typeof service.stateFor === "function" ? service.stateFor(activeService) : (service.state || "")) : ""
+  readonly property var activeStatus: service ? (typeof service.statusFor === "function" ? service.statusFor(activeService) : service.status) : null
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool needsPair: connState === "unpaired" || connState === "pairing"
@@ -39,18 +40,27 @@ Panel {
   readonly property string linkLabel: {
     if (!service) return "GHOST PROC"
     if (!service.connected) return "NO CARRIER"
-    if (connState === "connected" && service.status && service.status.phoneOK === false)
+    if (connState === "connected" && activeStatus && activeStatus.phoneOK === false)
       return "HANDSET GHOST"
     if (connState === "connected") return "ON THE WIRE"
     if (connState === "connecting" || connState === "pairing" || connState === "gaiaPairing")
       return "HANDSHAKING"
     if (connState === "unpaired") return "AIR GAP"
-    return Model.statusLine(service.status).toUpperCase()
+    return Model.statusLine(activeStatus).toUpperCase()
   }
 
   function refresh() {
-    if (service && service.refreshConversations) service.refreshConversations()
+    if (service && service.refreshConversations) service.refreshConversations(activeService)
     if (inboxLoader.item) inboxLoader.item.refreshThread()
+  }
+
+  function setActiveService(v) {
+    root.settingsOpen = false
+    root.activeService = v
+    if (root.service) {
+      root.service.currentNetwork = v
+      if (v === "gmessages" || v === "whatsapp") root.service.loadConversations(v)
+    }
   }
 
   function loadConfig() {
@@ -59,14 +69,14 @@ Panel {
       if (!ok || !res) return
       var s = Number(res.uiScale)
       if (isFinite(s) && s > 0) root.uiScale = s
-    })
+    }, "gmessages")
   }
 
   onOpenedChanged: {
     if (!opened || !service) return
     loadConfig()
-    if (needsPair) service.loadProfiles()
-    service.loadConversations()
+    if (needsPair && activeService === "gmessages") service.loadProfiles()
+    service.loadConversations(activeService)
   }
 
   onServiceChanged: {
@@ -87,7 +97,7 @@ Panel {
   function unpair() {
     if (!service || unpairing) return
     settingsOpen = false
-    activeService = "gmessages"
+    var currentNet = activeService
     var target = service
     var generation = accountGeneration
     unpairing = true
@@ -96,10 +106,12 @@ Panel {
       if (root.service !== target || root.accountGeneration !== generation) return
       root.unpairing = false
       if (!ok) {
-        root.unpairError = "Unpair did not complete successfully: " + String(res)
-          + " Check Google Messages on your phone under Device pairing."
+        var advice = currentNet === "whatsapp"
+          ? " Check WhatsApp on your phone under Linked devices."
+          : " Check Google Messages on your phone under Device pairing."
+        root.unpairError = "Unpair did not complete successfully: " + String(res) + advice
       }
-    })
+    }, currentNet)
   }
 
   KeyboardPanel {
@@ -120,9 +132,9 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
-        if (t === "1") { root.settingsOpen = false; root.activeService = "gmessages" }
-        else if (t === "2") { root.settingsOpen = false; root.activeService = "whatsapp" }
-        else if (t === "3") { root.settingsOpen = false; root.activeService = "telegram" }
+        if (t === "1") root.setActiveService("gmessages")
+        else if (t === "2") root.setActiveService("whatsapp")
+        else if (t === "3") root.setActiveService("telegram")
         else if (t === "r" || t === "R") root.refresh()
       }
 
@@ -143,7 +155,7 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             width: Style.space(22)
             height: Style.space(22)
-            text: "󰭹"
+            text: root.activeService === "whatsapp" ? "󰖣" : "󰭹"
             color: Color.accent
             fontFamily: root.fontFamily
             fontSize: fs(Style.font.heading)
@@ -257,10 +269,7 @@ Panel {
           fontFamily: root.fontFamily
           fontSize: fs(Style.font.body)
           focusable: false
-          onChanged: function(v) {
-            root.settingsOpen = false
-            root.activeService = v
-          }
+          onChanged: function(v) { root.setActiveService(v) }
         }
       }
 
@@ -385,9 +394,9 @@ Panel {
             if (root.service && root.service.building)
               return "Compiling omachatd from this plugin folder. No extra downloads."
             if (needGo)
-              return "OmaChat talks to Google Messages through a small helper. It is not on a default Omarchy install. Install Go yourself, then come back and build."
+              return "OmaChat talks to Google Messages and WhatsApp through a small helper. It is not on a default Omarchy install. Install Go yourself, then come back and build. WhatsApp also needs a C compiler (gcc or clang) for sqlite."
             if (canBuild)
-              return "Go is installed. Build omachatd from the files in this plugin. That happens once."
+              return "Go is installed. Build omachatd from the files in this plugin. That happens once. WhatsApp linking uses CGO and needs gcc or clang."
             return "The protocol helper runs as a child of the Omarchy shell."
           }
           foreground: root.foreground
@@ -409,7 +418,7 @@ Panel {
           visible: needGo
           wrapMode: Text.WordWrap
           horizontalAlignment: Text.AlignHCenter
-          text: "In a terminal:\nomarchy pkg add go\n\nPackage page: archlinux.org extra/go\nNothing is installed for you."
+          text: "In a terminal:\nomarchy pkg add go\n\nPackage page: archlinux.org extra/go\nWhatsApp needs gcc or clang as well (CGO sqlite). Nothing is installed for you."
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)
@@ -461,6 +470,7 @@ Panel {
     id: pairingView
     PairingView {
       service: root.service
+      network: root.activeService
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
@@ -470,12 +480,13 @@ Panel {
     id: inboxView
     InboxView {
       service: root.service
+      network: root.activeService
       foreground: root.foreground
       fontFamily: root.fontFamily
       host: root
       viewActive: inboxLoader.visible
       settings: root.settings
-      networkLabel: "Google Messages"
+      networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : "Google Messages"
       uiScale: root.uiScale
     }
   }

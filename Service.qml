@@ -37,17 +37,36 @@ Item {
   property string helperState: "checking"
   property string buildLog: ""
 
+  property string currentNetwork: "gmessages"
+
   property var status: ({ state: "disconnected", unread: 0, phoneOK: false, qrURL: "", error: "" })
+  property var statusWA: ({ state: "disconnected", unread: 0, phoneOK: true, qrURL: "", error: "" })
   readonly property string state: status && status.state ? status.state : "disconnected"
-  readonly property int unread: status && status.unread ? status.unread : 0
+  readonly property int unread: (status && status.unread ? status.unread : 0) + (statusWA && statusWA.unread ? statusWA.unread : 0)
   property var conversations: []
+  property var conversationsWA: []
   property var browserProfiles: []
   property bool refreshing: false
   property string refreshError: ""
 
-  signal messageReceived(var message)
-  signal conversationUpdated(var conversation)
-  signal paired()
+  function statusFor(net) {
+    return net === "whatsapp" ? root.statusWA : root.status
+  }
+  function stateFor(net) {
+    var s = statusFor(net)
+    return s && s.state ? s.state : "disconnected"
+  }
+  function unreadFor(net) {
+    var s = statusFor(net)
+    return s && s.unread ? s.unread : 0
+  }
+  function conversationsFor(net) {
+    return net === "whatsapp" ? root.conversationsWA : root.conversations
+  }
+
+  signal messageReceived(var message, string network)
+  signal conversationUpdated(var conversation, string network)
+  signal paired(string network)
   signal transportError(string message)
 
   property int _nextId: 1
@@ -55,7 +74,7 @@ Item {
   property int _restartMs: 1000
   property bool _startingHelper: false
 
-  function call(method, params, callback) {
+  function call(method, params, callback, network) {
     var s = sockLoader.item
     if (!s || !s.connected) {
       if (callback) callback(false, "not connected to omachatd")
@@ -63,27 +82,33 @@ Item {
     }
     var id = String(_nextId++)
     if (callback) _pending[id] = callback
-    var frame = { id: id, method: method }
+    var net = network || "gmessages"
+    var frame = { id: id, method: method, network: net }
     if (params !== undefined && params !== null) frame.params = params
     s.write(JSON.stringify(frame) + "\n")
     s.flush()
   }
 
-  function loadConversations() {
+  function loadConversations(network) {
+    var net = network || "gmessages"
     call("conversations", { count: 50 }, function(ok, res) {
-      if (ok && res) root.conversations = res
-    })
+      if (ok && res) {
+        if (net === "whatsapp") root.conversationsWA = res
+        else root.conversations = res
+      }
+    }, net)
   }
 
-  function refreshConversations() {
+  function refreshConversations(network) {
+    var net = network || "gmessages"
     if (refreshing) return
     refreshing = true
     refreshError = ""
     call("refresh", null, function(ok, res) {
       root.refreshing = false
       if (!ok) { root.refreshError = String(res); return }
-      root.loadConversations()
-    })
+      root.loadConversations(net)
+    }, net)
   }
 
   function failPending(reason) {
@@ -95,7 +120,7 @@ Item {
   function loadProfiles() {
     call("listProfiles", null, function(ok, res) {
       if (ok && res) root.browserProfiles = res
-    })
+    }, "gmessages")
   }
 
   // Quickshell Socket is single-use, and toggling a Loader's active flag in
@@ -197,7 +222,7 @@ Item {
   Process {
     id: buildProc
     command: ["/usr/bin/go", "version"]
-    environment: ({ GOPROXY: "off" })
+    environment: ({ GOPROXY: "off", CGO_ENABLED: "1" })
     stderr: SplitParser {
       splitMarker: "\n"
       onRead: function(line) {
@@ -216,7 +241,7 @@ Item {
         var tail = root.buildLog.trim()
         root.helperError = tail !== ""
           ? "Build failed (exit " + code + "):\n" + tail
-          : "Build failed (exit " + code + "). Install Go with: omarchy pkg add go"
+          : "Build failed (exit " + code + "). Install Go with: omarchy pkg add go. WhatsApp needs a C compiler (gcc or clang) because the helper links mattn/go-sqlite3 with CGO."
       }
     }
   }
@@ -278,8 +303,10 @@ Item {
           root.helperState = "running"
           reconnectTimer.stop()
           reconnectTimer.interval = 1000
-          root.call("status", null, function(ok, res) { if (ok && res) root.status = res })
-          root.loadConversations()
+          root.call("status", null, function(ok, res) { if (ok && res) root.status = res }, "gmessages")
+          root.call("status", null, function(ok, res) { if (ok && res) root.statusWA = res }, "whatsapp")
+          root.loadConversations("gmessages")
+          root.loadConversations("whatsapp")
         } else {
           root.failPending("Disconnected from omachatd")
           reconnectTimer.start()
@@ -327,6 +354,8 @@ Item {
     }
 
     if (frame.event !== undefined) {
+      var net = frame.network || "gmessages"
+      if (net !== "gmessages" && net !== "whatsapp") return
       root._handleEvent(frame)
       return
     }
@@ -339,20 +368,30 @@ Item {
   }
 
   function _handleEvent(frame) {
+    var net = frame.network || "gmessages"
     switch (frame.event) {
     case "status":
-      root.status = frame.data
-      if (root.state === "unpaired") root.conversations = []
+      if (net === "whatsapp") {
+        root.statusWA = frame.data
+        if (root.statusWA && root.statusWA.state === "unpaired") root.conversationsWA = []
+      } else {
+        root.status = frame.data
+        if (root.state === "unpaired") root.conversations = []
+      }
       break
     case "conversation":
-      root._mergeConversation(frame.data)
+      if (net === "whatsapp") {
+        root._mergeConversationWA(frame.data)
+      } else {
+        root._mergeConversation(frame.data)
+      }
       break
     case "message":
-      root.messageReceived(frame.data)
+      root.messageReceived(frame.data, net)
       break
     case "paired":
-      root.paired()
-      root.loadConversations()
+      root.paired(net)
+      root.loadConversations(net)
       break
     }
   }
@@ -374,6 +413,26 @@ Item {
       return (b.timestamp || 0) - (a.timestamp || 0)
     })
     root.conversations = list
-    root.conversationUpdated(conv)
+    root.conversationUpdated(conv, "gmessages")
+  }
+
+  function _mergeConversationWA(conv) {
+    if (!conv || !conv.id) return
+    var list = root.conversationsWA.slice()
+    var found = false
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === conv.id) {
+        list[i] = conv
+        found = true
+        break
+      }
+    }
+    if (!found) list.push(conv)
+    list.sort(function(a, b) {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+      return (b.timestamp || 0) - (a.timestamp || 0)
+    })
+    root.conversationsWA = list
+    root.conversationUpdated(conv, "whatsapp")
   }
 }

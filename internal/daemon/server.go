@@ -129,7 +129,10 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 
 	// Push current status immediately so a freshly-connected plugin renders
 	// without having to ask.
-	_ = w.send(wire.Event{Event: wire.EventStatus, Data: d.Status()})
+	_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkGMessages, Data: d.Status()})
+	if d.wa != nil {
+		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkWhatsApp, Data: d.wa.Status()})
+	}
 
 	go func() {
 		for {
@@ -194,6 +197,13 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 	}
 	ok := func(result any) wire.Response {
 		return wire.Response{ID: req.ID, OK: true, Result: result}
+	}
+
+	if req.Network == wire.NetworkWhatsApp {
+		return d.dispatchWhatsApp(ctx, req)
+	}
+	if req.Network != "" && req.Network != wire.NetworkGMessages {
+		return wire.Response{ID: req.ID, OK: false, Error: "unknown network: " + req.Network}
 	}
 
 	// A request must not outlive the account it was issued against.
@@ -413,5 +423,163 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 
 	default:
 		return fail(fmt.Errorf("unknown method %q", req.Method))
+	}
+}
+
+func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Response {
+	fail := func(err error) wire.Response {
+		return wire.Response{ID: req.ID, OK: false, Error: err.Error()}
+	}
+	ok := func(result any) wire.Response {
+		return wire.Response{ID: req.ID, OK: true, Result: result}
+	}
+	if d.wa == nil {
+		return fail(errors.New("WhatsApp backend not initialized"))
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	switch req.Method {
+	case wire.MethodStatus:
+		return ok(d.wa.Status())
+
+	case wire.MethodConversations:
+		p, err := decodeParams[wire.ConversationsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(d.wa.Conversations(p.Count))
+
+	case wire.MethodMessages:
+		p, err := decodeParams[wire.MessagesParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.wa.Messages(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodSend:
+		p, err := decodeParams[wire.SendParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		msg, err := d.wa.Send(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(msg)
+
+	case wire.MethodSendMedia:
+		p, err := decodeParams[wire.SendMediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.wa.SendMedia(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodMedia:
+		p, err := decodeParams[wire.MediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.wa.Media(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodMarkRead:
+		p, err := decodeParams[wire.MarkReadParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.wa.MarkRead(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
+	case wire.MethodStartPairing:
+		qr, err := d.wa.StartPairing(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(map[string]string{"url": qr})
+
+	case wire.MethodUnpair:
+		if err := d.wa.Unpair(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
+	case wire.MethodRefresh:
+		if err := d.wa.Refresh(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
+	case wire.MethodPickImage:
+		path, err := d.PickImage(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(wire.PickImageResult{Path: path})
+
+	case wire.MethodDiscardCapture:
+		p, err := decodeParams[wire.DiscardCaptureParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.DiscardCapture(p.Path); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
+	case wire.MethodConfig:
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetUiScale:
+		p, err := decodeParams[wire.SetUiScaleParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetUiScale(p.Scale); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetGiphyKey:
+		p, err := decodeParams[wire.SetGiphyKeyParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetGiphyKey(p.Key); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodGaiaPairing, wire.MethodPairFromBrowser:
+		return fail(errors.New("Google account pairing is not supported on WhatsApp"))
+
+	case wire.MethodListProfiles, wire.MethodSetProfile:
+		return fail(errors.New("browser profiles are not supported on WhatsApp"))
+
+	case wire.MethodReact:
+		return fail(errors.New("reactions are not supported on WhatsApp"))
+
+	case wire.MethodSetTyping:
+		return fail(errors.New("typing indicators are not supported on WhatsApp"))
+
+	case wire.MethodGifSearch, wire.MethodGifFetch:
+		return fail(errors.New("GIF search is not supported on WhatsApp"))
+
+	default:
+		return fail(fmt.Errorf("unknown method %q for network whatsapp", req.Method))
 	}
 }

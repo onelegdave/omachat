@@ -15,13 +15,13 @@ Item {
       return {
         title: "WhatsApp",
         glyph: "󰖣",
-        meta: "This frequency is allocated. Nobody is transmitting yet. Google still answers on the first tab."
+        meta: "WhatsApp lives on the WhatsApp tab after you link a device with a QR code."
       }
     case "telegram":
       return {
         title: "Telegram",
         glyph: "\uf2c6",
-        meta: "Paper planes stay grounded for now. Google still answers on the first tab."
+        meta: "Paper planes stay grounded for now. Google and WhatsApp answer on the other tabs."
       }
     default:
       return {
@@ -60,7 +60,7 @@ Item {
       width: parent.width
       horizontalAlignment: Text.AlignHCenter
       wrapMode: Text.WordWrap
-      text: "Hit Google when you actually want to talk to a human."
+      text: "Hit Google or WhatsApp when you actually want to talk to a human."
       color: root.foreground
       font.family: root.fontFamily
       font.pixelSize: Style.font.body

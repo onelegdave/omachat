@@ -14,8 +14,10 @@ ShellRoot {
  QtObject {
   id: fake
   property bool connected: true
+  property string currentNetwork: "gmessages"
   property string state: "connected"
-  property var status: ({phoneOK:true})
+  property var status: ({phoneOK:true, state:"connected"})
+  property var statusWA: ({phoneOK:true, state:"connected"})
   property int unread: 0
   property string refreshError: ""
   property var browserProfiles: []
@@ -23,19 +25,27 @@ ShellRoot {
    {id:"a",name:"Demo Alice",preview:"Test conversation",timestamp:1000000},
    {id:"b",name:"Demo Bob",preview:"Another test",timestamp:2000000}
   ]
+  property var conversationsWA: [
+   {id:"wa-1@s.whatsapp.net",name:"Demo WA",preview:"WA test",timestamp:3000000}
+  ]
   property var calls: []
   property var delayed: []
   property bool failMedia: true
-  signal messageReceived(var message)
-  signal conversationUpdated(var conversation)
-  signal paired()
-  function loadConversations() {}
+  signal messageReceived(var message, var net)
+  signal conversationUpdated(var conversation, var net)
+  signal paired(var net)
+  function statusFor(net) { return net === "whatsapp" ? statusWA : status }
+  function stateFor(net) { var s = statusFor(net); return s && s.state ? s.state : state }
+  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : conversations }
+  function unreadFor(net) { return 0 }
+  function loadConversations(net) {}
   function loadProfiles() {}
-  function refreshConversations() { calls.push({method:"refresh"}) }
-  function call(method, params, callback) {
-   calls.push({method:method, params:params})
+  function refreshConversations(net) { calls.push({method:"refresh", network:net || "gmessages"}) }
+  function call(method, params, callback, network) {
+   var net = network || "gmessages"
+   calls.push({method:method, params:params, network:net})
    if (method === "send" || method === "sendMedia" || method === "pickImage" || method === "react" || method === "unpair") {
-    delayed.push({method:method,params:params,callback:callback}); return
+    delayed.push({method:method,params:params,callback:callback,network:net}); return
    }
    if (!callback) return
    if (method === "messages") callback(true, {messages:[]})
@@ -51,6 +61,7 @@ ShellRoot {
   PanelKeyCatcher {
    id: catcher
    anchors.fill: parent
+   blocked: inbox.composerFocus === true || inbox.linkConfirmOpen === true
    property int shortcuts: 0
    onTextKey: shortcuts++
    Chat.InboxView { id: inbox; anchors.fill: parent; service: fake; host: host }
@@ -94,10 +105,10 @@ ShellRoot {
     inbox.refreshThread()
     root.check(inbox.messages.length === 1 && inbox.messages[0].tmpID === pending.params.tmpID, "refresh preserves an in-flight send")
     root.check(!fake.calls.some(function(c){return c.method === "markRead" && c.params.messageID === pending.params.tmpID}), "read receipts never use a local provisional message ID")
-    fake.messageReceived({id:"incoming",conversationID:"b",text:"OK",fromMe:false,timestamp:1})
+    fake.messageReceived({id:"incoming",conversationID:"b",text:"OK",fromMe:false,timestamp:1}, "gmessages")
     root.check(inbox.messages.length === 2, "incoming identical text preserves outgoing pending bubble")
     var sent={id:"server",tmpID:pending.params.tmpID,conversationID:"b",text:"OK",fromMe:true,timestamp:2,pending:false}
-    fake.messageReceived(sent)
+    fake.messageReceived(sent, "gmessages")
     pending.callback(true,{id:sent.tmpID,tmpID:sent.tmpID,conversationID:"b",text:"OK",fromMe:true,timestamp:3,pending:true,provisional:true})
     root.check(inbox.messages.length === 2 && inbox.messages[1].id === "server", "late acknowledgement preserves real message identity")
 
@@ -117,8 +128,8 @@ ShellRoot {
     root.check(fake.delayed.length === delayedCount, "an in-flight attachment cannot be submitted twice")
     var imageEcho={id:"image-server",tmpID:attachmentSend.params.tmpID,conversationID:"a",fromMe:true,deleted:false,timestamp:10,attachments:[{key:"image-key"}]}
     var captionEcho={id:"caption-server",tmpID:"caption-tx",conversationID:"a",fromMe:true,timestamp:11,text:"Separate caption"}
-    fake.messageReceived(imageEcho)
-    fake.messageReceived(captionEcho)
+    fake.messageReceived(imageEcho, "gmessages")
+    fake.messageReceived(captionEcho, "gmessages")
     attachmentSend.callback(true,{
      message:{id:attachmentSend.params.tmpID,tmpID:attachmentSend.params.tmpID,conversationID:"a",fromMe:true,deleted:false,timestamp:12,provisional:true,pending:true,attachments:[{key:"image-key"}]},
      captionMessage:{id:"caption-tx",tmpID:"caption-tx",conversationID:"a",fromMe:true,timestamp:13,text:"Separate caption",provisional:true,pending:true}
@@ -219,6 +230,72 @@ ShellRoot {
     fake.status={state:"unpaired"}
     unpairCall.callback(true,null)
     root.check(panel.unpairError === "" && !panel.unpairing, "successful unpair leaves no stale warning")
+
+    // --- WhatsApp Tab and Isolation Tests ---
+    fake.state = "connected"
+    fake.status = {phoneOK:true, state:"connected"}
+    fake.statusWA = {phoneOK:true, state:"connected"}
+    panel.activeService = "whatsapp"
+    var waInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(waInbox && waInbox.isWhatsApp === true, "switching to whatsapp activates WhatsApp inbox view")
+    root.check(waInbox.network === "whatsapp", "inbox network property is whatsapp")
+    var waMic = inspect.findChild(waInbox, "micButton")
+    var waGif = inspect.findChild(waInbox, "gifButton")
+    root.check(waMic && !waMic.visible && waMic.width === 0, "voice recording button is hidden on WhatsApp")
+    root.check(waGif && !waGif.visible && waGif.width === 0, "GIF search button is hidden on WhatsApp")
+
+    waInbox.react("wa-msg", "❤️")
+    root.check(waInbox.threadError === "Reactions are not supported for WhatsApp in this version.", "reacting on WhatsApp displays unsupported error")
+    waInbox.openGifPicker()
+    root.check(waInbox.threadError === "GIF search is not supported for WhatsApp in this version.", "GIF search on WhatsApp displays unsupported error")
+    waInbox.startRecording()
+    root.check(waInbox.threadError === "Voice messages are not supported for WhatsApp in this version.", "voice recording on WhatsApp displays unsupported error")
+
+    // Test WhatsApp unpair phone advice
+    panel.unpair()
+    var waUnpairCall = fake.delayed.pop()
+    root.check(waUnpairCall.network === "whatsapp", "unpair routed to whatsapp network")
+    waUnpairCall.callback(false, "Connection refused")
+    root.check(inspect.findChild(panel, "unpairErrorLabel").text.indexOf("Check WhatsApp on your phone under Linked devices") >= 0, "WhatsApp unpair failure advises checking Linked devices")
+    panel.unpairError = ""
+
+    // Test tab switch with draft and conversation isolation
+    panel.activeService = "whatsapp"
+    waInbox = inspect.findChild(panel, "inboxLoader").item
+    waInbox.selectConversation("wa-1@s.whatsapp.net")
+    var waComposer = inspect.findChild(waInbox, "composer")
+    waComposer.text = "WA Draft"
+    panel.activeService = "gmessages"
+    var gmInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(gmInbox && !gmInbox.isWhatsApp, "switching back to Google restores Google inbox")
+    panel.activeService = "whatsapp"
+    waInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(inspect.findChild(waInbox, "composer").text === "WA Draft", "returning to WhatsApp restores WhatsApp draft")
+
+    waInbox.selectConversation("wa-1@s.whatsapp.net")
+    waInbox.sendMessage("WA pending")
+    var waPending = fake.delayed.pop()
+    root.check(waPending.method === "send" && waPending.network === "whatsapp", "whatsapp send is routed to whatsapp")
+    panel.setActiveService("gmessages")
+    gmInbox = inspect.findChild(panel, "inboxLoader").item
+    gmInbox.selectConversation("a")
+    inspect.findChild(gmInbox, "composer").text = ""
+    gmInbox.sendMessage("Google pending")
+    var gmPending = fake.delayed.pop()
+    root.check(gmPending.method === "send" && gmPending.network === "gmessages", "google send is routed to gmessages")
+    var gmCount = gmInbox.messages.length
+    waPending.callback(true, {id:"wa-late", conversationID:"wa-1@s.whatsapp.net", text:"WA pending", fromMe:true, timestamp:50})
+    root.check(gmInbox.messages.length === gmCount, "late whatsapp send callback cannot land in the google inbox")
+    root.check(fake.currentNetwork === "gmessages", "keyboard-equivalent tab switch updates currentNetwork")
+
+    var beforeTelegram = fake.calls.length
+    panel.setActiveService("telegram")
+    root.check(!inspect.findChild(panel, "inboxLoader").visible, "unknown network hides the live inbox")
+    root.check(fake.calls.length === beforeTelegram, "telegram tab does not issue chat RPCs")
+    fake.call("status", null, function() {}, "telegram")
+    var tel = fake.calls[fake.calls.length-1]
+    root.check(tel.network === "telegram", "explicit unknown network is not rewritten to google")
+    panel.setActiveService("gmessages")
     var screenshot=Quickshell.env("OMACHAT_TEST_SCREENSHOT")
     if (screenshot) {
      inbox.grabToImage(function(image) {
@@ -228,7 +305,7 @@ ShellRoot {
      })
     } else { console.log("OMACHAT_QML_PASS");Qt.quit() }
     root.passed=true
-   } catch(e) { console.error("OMACHAT_QML_FAIL",e.stack || e); Qt.quit() }
+   } catch(e) { console.error("OMACHAT_QML_FAIL", (e && e.message) ? e.message : "", e.stack || e); Qt.quit() }
  }
  Timer { running: true; interval: 10000; onTriggered: {console.error("OMACHAT_QML_FAIL timeout");Qt.quit()} }
 }

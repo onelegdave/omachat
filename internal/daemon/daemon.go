@@ -15,6 +15,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
 	"github.com/onelegdave/omachat/internal/store"
+	"github.com/onelegdave/omachat/internal/whatsapp"
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
@@ -80,11 +81,13 @@ type Daemon struct {
 
 	subMu sync.Mutex
 	subs  map[chan wire.Event]struct{}
+
+	wa *whatsapp.Backend
 }
 
 // New builds a daemon around already-resolved paths.
 func New(log zerolog.Logger, paths *store.Paths) *Daemon {
-	return &Daemon{
+	d := &Daemon{
 		log:       log,
 		paths:     paths,
 		convs:     make(map[string]wire.Conversation),
@@ -99,8 +102,20 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		// "Phone not responding" forever, because the event that clears it
 		// (PhoneRespondingAgain) only fires after a failure that never
 		// happened.
-		status: wire.Status{State: wire.StateUnpaired, PhoneOK: true},
+		status: wire.Status{Network: wire.NetworkGMessages, State: wire.StateUnpaired, PhoneOK: true},
 	}
+	d.wa = whatsapp.New(log, paths, d.PublishEvent)
+	return d
+}
+
+// SetWhatsApp overrides the WhatsApp backend instance (useful for unit testing).
+func (d *Daemon) SetWhatsApp(wa *whatsapp.Backend) {
+	d.wa = wa
+}
+
+// WhatsApp returns the WhatsApp backend instance.
+func (d *Daemon) WhatsApp() *whatsapp.Backend {
+	return d.wa
 }
 
 // Start loads any stored session and connects, or parks in the unpaired state
@@ -111,9 +126,19 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.maintCtx, d.maintCancel = context.WithCancel(ctx)
 	d.sessionCtx, d.sessionCancel = context.WithCancel(d.maintCtx)
 
+	// Independent network start: start WhatsApp regardless of Google session status
+	if d.wa != nil {
+		if err := d.wa.Start(ctx); err != nil {
+			d.log.Error().Err(err).Msg("WhatsApp backend initialization failed")
+			d.wa.SetState(wire.StateDisconnected, "WhatsApp initialization error: "+err.Error())
+		}
+	}
+
 	auth, paired, err := d.paths.LoadSession()
 	if err != nil {
-		return fmt.Errorf("load session: %w", err)
+		d.log.Warn().Err(err).Msg("Google session read failed; marking disconnected")
+		d.setState(wire.StateDisconnected, "load session: "+err.Error())
+		return nil
 	}
 	d.mu.Lock()
 	d.auth = auth
@@ -123,7 +148,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	if !paired {
 		d.setState(wire.StateUnpaired, "")
-		d.log.Info().Msg("No stored session; waiting for pairing")
+		d.log.Info().Msg("No stored Google session; waiting for pairing")
 		return nil
 	}
 	// Only completed pairings are ever written, so a session on disk means
@@ -141,7 +166,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		} else {
 			d.setState(wire.StateDisconnected, err.Error())
 		}
-		d.log.Warn().Err(err).Msg("Initial connect failed")
+		d.log.Warn().Err(err).Msg("Initial Google connect failed")
 		return nil
 	}
 	go d.initialSync(d.sessionContext())
@@ -229,6 +254,9 @@ func (d *Daemon) Stop() {
 	if c != nil {
 		c.Disconnect()
 	}
+	if d.wa != nil {
+		d.wa.Stop()
+	}
 }
 
 func (d *Daemon) saveSession() {
@@ -268,17 +296,21 @@ func (d *Daemon) Subscribe() (<-chan wire.Event, func()) {
 	}
 }
 
-func (d *Daemon) publish(name string, data any) {
-	evt := wire.Event{Event: name, Data: data}
+// PublishEvent pushes an event to all connected subscribers.
+func (d *Daemon) PublishEvent(evt wire.Event) {
 	d.subMu.Lock()
 	defer d.subMu.Unlock()
 	for ch := range d.subs {
 		select {
 		case ch <- evt:
 		default:
-			d.log.Warn().Str("event", name).Msg("Subscriber lagging, dropping event")
+			d.log.Warn().Str("event", evt.Event).Str("network", evt.Network).Msg("Subscriber lagging, dropping event")
 		}
 	}
+}
+
+func (d *Daemon) publish(name string, data any) {
+	d.PublishEvent(wire.Event{Event: name, Network: wire.NetworkGMessages, Data: data})
 }
 
 func (d *Daemon) setState(state wire.ConnState, errMsg string) {

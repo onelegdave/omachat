@@ -103,3 +103,87 @@ func TestConfigStoreSurvivesCorruptFile(t *testing.T) {
 		t.Errorf("corrupt config should fall back to defaults, got %q", got)
 	}
 }
+
+func TestStorageIsolation(t *testing.T) {
+	dataDir := t.TempDir()
+	cacheDir := t.TempDir()
+	runtimeDir := t.TempDir()
+
+	p := &Paths{Data: dataDir, Cache: cacheDir, Runtime: runtimeDir}
+	if err := os.MkdirAll(p.MediaDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(p.WhatsAppMediaDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create Google files
+	if err := os.WriteFile(p.SessionFile(), []byte("google-session"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	googleMedia := p.MediaDir() + "/image.png"
+	if err := os.WriteFile(googleMedia, []byte("google-media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create WhatsApp files
+	if err := os.WriteFile(p.WhatsAppDBFile(), []byte("whatsapp-db"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.WhatsAppDBFile()+"-wal", []byte("whatsapp-wal"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.WhatsAppStoreFile(), []byte("whatsapp-store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waMedia := p.WhatsAppMediaDir() + "/photo.png"
+	if err := os.WriteFile(waMedia, []byte("whatsapp-media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Clearing Google session must NOT touch WhatsApp files
+	if err := p.ClearSession(); err != nil {
+		t.Fatalf("ClearSession: %v", err)
+	}
+	if _, err := os.Stat(p.SessionFile()); !os.IsNotExist(err) {
+		t.Errorf("expected Google session file to be deleted, got %v", err)
+	}
+	if _, err := os.Stat(googleMedia); !os.IsNotExist(err) {
+		t.Errorf("expected Google media file to be deleted, got %v", err)
+	}
+	if b, err := os.ReadFile(p.WhatsAppDBFile()); err != nil || string(b) != "whatsapp-db" {
+		t.Errorf("WhatsApp DB file was modified or deleted by ClearSession: %v", err)
+	}
+	if b, err := os.ReadFile(p.WhatsAppDBFile() + "-wal"); err != nil || string(b) != "whatsapp-wal" {
+		t.Errorf("WhatsApp WAL file was modified or deleted by ClearSession: %v", err)
+	}
+	if b, err := os.ReadFile(p.WhatsAppStoreFile()); err != nil || string(b) != "whatsapp-store" {
+		t.Errorf("WhatsApp store file was modified or deleted by ClearSession: %v", err)
+	}
+	if b, err := os.ReadFile(waMedia); err != nil || string(b) != "whatsapp-media" {
+		t.Errorf("WhatsApp media file was modified or deleted by ClearSession: %v", err)
+	}
+
+	// Now re-create Google files and clear WhatsApp session
+	if err := os.WriteFile(p.SessionFile(), []byte("google-session-2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ClearWhatsAppSession(); err != nil {
+		t.Fatalf("ClearWhatsAppSession: %v", err)
+	}
+	if _, err := os.Stat(p.WhatsAppDBFile()); !os.IsNotExist(err) {
+		t.Errorf("expected WhatsApp DB file to be deleted, got %v", err)
+	}
+	if _, err := os.Stat(p.WhatsAppDBFile() + "-wal"); !os.IsNotExist(err) {
+		t.Errorf("expected WhatsApp WAL file to be deleted, got %v", err)
+	}
+	if _, err := os.Stat(p.WhatsAppStoreFile()); !os.IsNotExist(err) {
+		t.Errorf("expected WhatsApp store file to be deleted, got %v", err)
+	}
+	if _, err := os.Stat(waMedia); !os.IsNotExist(err) {
+		t.Errorf("expected WhatsApp media file to be deleted, got %v", err)
+	}
+	if b, err := os.ReadFile(p.SessionFile()); err != nil || string(b) != "google-session-2" {
+		t.Errorf("Google session file was modified or deleted by ClearWhatsAppSession: %v", err)
+	}
+}

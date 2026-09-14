@@ -16,7 +16,9 @@ Item {
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
   property var host: null
   property var settings: null
-  property string networkLabel: "Google Messages"
+  property string network: "gmessages"
+  readonly property bool isWhatsApp: network === "whatsapp"
+  property string networkLabel: isWhatsApp ? "WhatsApp" : "Google Messages"
 
   readonly property color dim: Color.muted
   readonly property color panelBg: Color.popups.background
@@ -52,7 +54,7 @@ Item {
   property string playingKey: ""
   property string audioWaitingKey: ""
   readonly property bool playingVoice: playingKey !== ""
-  readonly property var conversations: service ? (service.conversations || []) : []
+  readonly property var conversations: service ? (typeof service.conversationsFor === "function" ? service.conversationsFor(root.network) : (service.conversations || [])) : []
   property string searchQuery: ""
   property string selectedConvID: ""
   property var drafts: ({})
@@ -129,11 +131,48 @@ Item {
   onSettingsChanged: syncGiphyKey()
   onServiceChanged: syncGiphyKey()
 
+  property var _selectedByNet: ({})
+  property string _previousNetwork: network
+  onNetworkChanged: {
+    var prev = _previousNetwork
+    _previousNetwork = network
+    if (prev === network) return
+
+    if (selectedConvID) {
+      var saved = Object.assign({}, drafts)
+      saved[selectedConvID] = composer ? composer.text : ""
+      drafts = saved
+    }
+    var nextSel = Object.assign({}, _selectedByNet)
+    nextSel[prev] = selectedConvID
+    _selectedByNet = nextSel
+
+    stopPlayback()
+    if (recording) stopRecording(false)
+    discardPendingCapture()
+    pendingAttachment = ""
+    attachCaption.text = ""
+    emojiPickerOpen = false
+    gifPickerOpen = false
+    reactingTo = ""
+    threadError = ""
+
+    var restoredID = _selectedByNet[network] || ""
+    selectedConvID = ""
+    messages = []
+    grouped = []
+    if (restoredID) {
+      selectConversation(restoredID)
+    } else {
+      if (composer) composer.text = ""
+    }
+  }
+
   Timer {
     interval: 600
-    running: root.service && root.service.state === "connected" && root.conversations.length === 0
+    running: root.service && root.service.connected && (typeof root.service.stateFor === "function" ? root.service.stateFor(root.network) : root.service.state) === "connected" && root.conversations.length === 0
     repeat: true
-    onTriggered: if (root.service && root.service.loadConversations) root.service.loadConversations()
+    onTriggered: if (root.service && root.service.loadConversations) root.service.loadConversations(root.network)
   }
 
   function setting(key, fallback) {
@@ -233,7 +272,9 @@ Item {
     if (hasOlder && older && historyCursors[key]) {
       hasOlder = false
       historyCursorStalled = true
-      historyError = "Google repeated the history cursor. Refresh the conversation to try again."
+      historyError = root.isWhatsApp
+        ? "WhatsApp repeated the cached history cursor. Refresh the conversation to try again."
+        : "Google repeated the history cursor. Refresh the conversation to try again."
     }
     historyCursorID = id
     historyCursorTime = time
@@ -262,7 +303,7 @@ Item {
         readHistoryCursor(res, false)
       }
       markThreadRead()
-    })
+    }, root.network)
   }
 
   function loadOlderMessages() {
@@ -281,7 +322,7 @@ Item {
       displayMessages(Model.mergePage(messages, res.messages || [], true), false)
       historyExpanded = true
       readHistoryCursor(res, true)
-    })
+    }, root.network)
   }
 
   function markThreadRead() {
@@ -291,7 +332,7 @@ Item {
       if (messages[i].id && !messages[i].provisional) { last = messages[i]; break }
     }
     if (!last) return
-    service.call("markRead", { conversationID: selectedConvID, messageID: last.id }, null)
+    service.call("markRead", { conversationID: selectedConvID, messageID: last.id }, null, root.network)
   }
 
   function sendMessage(rawText) {
@@ -308,7 +349,7 @@ Item {
       if (ok) { mergeMessage(res); return }
       displayMessages(Model.failSend(messages, tmpID), messageList.atYEnd)
       threadError = String(res)
-    })
+    }, root.network)
   }
 
   function mergeMessage(msg) {
@@ -345,15 +386,19 @@ Item {
         return
       }
       setMediaRequest(key, "failed")
-    })
+    }, root.network)
   }
 
   function syncGiphyKey() {
     var k = settings && settings.giphyApiKey ? String(settings.giphyApiKey).trim() : ""
-    if (k && service) service.call("setGiphyKey", { key: k }, null)
+    if (k && service) service.call("setGiphyKey", { key: k }, null, root.network)
   }
 
   function openGifPicker() {
+    if (root.isWhatsApp) {
+      threadError = "GIF search is not supported for WhatsApp in this version."
+      return
+    }
     if (!service) return
     emojiPickerOpen = false
     gifPickerOpen = !gifPickerOpen
@@ -374,7 +419,7 @@ Item {
       gifNeedsKey = res && res.needsKey === true
       gifList = res && res.gifs ? res.gifs : []
       gifAttribution = res && res.attribution ? res.attribution : "Powered by GIPHY"
-    })
+    }, root.network)
   }
 
   function saveGiphyKey() {
@@ -385,7 +430,7 @@ Item {
       gifNeedsKey = false
       gifKeyDraft = ""
       searchGifs(gifQuery)
-    })
+    }, root.network)
   }
 
   function pickGif(item) {
@@ -397,7 +442,7 @@ Item {
       if (!ok) { gifError = String(res); return }
       gifPickerOpen = false
       if (res && res.path) pendingAttachment = res.path
-    })
+    }, root.network)
   }
 
   function requestOpenUrl(raw) {
@@ -432,7 +477,7 @@ Item {
       if (generation !== selectionGeneration) return
       if (!ok) { threadError = String(res); return }
       if (res && res.path) pendingAttachment = res.path
-    })
+    }, root.network)
   }
 
   function sendAttachment(caption) {
@@ -456,13 +501,13 @@ Item {
           if (composer.text === "") composer.text = String(caption || "").trim()
           threadError = "Attachment submitted, but the caption could not be confirmed. Check the conversation before retrying. " + String(res.captionError)
         }
-      })
+      }, root.network)
   }
 
   function discardPendingCapture() {
     if (pendingAttachment === "") return
     if (!pendingIsVoice) return
-    if (service) service.call("discardCapture", { path: pendingAttachment }, null)
+    if (service) service.call("discardCapture", { path: pendingAttachment }, null, root.network)
   }
 
   function cancelAttachment() {
@@ -473,6 +518,10 @@ Item {
   }
 
   function startRecording() {
+    if (root.isWhatsApp) {
+      threadError = "Voice messages are not supported for WhatsApp in this version."
+      return
+    }
     if (recording || selectedConvID === "") return
     emojiPickerOpen = false
     gifPickerOpen = false
@@ -551,7 +600,7 @@ Item {
         return
       }
       threadError = "That video could not be downloaded yet."
-    })
+    }, root.network)
   }
 
   function _fetchAudio(key, attempt) {
@@ -572,7 +621,7 @@ Item {
       root.threadError = stillComing
         ? "That voice message is still uploading from the phone. Try again in a moment."
         : "That voice message could not be downloaded."
-    })
+    }, root.network)
   }
 
   function _startAudio(key, path) {
@@ -592,6 +641,10 @@ Item {
 
   function react(messageID, emoji) {
     reactingTo = ""
+    if (root.isWhatsApp) {
+      threadError = "Reactions are not supported for WhatsApp in this version."
+      return
+    }
     if (!service || selectedConvID === "" || !messageID) return
     var generation = selectionGeneration
     service.call("react", {
@@ -600,7 +653,7 @@ Item {
       emoji: emoji || ""
     }, function(ok, res) {
       if (!ok && generation === selectionGeneration) threadError = String(res)
-    })
+    }, root.network)
   }
 
   function copyText(value) {
@@ -617,12 +670,24 @@ Item {
 
   Connections {
     target: root.service
-    function onMessageReceived(msg) {
+    function onMessageReceived(msg, net) {
+      if (net && net !== root.network) return
       if (msg.conversationID !== root.selectedConvID) return
       root.mergeMessage(msg)
       if (root.panelOpen && !msg.fromMe) root.markThreadRead()
     }
-    function onPaired() { root.selectedConvID = ""; root.drafts = ({}) }
+    function onPaired(net) {
+      if (net && net !== root.network) {
+        var nextSel = Object.assign({}, root._selectedByNet)
+        delete nextSel[net]
+        root._selectedByNet = nextSel
+        return
+      }
+      root.selectedConvID = ""; root.drafts = ({})
+      var s = Object.assign({}, root._selectedByNet)
+      delete s[root.network]
+      root._selectedByNet = s
+    }
   }
 
   Timer {
@@ -653,20 +718,20 @@ Item {
       var ok = (code === 0 || code === 255)
       if (!root.keepRecording) {
         if (root.voicePath !== "" && root.service)
-          root.service.call("discardCapture", { path: root.voicePath }, null)
+          root.service.call("discardCapture", { path: root.voicePath }, null, root.network)
         root.voicePath = ""
         return
       }
       if (!ok) {
         root.threadError = "Recording failed (ffmpeg exit " + code + "). Check that a microphone is available."
         if (root.voicePath !== "" && root.service)
-          root.service.call("discardCapture", { path: root.voicePath }, null)
+          root.service.call("discardCapture", { path: root.voicePath }, null, root.network)
         root.voicePath = ""
         return
       }
       if (root.pendingVoiceSeconds < 1) {
         root.threadError = "That was too short to send."
-        if (root.service) root.service.call("discardCapture", { path: root.voicePath }, null)
+        if (root.service) root.service.call("discardCapture", { path: root.voicePath }, null, root.network)
         root.voicePath = ""
         return
       }
@@ -777,6 +842,7 @@ Item {
       placeholderText: "Hunt a thread"
       foreground: root.foreground
       onTextChanged: root.searchQuery = text
+      onActiveFocusChanged: root.composerFocus = activeFocus
     }
 
     Rectangle {
@@ -1024,7 +1090,7 @@ Item {
         objectName: "historyStatus"
         anchors.verticalCenter: parent.verticalCenter
         width: Math.max(0, parent.width - (parent.children[0].visible ? parent.children[0].width + parent.spacing : 0))
-        text: root.historyError || (!root.hasOlder && !root.loadingMessages ? "All available history loaded" : "")
+        text: root.historyError || (!root.hasOlder && !root.loadingMessages ? (root.isWhatsApp ? "Showing cached WhatsApp history. On-demand phone history is not requested in this version." : "All available history loaded") : "")
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
         color: root.historyError ? Color.urgent : root.dim
@@ -1293,7 +1359,7 @@ Item {
                 }
                 Item { width: Style.space(4); height: 1 }
                 Text {
-                  visible: row.msg && !row.msg.deleted
+                  visible: !root.isWhatsApp && row.msg && !row.msg.deleted
                   text: (row.msg && root.reactingTo === row.msg.id) ? "Close" : "React"
                   color: row.mine ? root.mineMeta : root.theirsMeta
                   font.family: root.fontFamily
@@ -1475,6 +1541,7 @@ Item {
         foreground: root.foreground
         enabled: !root.sendingMedia
         onAccepted: root.sendAttachment(text)
+        onActiveFocusChanged: root.composerFocus = activeFocus
       }
 
       Row {
@@ -1546,37 +1613,41 @@ Item {
 
       PanelActionButton {
         id: micButton
+        objectName: "micButton"
+        visible: !root.isWhatsApp
         anchors.left: attachButton.right
-        anchors.leftMargin: Style.space(2)
+        anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter
-        size: fs(Style.space(28))
+        size: visible ? fs(Style.space(28)) : 0
         fontSize: fs(Style.space(16))
         iconText: root.recording ? "󰓛" : "󰍬"
         tooltipText: root.recording ? "Stop recording" : "Record a voice message"
         foreground: root.recording ? Color.urgent : root.foreground
         fontFamily: root.fontFamily
-        enabled: composer.enabled && !root.sendingMedia
+        enabled: visible && composer.enabled && !root.sendingMedia
         onClicked: root.recording ? root.stopRecording(true) : root.startRecording()
       }
 
       PanelActionButton {
         id: gifButton
-        anchors.left: micButton.right
-        anchors.leftMargin: Style.space(2)
+        objectName: "gifButton"
+        visible: !root.isWhatsApp
+        anchors.left: micButton.visible ? micButton.right : attachButton.right
+        anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter
-        size: fs(Style.space(28))
+        size: visible ? fs(Style.space(28)) : 0
         iconText: "GIF"
         fontSize: fs(Style.space(10))
         tooltipText: "Search GIFs"
         foreground: root.foreground
         fontFamily: root.fontFamily
-        enabled: composer.enabled && !root.sendingMedia
+        enabled: visible && composer.enabled && !root.sendingMedia
         onClicked: root.openGifPicker()
       }
 
       PanelActionButton {
         id: emojiButton
-        anchors.left: gifButton.right
+        anchors.left: gifButton.visible ? gifButton.right : (micButton.visible ? micButton.right : attachButton.right)
         anchors.leftMargin: Style.space(2)
         anchors.verticalCenter: parent.verticalCenter
         size: fs(Style.space(28))
@@ -1607,7 +1678,7 @@ Item {
           if (root.recording) return "Recording " + Model.formatDuration(root.recordSeconds)
           return "Transmit"
         }
-        enabled: root.service && root.service.state === "connected" && !(root.selectedConv && root.selectedConv.readOnly)
+        enabled: root.service && root.service.connected && (typeof root.service.stateFor === "function" ? root.service.stateFor(root.network) : root.service.state) === "connected" && !(root.selectedConv && root.selectedConv.readOnly)
         onAccepted: {
           root.sendMessage(text)
           text = ""
