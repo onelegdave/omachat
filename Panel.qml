@@ -27,6 +27,7 @@ Panel {
   property real uiScale: 1
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
   readonly property bool serviceLive: activeService === "gmessages" || activeService === "whatsapp"
+  readonly property bool telegramLive: activeService === "telegram"
 
   readonly property var chat: service
   readonly property int unread: service ? (typeof service.unreadFor === "function" ? service.unreadFor(activeService) : (service.unread || 0)) : 0
@@ -321,9 +322,10 @@ Panel {
         anchors.topMargin: Style.space(10)
         sourceComponent: {
           if (root.settingsOpen) return settingsView
-          if (!root.serviceLive) return comingSoonView
+          if (!root.serviceLive && !root.telegramLive) return comingSoonView
           if (!root.service) return missingServiceView
           if (!root.service.connected) return helperView
+          if (root.telegramLive) return pairingView
           if (root.needsPair) return pairingView
           return null
         }

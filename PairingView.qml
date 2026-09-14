@@ -14,6 +14,7 @@ Item {
 
   readonly property color dim: Color.muted
   readonly property bool isWhatsApp: network === "whatsapp"
+  readonly property bool isTelegram: network === "telegram"
   readonly property var status: service ? (typeof service.statusFor === "function" ? service.statusFor(network) : service.status) : ({})
   readonly property string connState: service ? (typeof service.stateFor === "function" ? service.stateFor(network) : (service.state || "")) : ""
   readonly property bool isGaia: !isWhatsApp && connState === "gaiaPairing"
@@ -71,6 +72,12 @@ Item {
       objectName: "pairingHero"
       width: parent.width
       title: {
+        if (root.isTelegram) {
+          if (root.isQR) return "Scan with Telegram on your phone"
+          if (root.isError) return root.status && root.status.error ? root.status.error : "Pairing failed"
+          if (root.status && root.status.state === "connected") return "Telegram paired"
+          return "Link with Telegram"
+        }
         if (root.isWhatsApp) {
           if (root.isQR) return "Scan with WhatsApp on your phone"
           if (root.unpairWarning !== "") return "Attention required"
@@ -84,6 +91,12 @@ Item {
         return "Handshake required"
       }
       meta: {
+        if (root.isTelegram) {
+          if (root.isQR) return "Open Telegram on your phone, go to Settings, Devices, Link Desktop Device, then scan this QR code."
+          if (root.isError) return root.status && root.status.hint ? root.status.hint : ""
+          if (root.status && root.status.state === "connected") return "Telegram is connected. Chat synchronization will be enabled in a later milestone."
+          return root.status && root.status.hint ? root.status.hint : "Configure Telegram API credentials before pairing."
+        }
         if (root.isWhatsApp) {
           if (root.isQR) return "Open WhatsApp on your phone, tap Menu or Settings, select Linked devices, then Link a device and scan this QR code."
           if (root.unpairWarning !== "") return ""
@@ -106,7 +119,7 @@ Item {
         OpticalGlyph {
           implicitWidth: Style.font.display
           implicitHeight: Style.font.display
-          text: root.isWhatsApp ? "󰖣" : "󰭹"
+          text: root.isTelegram ? "\uf2c6" : (root.isWhatsApp ? "󰖣" : "󰭹")
           color: Color.accent
           fontFamily: root.fontFamily
           fontSize: Style.font.display
@@ -135,7 +148,7 @@ Item {
     }
 
     Rectangle {
-      visible: root.isQR
+      visible: root.isQR && (root.isWhatsApp || root.isTelegram || !root.isGaia)
       anchors.horizontalCenter: parent.horizontalCenter
       width: Style.space(200)
       height: width
@@ -156,7 +169,7 @@ Item {
     Row {
       anchors.horizontalCenter: parent.horizontalCenter
       spacing: Style.space(8)
-      visible: !root.isGaia && !root.isWhatsApp
+      visible: !root.isGaia && !root.isWhatsApp && !root.isTelegram
 
       Button {
         text: root.isQR ? "Pair with Google instead" : (root.isError ? "Try again" : "Pair with Google")
@@ -189,10 +202,25 @@ Item {
       }
     }
 
+    Row {
+      anchors.horizontalCenter: parent.horizontalCenter
+      spacing: Style.space(8)
+      visible: root.isTelegram && root.status && root.status.state !== "connected"
+
+      Button {
+        text: root.isQR ? "Pairing..." : (root.isError ? "Try again" : "Pair with Telegram")
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        bordered: true
+        enabled: !root.isQR
+        onClicked: if (root.service) root.service.call("startPairing", null, null, "telegram")
+      }
+    }
+
     Column {
       width: parent.width
       spacing: Style.space(4)
-      visible: !root.isGaia && !root.isWhatsApp
+      visible: !root.isGaia && !root.isWhatsApp && !root.isTelegram
 
       Row {
         anchors.horizontalCenter: parent.horizontalCenter
