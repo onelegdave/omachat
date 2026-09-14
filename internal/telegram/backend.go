@@ -85,6 +85,14 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event), cf
 	if paths != nil {
 		stored := loadStoredData(paths.TelegramStoreFile())
 		b.convs, b.order, b.messages = stored.Conversations, stored.Order, stored.Messages
+		// Telegram text sending is supported now. Normalize caches written by
+		// the earlier read-only milestone so restored conversations are writable.
+		for id, conv := range b.convs {
+			if strings.HasPrefix(id, "tg:") {
+				conv.ReadOnly = false
+				b.convs[id] = conv
+			}
+		}
 	}
 	return b
 }
