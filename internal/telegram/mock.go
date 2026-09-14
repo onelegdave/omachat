@@ -21,6 +21,14 @@ type MockClient struct {
 	UnderlyingFunc   func() *telegram.Client
 	DialogsFunc      func(ctx context.Context, limit int) ([]Dialog, error)
 	MessagesFunc     func(ctx context.Context, conversationID int64, limit int) ([]Message, error)
+	MarkReadFunc     func(ctx context.Context, conversationID int64, messageID int64) error
+}
+
+func (m *MockClient) MarkRead(ctx context.Context, conversationID int64, messageID int64) error {
+	if m.MarkReadFunc != nil {
+		return m.MarkReadFunc(ctx, conversationID, messageID)
+	}
+	return nil
 }
 
 func (m *MockClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {

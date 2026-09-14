@@ -288,13 +288,14 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 	names := map[string]string{}
 	peers := make(map[int64]tg.InputPeerClass)
 	var raws []tg.DialogClass
+	var lastMessages []tg.MessageClass
 	var users []tg.UserClass
 	var chats []tg.ChatClass
 	switch x := res.(type) {
 	case *tg.MessagesDialogs:
-		raws, users, chats = x.Dialogs, x.Users, x.Chats
+		raws, lastMessages, users, chats = x.Dialogs, x.Messages, x.Users, x.Chats
 	case *tg.MessagesDialogsSlice:
-		raws, users, chats = x.Dialogs, x.Users, x.Chats
+		raws, lastMessages, users, chats = x.Dialogs, x.Messages, x.Users, x.Chats
 	}
 	for _, u := range users {
 		if x, ok := u.(*tg.User); ok {
@@ -317,6 +318,17 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 		}
 	}
 	out := make([]Dialog, 0, len(raws))
+	previews := make(map[int64]Message, len(lastMessages))
+	for _, raw := range lastMessages {
+		m, ok := raw.(*tg.Message)
+		if !ok || m.PeerID == nil {
+			continue
+		}
+		id := peerID(m.PeerID)
+		if id != 0 {
+			previews[id] = Message{ID: int64(m.ID), ConversationID: id, Text: m.Message, Timestamp: int64(m.Date), FromMe: m.Out}
+		}
+	}
 	for _, raw := range raws {
 		d, ok := raw.(*tg.Dialog)
 		if !ok || d.Peer == nil {
@@ -326,7 +338,8 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 		if id == 0 {
 			continue
 		}
-		out = append(out, Dialog{ID: id, Name: names[fmt.Sprintf("tg:%d", id)], Unread: d.UnreadCount > 0, Timestamp: int64(d.TopMessage), IsGroup: isGroupPeer(d.Peer)})
+		preview := previews[id]
+		out = append(out, Dialog{ID: id, Name: names[fmt.Sprintf("tg:%d", id)], Preview: preview.Text, Unread: d.UnreadCount > 0, Timestamp: preview.Timestamp, IsGroup: isGroupPeer(d.Peer)})
 	}
 	g.mu.Lock()
 	g.peers = peers
@@ -365,6 +378,23 @@ func (g *GotdClient) Messages(ctx context.Context, conversationID int64, limit i
 		out = append(out, Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: int64(m.Date), FromMe: m.Out})
 	}
 	return out, nil
+}
+
+// MarkRead acknowledges Telegram history up to messageID. A zero message ID
+// asks Telegram to mark the whole known history for the peer as read.
+func (g *GotdClient) MarkRead(ctx context.Context, conversationID int64, messageID int64) error {
+	g.mu.RLock()
+	peer := g.peers[conversationID]
+	g.mu.RUnlock()
+	if peer == nil {
+		return fmt.Errorf("telegram peer %d is not available", conversationID)
+	}
+	maxID := 0
+	if messageID > 0 {
+		maxID = int(messageID)
+	}
+	_, err := g.client.API().MessagesReadHistory(ctx, &tg.MessagesReadHistoryRequest{Peer: peer, MaxID: maxID})
+	return err
 }
 
 func peerID(p tg.PeerClass) int64 {

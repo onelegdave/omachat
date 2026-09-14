@@ -503,6 +503,44 @@ func TestTelegramRefreshLoadsAndPersistsReadOnlyData(t *testing.T) {
 	}
 }
 
+func TestTelegramMarkReadAcknowledgesAndPersists(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	called := false
+	var gotConversation, gotMessage int64
+	mock.MarkReadFunc = func(_ context.Context, conversationID, messageID int64) error {
+		called = true
+		gotConversation, gotMessage = conversationID, messageID
+		return nil
+	}
+	b.AddTestConversation(wire.Conversation{ID: "tg:7", Name: "Alice", Unread: true})
+	if err := b.MarkRead(context.Background(), wire.MarkReadParams{ConversationID: "tg:7", MessageID: "tg:42"}); err != nil {
+		t.Fatal(err)
+	}
+	if !called || gotConversation != 7 || gotMessage != 42 {
+		t.Fatalf("unexpected mark read call: called=%v conversation=%d message=%d", called, gotConversation, gotMessage)
+	}
+	if got := b.Conversations(1)[0].Unread; got {
+		t.Fatal("conversation remained unread")
+	}
+	data, err := os.ReadFile(paths.TelegramStoreFile())
+	if err != nil || strings.Contains(string(data), `"unread":true`) {
+		t.Fatalf("unread state was not persisted: err=%v data=%s", err, data)
+	}
+}
+
+func TestTelegramMarkReadRejectsMalformedIDs(t *testing.T) {
+	b, _, _, mock := setupTestTelegramWithMock(t)
+	called := false
+	mock.MarkReadFunc = func(context.Context, int64, int64) error { called = true; return nil }
+	if err := b.MarkRead(context.Background(), wire.MarkReadParams{ConversationID: "alice", MessageID: "tg:1"}); err == nil {
+		t.Fatal("expected malformed conversation ID error")
+	}
+	if called {
+		t.Fatal("transport called for malformed ID")
+	}
+}
+
 func TestStartPairingUnconfigured(t *testing.T) {
 	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
 	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")

@@ -355,9 +355,40 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaRes
 	return nil, ErrNotConfigured
 }
 
-// MarkRead rejects mark read as dialog sync is pending subsequent milestones.
+// MarkRead acknowledges Telegram history and clears the local unread flag.
 func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
-	return ErrNotConfigured
+	b.mu.RLock()
+	cli := b.client
+	b.mu.RUnlock()
+	syncClient, ok := cli.(SyncClient)
+	if !ok {
+		return ErrNotConfigured
+	}
+	conversationID, err := parseTelegramID(p.ConversationID)
+	if err != nil {
+		return err
+	}
+	messageID := int64(0)
+	if p.MessageID != "" {
+		messageID, err = parseTelegramID(p.MessageID)
+		if err != nil {
+			return err
+		}
+	}
+	if err := syncClient.MarkRead(ctx, conversationID, messageID); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	if conv, exists := b.convs[p.ConversationID]; exists {
+		conv.Unread = false
+		b.convs[p.ConversationID] = conv
+	}
+	snapshot := storedData{Conversations: b.convs, Order: b.order, Messages: b.messages}
+	b.mu.Unlock()
+	if b.paths != nil {
+		return saveStoredData(b.paths.TelegramStoreFile(), snapshot)
+	}
+	return nil
 }
 
 // StartPairing initiates the gotd QR authentication flow in a context-safe way.
@@ -668,6 +699,15 @@ func (b *Backend) Refresh(ctx context.Context) error {
 		return saveStoredData(b.paths.TelegramStoreFile(), snapshot)
 	}
 	return nil
+}
+
+func parseTelegramID(value string) (int64, error) {
+	value = strings.TrimPrefix(value, "tg:")
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("invalid Telegram ID %q", value)
+	}
+	return id, nil
 }
 
 // AddTestConversation adds a conversation to the in-memory cache for testing.

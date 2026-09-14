@@ -37,6 +37,14 @@ type ReadClient interface {
 	Messages(ctx context.Context, conversationID int64, limit int) ([]Message, error)
 }
 
+// SyncClient adds the operation needed to acknowledge a conversation after it
+// has been opened. Keeping it separate preserves the read-only seam used by
+// offline clients and tests.
+type SyncClient interface {
+	ReadClient
+	MarkRead(ctx context.Context, conversationID int64, messageID int64) error
+}
+
 func mapDialog(d Dialog) wire.Conversation {
 	name := d.Name
 	if name == "" {
