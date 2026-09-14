@@ -174,16 +174,19 @@ func (b *Backend) Start(ctx context.Context) error {
 	b.mu.Unlock()
 
 	b.setState(wire.StateConnecting, "")
-	restoreCtx, restoreCancel := context.WithTimeout(b.ctx, 20*time.Second)
+	// Keep the client attached to the backend lifetime. The separate wait
+	// context bounds startup without canceling the transport after it becomes
+	// ready.
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	restoreErr := make(chan error, 1)
-	go func() { restoreErr <- cli.Start(restoreCtx) }()
+	go func() { restoreErr <- cli.Start(b.ctx) }()
 	var startErr error
 	select {
 	case startErr = <-restoreErr:
-	case <-restoreCtx.Done():
-		startErr = restoreCtx.Err()
+	case <-waitCtx.Done():
+		startErr = waitCtx.Err()
 	}
-	restoreCancel()
+	waitCancel()
 	if startErr != nil {
 		b.log.Warn().Err(startErr).Msg("Telegram session restore connection failed")
 		if strings.Contains(strings.ToLower(startErr.Error()), "unauthorized") || strings.Contains(strings.ToLower(startErr.Error()), "revoked") || errors.Is(startErr, context.DeadlineExceeded) {
