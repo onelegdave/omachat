@@ -277,7 +277,9 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	res, err := g.client.API().MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{Limit: limit})
+	// gotd requires OffsetPeer to be present even for the initial page;
+	// Telegram uses InputPeerEmpty as the no-offset sentinel.
+	res, err := g.client.API().MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{OffsetPeer: &tg.InputPeerEmpty{}, Limit: limit})
 	if err != nil {
 		return nil, err
 	}
