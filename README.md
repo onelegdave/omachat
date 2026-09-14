@@ -87,6 +87,11 @@ Attachment captions appear as a separate message after the attachment. If the
 caption cannot be confirmed, OmaChat reports that separately so you can check
 the conversation before retrying the text.
 
+The **Unpair this desktop** button clears local credentials and cached media,
+then requests device revocation from Google. If that request fails, OmaChat
+shows a warning and asks you to remove the device in **Google Messages > Device
+pairing** on your phone. A local cleanup failure is reported separately.
+
 ## Files
 
 | Path | Contents |

@@ -2,8 +2,8 @@
 
 Date: 2026-09-14
 
-The review and image fixes were published in v0.1.1. The reconnect follow-up
-below is a subsequent local change, installed for live verification.
+The review and image fixes were published in v0.1.1. The reconnect fix was
+subsequently pushed to main. Later follow-ups are recorded below.
 
 ## Completed
 
@@ -110,3 +110,28 @@ check. The user then explicitly paired through the panel and confirmed completio
 Live refresh returned 50 conversations. A subsequent shell/helper restart restored
 the saved session, passed live refresh, and produced no pairing events or emoji
 challenge during a 36-second observation. Credentials remained mode 0600.
+
+
+## Unpair error reporting follow-up
+
+The daemon previously discarded remote revocation errors, and the panel's
+Unpair button discarded its RPC reply. Local cleanup still takes place first,
+but a failed Google request now returns an error and publishes an actionable
+warning while remaining locally unpaired. Local cleanup failures have distinct
+copy; combined failures preserve both underlying causes.
+
+The panel handles the reply, shows transport failures, and displays the complete
+warning as wrapping text on the unpaired screen. Duplicate pending requests
+are blocked. Late results cannot overwrite a newer Google or QR pairing.
+
+Verification: Go race tests and vet, model/QML tests, and manifest validation
+passed. Synthetic cases cover successful revocation, remote failure, local
+filesystem failure, combined failures, persistence after failure, replacement
+sessions, and QR pairing. The public unpair RPC was exercised against a locally
+rejecting proxy. The warning was visually inspected with synthetic data. agy
+supplied focused Go regressions; the lead reviewed and strengthened them,
+implemented the change, and verified the UI.
+
+The helper and changed QML were installed and checked against the local files.
+The existing live pairing survived restart and inbox refresh passed. This
+unpair reporting follow-up is committed locally, without a new release.

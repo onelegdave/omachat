@@ -99,8 +99,8 @@ func TestUnpairPersistence(t *testing.T) {
 	// Perform unpair with bounded timeout
 	unpairCtx, unpairCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer unpairCancel()
-	if err := d.Unpair(unpairCtx); err != nil {
-		t.Fatalf("Unpair failed: %v", err)
+	if err := d.Unpair(unpairCtx); err == nil {
+		t.Fatal("expected remote revocation failure from the rejecting test proxy")
 	}
 
 	// Verify session file is gone
@@ -188,8 +188,8 @@ func TestMediaAndAvatarCacheResetAfterUnpair(t *testing.T) {
 
 	unpairCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if err := d.Unpair(unpairCtx); err != nil {
-		t.Fatalf("Unpair: %v", err)
+	if err := d.Unpair(unpairCtx); err == nil {
+		t.Fatal("expected remote revocation failure from the rejecting test proxy")
 	}
 
 	// Verify in-memory media cache is cleared
@@ -249,8 +249,8 @@ drain:
 	// Unpair the daemon - this cancels old sessionCtx, creates a new client, and resets
 	unpairCtx, unpairCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer unpairCancel()
-	if err := d.Unpair(unpairCtx); err != nil {
-		t.Fatalf("Unpair failed: %v", err)
+	if err := d.Unpair(unpairCtx); err == nil {
+		t.Fatal("expected remote revocation failure from the rejecting test proxy")
 	}
 
 	// Drain unpair status events
@@ -392,8 +392,8 @@ func TestRequestCancellationDoesNotCancelRevocation(t *testing.T) {
 	}
 
 	resp := d.dispatch(context.Background(), wire.Request{ID: "unpair", Method: wire.MethodUnpair})
-	if !resp.OK {
-		t.Fatalf("unpair: %s", resp.Error)
+	if resp.OK || resp.Error == "" {
+		t.Fatal("unpair must report the proxy rejection")
 	}
 	if !attempted.Load() {
 		t.Fatal("revocation was canceled before the transport")
@@ -406,5 +406,24 @@ func TestSessionBoundContextSeesCancellationImmediately(t *testing.T) {
 	cancel()
 	if !errors.Is(ctx.Err(), context.Canceled) {
 		t.Fatal("stale request could still write account data")
+	}
+}
+
+func TestUnpairFailureDoesNotInterruptNewQRPairing(t *testing.T) {
+	d, _ := newTestDaemon(t)
+	denied := errors.New("synthetic revocation denial")
+	err := d.unpair(d.sessionContext(), func(_ context.Context, _ *libgm.Client) error {
+		// QR pairing reuses the reset session context; an epoch check alone
+		// cannot protect its state from a late revocation reply.
+		d.sessionMu.Lock()
+		d.setState(wire.StatePairing, "")
+		d.sessionMu.Unlock()
+		return denied
+	})
+	if !errors.Is(err, denied) {
+		t.Fatalf("revocation error was lost: %v", err)
+	}
+	if got := d.Status(); got.State != wire.StatePairing || got.Error != "" {
+		t.Fatalf("late unpair failure overwrote QR pairing: %+v", got)
 	}
 }

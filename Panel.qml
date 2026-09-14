@@ -16,6 +16,9 @@ Panel {
 
   property string activeService: "gmessages"
   property bool settingsOpen: false
+  property bool unpairing: false
+  property string unpairError: ""
+  property int accountGeneration: 0
   readonly property var serviceTabs: [
     { value: "gmessages", label: "Google", icon: "󰭹", tooltip: "Google Messages" },
     { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "Coming later" },
@@ -66,7 +69,38 @@ Panel {
     service.loadConversations()
   }
 
-  onServiceChanged: loadConfig()
+  onServiceChanged: {
+    accountGeneration++
+    unpairing = false
+    unpairError = ""
+    loadConfig()
+  }
+
+  onConnStateChanged: {
+    if (connState === "pairing" || connState === "gaiaPairing" || connState === "connecting") {
+      accountGeneration++
+      unpairing = false
+      unpairError = ""
+    }
+  }
+
+  function unpair() {
+    if (!service || unpairing) return
+    settingsOpen = false
+    activeService = "gmessages"
+    var target = service
+    var generation = accountGeneration
+    unpairing = true
+    unpairError = ""
+    target.call("unpair", null, function(ok, res) {
+      if (root.service !== target || root.accountGeneration !== generation) return
+      root.unpairing = false
+      if (!ok) {
+        root.unpairError = "Unpair did not complete successfully: " + String(res)
+          + " Check Google Messages on your phone under Device pairing."
+      }
+    })
+  }
 
   KeyboardPanel {
     id: panel
@@ -151,6 +185,8 @@ Panel {
 
           PanelActionButton {
             id: unpairBtn
+            objectName: "unpairButton"
+            enabled: !root.unpairing
             visible: root.linkUp
             anchors.right: settingsBtn.left
             anchors.rightMargin: Style.space(2)
@@ -159,7 +195,7 @@ Panel {
             tooltipText: "Unpair this desktop"
             foreground: root.foreground
             fontFamily: root.fontFamily
-            onClicked: if (root.service) root.service.call("unpair", null, null)
+            onClicked: root.unpair()
           }
 
           Rectangle {
@@ -197,6 +233,18 @@ Panel {
               }
             }
           }
+        }
+
+        Text {
+          objectName: "unpairErrorLabel"
+          width: parent.width
+          visible: root.unpairError !== "" && !(root.needsPair && !root.settingsOpen && root.serviceLive && root.service && root.service.status && root.service.status.error)
+          text: root.unpairError
+          textFormat: Text.PlainText
+          color: Color.urgent
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.bodySmall)
+          wrapMode: Text.Wrap
         }
 
         ButtonGroup {

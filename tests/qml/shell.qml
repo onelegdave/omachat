@@ -34,7 +34,7 @@ ShellRoot {
   function refreshConversations() { calls.push({method:"refresh"}) }
   function call(method, params, callback) {
    calls.push({method:method, params:params})
-   if (method === "send" || method === "sendMedia" || method === "pickImage" || method === "react") {
+   if (method === "send" || method === "sendMedia" || method === "pickImage" || method === "react" || method === "unpair") {
     delayed.push({method:method,params:params,callback:callback}); return
    }
    if (!callback) return
@@ -180,8 +180,45 @@ ShellRoot {
     root.check(inspect.findChild(original,"threadErrorLabel").text === "Refresh failed", "thread success does not erase inbox refresh failure")
     fake.refreshError=""
     root.check(inspect.findChild(original,"threadErrorLabel").text === "", "next refresh clears the previous failure")
+    var unpairButton=inspect.findChild(panel,"unpairButton")
+    panel.settingsOpen=true
+    unpairButton.clicked()
+    root.check(panel.unpairing && !panel.settingsOpen, "unpair waits for its result and leaves Settings")
+    var unpairCall=fake.delayed.pop()
+    var beforeDuplicate=fake.calls.length
+    panel.unpair()
+    root.check(fake.calls.length === beforeDuplicate, "pending unpair cannot be submitted twice")
+    var warning="Local credentials and cached files were cleared. Google device revocation could not be confirmed. Remove OmaChat in Google Messages on your phone under Device pairing."
     fake.state="unpaired"
+    fake.status={state:"unpaired",error:warning}
+    unpairCall.callback(false,warning)
     root.check(loader.item === null, "unpair destroys account UI state")
+    var warningLabel=inspect.findChild(panel,"unpairWarningText")
+    root.check(warningLabel && warningLabel.text === warning && warningLabel.wrapMode === Text.WordWrap, "unpaired screen retains remote revocation warning and phone instructions")
+    root.check(!panel.unpairing, "failed unpair releases pending state")
+
+    fake.state="connected"
+    fake.status={phoneOK:true}
+    panel.unpair()
+    unpairCall=fake.delayed.pop()
+    unpairCall.callback(false,"Disconnected from omachatd")
+    root.check(inspect.findChild(panel,"unpairErrorLabel").text.indexOf("Disconnected from omachatd") >= 0, "unpair transport failure is visible instead of silently dropped")
+
+    panel.unpair()
+    unpairCall=fake.delayed.pop()
+    fake.state="gaiaPairing"
+    fake.status={state:"gaiaPairing",emoji:"synthetic"}
+    unpairCall.callback(false,warning)
+    root.check(panel.unpairError === "" && !panel.unpairing, "late unpair reply cannot overwrite a newer pairing")
+
+    fake.state="connected"
+    fake.status={phoneOK:true}
+    panel.unpair()
+    unpairCall=fake.delayed.pop()
+    fake.state="unpaired"
+    fake.status={state:"unpaired"}
+    unpairCall.callback(true,null)
+    root.check(panel.unpairError === "" && !panel.unpairing, "successful unpair leaves no stale warning")
     var screenshot=Quickshell.env("OMACHAT_TEST_SCREENSHOT")
     if (screenshot) {
      inbox.grabToImage(function(image) {

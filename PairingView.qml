@@ -17,6 +17,7 @@ Item {
   readonly property bool isGaia: connState === "gaiaPairing"
   readonly property bool isQR: connState === "pairing"
   readonly property bool isError: connState === "error"
+  readonly property string unpairWarning: connState === "unpaired" && status && status.error ? status.error : ""
   readonly property string emoji: status && status.emoji ? status.emoji : ""
   readonly property var profiles: service ? (service.browserProfiles || []) : []
   property bool profilePickerOpen: false
@@ -53,10 +54,12 @@ Item {
     width: Math.min(parent.width - Style.space(40), Style.space(460))
 
     PanelHero {
+      objectName: "pairingHero"
       width: parent.width
       title: {
         if (root.isGaia) return "Tap this emoji on your phone"
         if (root.isQR) return "Use the Messages pairing scanner"
+        if (root.unpairWarning !== "") return "Attention required"
         if (root.isError) return root.status && root.status.error ? root.status.error : "Pairing failed"
         return "Handshake required"
       }
@@ -67,10 +70,11 @@ Item {
             : "Signing in to your Google account"
         }
         if (root.isQR) return "Open Google Messages, menu, Device pairing, then QR code scanner. The phone camera and Google Lens open a help page and will not pair. Newer Messages builds have no scanner; use Pair with Google instead."
+        if (root.unpairWarning !== "") return ""
         if (root.isError) return root.status && root.status.hint ? root.status.hint : ""
         return "Pair this desktop with the Google account already signed in to Messages in your browser. Your phone must stay online. Do not scan a QR with the camera app."
       }
-      foreground: root.isError ? Color.urgent : root.foreground
+      foreground: root.isError || root.unpairWarning !== "" ? Color.urgent : root.foreground
       fontFamily: root.fontFamily
       iconComponent: Component {
         OpticalGlyph {
@@ -82,6 +86,18 @@ Item {
           fontSize: Style.font.display
         }
       }
+    }
+
+    Text {
+      objectName: "unpairWarningText"
+      width: parent.width
+      visible: root.unpairWarning !== ""
+      text: root.unpairWarning
+      textFormat: Text.PlainText
+      wrapMode: Text.WordWrap
+      color: Color.urgent
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
     }
 
     Text {

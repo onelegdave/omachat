@@ -86,9 +86,11 @@ Final checks passed: Go tests with the race detector, go vet, manifest
 validation, model tests, and actual QML regression and isolated helper-build
 checks. Grok was not used because its weekly usage exceeded the reserve.
 
-An unpair RPC returning success alone does not establish remote revocation:
-the current method logs upstream errors without returning them. This test used
-the phone's paired-device list as independent confirmation.
+The original unpair method logged upstream errors without returning them.
+The phone's paired-device list supplied independent confirmation in that test.
+The later unpair reporting fix returns those errors and displays a warning.
+An accepted protocol request still does not independently prove the device has
+disappeared from the phone.
 
 Automatic recovery from deliberately expired cookies was not induced.
 Browser-cookie extraction and explicit re-pairing did pass. Outgoing media now has a successful phone-synced delivery with its attachment
@@ -133,3 +135,15 @@ live refresh passes after restart. The earlier successful image delivery remains
 valid. These checks verify the reported reconnect failure and recovery; they do
 not establish indefinite session validity against future Google-side changes.
 No new release or marketplace submission has been made for this follow-up.
+
+
+## Unpair reporting verification
+
+Remote refusal and local cleanup failures were tested with synthetic accounts,
+injected revocation outcomes, and a local rejecting HTTP proxy. Real QML tests
+verified the warning, failed RPC replies, duplicate request protection, and late
+replies during a newer pairing. No live account was unpaired to induce a failure.
+
+The updated helper and QML were installed and matched the local build/source.
+After the shell restart, the existing account reconnected and a live inbox
+refresh succeeded with no pairing challenge.

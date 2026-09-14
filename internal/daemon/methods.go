@@ -369,18 +369,70 @@ func (d *Daemon) stopPairRefresh() {
 	}
 }
 
-// Unpair revokes the pairing and clears local credentials and cache.
+// Unpair clears local credentials even when the remote revocation fails.
 func (d *Daemon) Unpair(ctx context.Context) error {
+	return d.unpair(ctx, func(ctx context.Context, c *libgm.Client) error {
+		return c.Unpair(ctx)
+	})
+}
+
+func (d *Daemon) unpair(ctx context.Context, revoke func(context.Context, *libgm.Client) error) error {
 	d.sessionMu.Lock()
-	old, err := d.resetSessionLocked()
+	old, localErr := d.resetSessionLocked()
+	replacement := d.sessionContext()
 	d.sessionMu.Unlock()
+
+	var remoteErr error
 	if old != nil {
-		if unpairErr := old.Unpair(ctx); unpairErr != nil {
-			d.log.Warn().Err(unpairErr).Msg("Unpair call failed; local session has been cleared")
-		}
+		remoteErr = revoke(ctx, old)
 		old.Disconnect()
 	}
+	if localErr == nil && remoteErr == nil {
+		return nil
+	}
+	if localErr != nil {
+		d.log.Error().Err(localErr).Msg("Unpair local cleanup incomplete")
+	}
+	if remoteErr != nil {
+		d.log.Warn().Err(remoteErr).Msg("Google device revocation could not be confirmed")
+	}
+	err := &unpairFailure{localErr: localErr, remoteErr: remoteErr}
+	// Unpair cancels its old session, and a new pairing can start while the
+	// revocation request is pending. Report only into this reset's session.
+	d.inSession(replacement, func() {
+		// QR pairing can reuse this session context, so check its state too.
+		if d.Status().State == wire.StateUnpaired {
+			d.setState(wire.StateUnpaired, err.Error())
+		}
+	})
 	return err
+}
+
+// Keep transport details in logs and wrapped causes, with actionable UI copy.
+type unpairFailure struct {
+	localErr, remoteErr error
+}
+
+func (e *unpairFailure) Error() string {
+	message := "Local credentials and cached files were cleared."
+	if e.localErr != nil {
+		message = "Local cleanup was incomplete. Check permissions on OmaChat's local data and cache folders."
+	}
+	if e.remoteErr != nil {
+		message += " Google device revocation could not be confirmed. Remove OmaChat in Google Messages on your phone under Device pairing."
+	}
+	return message
+}
+
+func (e *unpairFailure) Unwrap() []error {
+	var causes []error
+	if e.localErr != nil {
+		causes = append(causes, e.localErr)
+	}
+	if e.remoteErr != nil {
+		causes = append(causes, e.remoteErr)
+	}
+	return causes
 }
 
 func messageTransactionID(value string) (string, error) {
