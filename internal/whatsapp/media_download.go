@@ -55,6 +55,9 @@ func downloadableMedia(msg *waE2E.Message) (whatsmeow.DownloadableMessage, uint6
 	if dm := inner.GetDocumentMessage(); dm != nil {
 		return dm, dm.GetFileLength()
 	}
+	if sm := inner.GetStickerMessage(); sm != nil {
+		return sm, sm.GetFileLength()
+	}
 	return nil, 0
 }
 

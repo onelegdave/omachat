@@ -982,6 +982,15 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	case strings.Contains(mimeType, "gif"):
 		ext = ".gif"
 	}
+	if ext == ".bin" {
+		inner, _ := unwrapMessage(rawMsg)
+		if inner != nil && inner.GetStickerMessage() != nil {
+			m := strings.ToLower(inner.GetStickerMessage().GetMimetype())
+			if strings.Contains(m, "webp") || m == "" {
+				ext = ".webp"
+			}
+		}
+	}
 
 	if stall := b.mediaCommitStall; stall != nil {
 		stall()

@@ -168,7 +168,8 @@ func hasDownloadableMedia(msg *waE2E.Message) bool {
 	return inner.GetImageMessage() != nil ||
 		inner.GetDocumentMessage() != nil ||
 		inner.GetVideoMessage() != nil ||
-		inner.GetAudioMessage() != nil
+		inner.GetAudioMessage() != nil ||
+		inner.GetStickerMessage() != nil
 }
 
 // extractAttachments extracts attachment metadata from a WhatsApp message.
@@ -227,6 +228,20 @@ func extractAttachments(msg *waE2E.Message, chatID, messageID string) []wire.Att
 			MimeType: mime,
 			Size:     int64(aud.GetFileLength()),
 			IsAudio:  true,
+		})
+	} else if stk := msg.GetStickerMessage(); stk != nil {
+		mime := stk.GetMimetype()
+		if mime == "" {
+			mime = "image/webp"
+		}
+		atts = append(atts, wire.Attachment{
+			Key:      key,
+			MediaID:  messageID,
+			MimeType: mime,
+			Size:     int64(stk.GetFileLength()),
+			Width:    int64(stk.GetWidth()),
+			Height:   int64(stk.GetHeight()),
+			IsImage:  true,
 		})
 	}
 	return atts
