@@ -1740,7 +1740,7 @@ Item {
         tooltipText: "Attach a photo or GIF"
         foreground: root.foreground
         fontFamily: root.fontFamily
-        enabled: composer.enabled && !root.sendingMedia && !root.isTelegram
+        enabled: composer.enabled && !root.sendingMedia
         onClicked: root.attachFromDisk()
       }
 
