@@ -174,9 +174,19 @@ func (b *Backend) Start(ctx context.Context) error {
 	b.mu.Unlock()
 
 	b.setState(wire.StateConnecting, "")
-	if err := cli.Start(b.ctx); err != nil {
-		b.log.Warn().Err(err).Msg("Telegram session restore connection failed")
-		if strings.Contains(strings.ToLower(err.Error()), "unauthorized") || strings.Contains(strings.ToLower(err.Error()), "revoked") {
+	restoreCtx, restoreCancel := context.WithTimeout(b.ctx, 20*time.Second)
+	restoreErr := make(chan error, 1)
+	go func() { restoreErr <- cli.Start(restoreCtx) }()
+	var startErr error
+	select {
+	case startErr = <-restoreErr:
+	case <-restoreCtx.Done():
+		startErr = restoreCtx.Err()
+	}
+	restoreCancel()
+	if startErr != nil {
+		b.log.Warn().Err(startErr).Msg("Telegram session restore connection failed")
+		if strings.Contains(strings.ToLower(startErr.Error()), "unauthorized") || strings.Contains(strings.ToLower(startErr.Error()), "revoked") || errors.Is(startErr, context.DeadlineExceeded) {
 			// A canceled or revoked QR attempt can leave a session blob behind.
 			// Remove only Telegram's local state and return to a fresh pairing
 			// screen instead of trapping the panel in reconnecting.
@@ -191,7 +201,7 @@ func (b *Backend) Start(ctx context.Context) error {
 			b.setStatusWithHint(wire.StateUnpaired, hintCredentialsConfigured, "")
 			return nil
 		}
-		b.setState(wire.StateDisconnected, "restore session: "+err.Error())
+		b.setState(wire.StateDisconnected, "restore session: "+startErr.Error())
 		return nil
 	}
 	return nil
