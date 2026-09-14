@@ -276,6 +276,9 @@ func (d *Daemon) Stop() {
 	if d.wa != nil {
 		d.wa.Stop()
 	}
+	if d.tg != nil {
+		d.tg.Stop()
+	}
 }
 
 func (d *Daemon) saveSession() {

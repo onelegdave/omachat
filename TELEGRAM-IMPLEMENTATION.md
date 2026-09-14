@@ -1,11 +1,11 @@
 # Telegram Implementation Plan and Readiness Review
 
-## Status: Milestone 1, Milestone 2, & Milestone 3 (Credential Configuration) Complete (2026-09-14)
+## Status: Milestones 1-4 (MTProto Client and QR Pairing Backend) Complete (2026-09-14)
 - **Worktree**: `/home/onelegdave/Projects/omachat`
 - **Branch**: `feature/telegram`
 - **Human Owner / Maintainer**: OneLegDave
 - **MTProto Dependency**: `github.com/gotd/td v0.161.0`
-- **Review status**: Dependency vendoring, credential configuration, and offline validation complete. Live MTProto pairing and network integration remain subject to human provisioning and review.
+- **Review status**: Dependency vendoring, credential configuration, and the testable MTProto QR pairing backend are complete. Dialog sync, messaging RPCs, Telegram UI, and live device verification remain pending.
 
 ---
 
@@ -255,18 +255,15 @@ The following routine development actions are authorized within scope, but **the
 - Added focused unit test suite (`internal/store/telegram_config_test.go` and `internal/telegram/backend_test.go`) covering config round-trip, precedence, malformed values, secret leak prevention, and unconfigured status hints.
 
 ### Stage 3: MTProto Client Lifecycle and QR Pairing Engine
-- Implement `telegram.Client` initialization in `internal/telegram/backend.go`:
-  - Hook custom `session.Storage` backed by `paths.TelegramSessionFile()`.
-  - Implement `StartPairing(ctx)` using `gotd/td/telegram/auth/qrlogin`:
-    - Export login token URL `tg://login?token=...`.
-    - Set `wire.Status.QRURL` and push status updates.
-    - Handle token refresh timer and context cancellation.
-    - Handle `SESSION_PASSWORD_NEEDED` (2FA error handling).
-- Implement `Unpair(ctx)`:
-  - Terminate client connection.
-  - Delete `telegram.session`, `telegram_store.json`, and `media_telegram/` files via `paths.ClearTelegramSession()`.
-  - Reset in-memory state and publish `wire.StateUnpaired`.
-- Unit tests with mock MTProto handlers.
+- Implemented the client lifecycle and QR pairing backend behind a testable interface:
+  - Vendored gotd client construction uses the validated API credentials and private session storage.
+  - `StartPairing` drives QR token events with context cancellation, generation guards, and explicit status transitions.
+  - Unit tests use a mock client and never contact Telegram.
+  - Successful pairing keeps the client running until unpair or daemon stop; failures cleanly cancel the attempt.
+- Remaining work:
+  - Implement dialog synchronization and messaging RPCs.
+  - Expose pairing and inbox states in the Telegram QML view after live verification.
+- `Unpair(ctx)` terminates the client, removes Telegram session data, resets in-memory state, and publishes `StateUnpaired`.
 
 ### Stage 4: Dialogs, Message Synchronization, and Entity Caching
 - Connect `tg.UpdateDispatcher` to receive incoming message events (`UpdateNewMessage`, `UpdateEditMessage`, `UpdateReadHistoryInbox`).

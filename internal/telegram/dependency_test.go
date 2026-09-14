@@ -10,6 +10,9 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth/qrlogin"
 	"github.com/gotd/td/tg"
+	"github.com/rs/zerolog"
+
+	"github.com/onelegdave/omachat/internal/store"
 )
 
 func TestFileSessionStorage(t *testing.T) {
@@ -116,5 +119,31 @@ func TestTGTypesInstantiable(t *testing.T) {
 	}
 	if req.APIID != 12345 || req.APIHash != "dummyhash" {
 		t.Errorf("unexpected field values on AuthExportLoginTokenRequest: %+v", req)
+	}
+}
+
+func TestDefaultClientFactory(t *testing.T) {
+	factory := DefaultClientFactory(zerolog.Nop())
+	dir := t.TempDir()
+	sessionPath := filepath.Join(dir, "telegram.session")
+
+	// 1. Invalid credentials reject
+	if _, err := factory(store.TelegramCredentials{APIID: 0, APIHash: ""}, sessionPath); err == nil {
+		t.Error("expected error for empty credentials")
+	}
+
+	// 2. Valid credentials instantiate GotdClient offline without network
+	cli, err := factory(store.TelegramCredentials{APIID: 1234567, APIHash: "0123456789abcdef0123456789abcdef"}, sessionPath)
+	if err != nil {
+		t.Fatalf("unexpected error from DefaultClientFactory: %v", err)
+	}
+	if cli == nil {
+		t.Fatal("expected non-nil client from factory")
+	}
+	if cli.Underlying() == nil {
+		t.Error("expected Underlying gotd client to be non-nil")
+	}
+	if cli.IsConnected() {
+		t.Error("expected fresh GotdClient to not be connected")
 	}
 }

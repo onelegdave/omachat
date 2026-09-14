@@ -2,10 +2,12 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -28,7 +30,7 @@ func setupTestTelegram(t *testing.T) (*Backend, *store.Paths, chan wire.Event) {
 	_ = os.MkdirAll(paths.WhatsAppMediaDir(), 0o700)
 	_ = os.MkdirAll(paths.TelegramMediaDir(), 0o700)
 
-	events := make(chan wire.Event, 10)
+	events := make(chan wire.Event, 20)
 	publish := func(evt wire.Event) {
 		select {
 		case events <- evt:
@@ -37,7 +39,21 @@ func setupTestTelegram(t *testing.T) (*Backend, *store.Paths, chan wire.Event) {
 	}
 
 	b := New(zerolog.Nop(), paths, publish)
+	mock := NewMockClient()
+	b.SetClientFactory(func(creds store.TelegramCredentials, sessionPath string) (Client, error) {
+		return mock, nil
+	})
 	return b, paths, events
+}
+
+func setupTestTelegramWithMock(t *testing.T) (*Backend, *store.Paths, chan wire.Event, *MockClient) {
+	t.Helper()
+	b, paths, events := setupTestTelegram(t)
+	mock := NewMockClient()
+	b.SetClientFactory(func(creds store.TelegramCredentials, sessionPath string) (Client, error) {
+		return mock, nil
+	})
+	return b, paths, events, mock
 }
 
 func TestBackendInitialState(t *testing.T) {
@@ -77,6 +93,11 @@ func TestBackendStartWithoutSession(t *testing.T) {
 
 func TestBackendStartWithSession(t *testing.T) {
 	b, paths, _ := setupTestTelegram(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	if err := cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	b.SetConfig(cs)
 	ctx := context.Background()
 
 	// Seed dummy session file
@@ -91,6 +112,92 @@ func TestBackendStartWithSession(t *testing.T) {
 	st := b.Status()
 	if st.State != wire.StateConnecting {
 		t.Errorf("expected state %q when session exists, got %q", wire.StateConnecting, st.State)
+	}
+}
+
+func TestBackendStartWithSessionMissingCredentials(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
+
+	b, paths, _ := setupTestTelegram(t)
+	ctx := context.Background()
+
+	// Seed session file without credentials configured
+	if err := os.WriteFile(paths.TelegramSessionFile(), []byte("tg-session-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected state %q when credentials missing, got %q", wire.StateUnpaired, st.State)
+	}
+	if st.Hint != hintCredentialsRequired {
+		t.Errorf("hint = %q, want %q", st.Hint, hintCredentialsRequired)
+	}
+	if b.Client() != nil {
+		t.Error("expected client to remain uninstantiated when credentials are missing")
+	}
+}
+
+func TestBackendStartWithSessionRestoresViaAbstraction(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	if err := cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	b.SetConfig(cs)
+
+	startCalled := false
+	mock.StartFunc = func(ctx context.Context) error {
+		startCalled = true
+		mock.SetConnected(true)
+		return nil
+	}
+
+	if err := os.WriteFile(paths.TelegramSessionFile(), []byte("session-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	if !startCalled {
+		t.Error("expected mock client Start to be called during session restore")
+	}
+	if b.Status().State != wire.StateConnecting {
+		t.Errorf("expected state %q, got %q", wire.StateConnecting, b.Status().State)
+	}
+}
+
+func TestBackendStartSessionRestoreFailure(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	if err := cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	b.SetConfig(cs)
+
+	mock.StartFunc = func(ctx context.Context) error {
+		return errors.New("simulated restore failure")
+	}
+
+	if err := os.WriteFile(paths.TelegramSessionFile(), []byte("session-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	if b.Status().State != wire.StateDisconnected {
+		t.Errorf("expected StateDisconnected on restore failure, got %s", b.Status().State)
 	}
 }
 
@@ -365,5 +472,382 @@ func TestTelegramUnpairPreservesConfiguredHint(t *testing.T) {
 	}
 	if st.Hint != "Telegram API credentials configured; pairing not yet started" {
 		t.Errorf("expected configured hint after unpair with valid credentials, got %q", st.Hint)
+	}
+}
+
+func TestStartPairingUnconfigured(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
+
+	b, _, events := setupTestTelegram(t)
+	ctx := context.Background()
+
+	_, err := b.StartPairing(ctx)
+	if err != ErrNotConfigured {
+		t.Fatalf("expected ErrNotConfigured, got %v", err)
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired, got %s", st.State)
+	}
+	if st.Hint != hintCredentialsRequired {
+		t.Errorf("hint = %q, want %q", st.Hint, hintCredentialsRequired)
+	}
+	if !strings.Contains(st.Error, "credentials required") {
+		t.Errorf("expected credentials required in Error, got %q", st.Error)
+	}
+
+	select {
+	case evt := <-events:
+		if evt.Event != wire.EventStatus || evt.Network != wire.NetworkTelegram {
+			t.Errorf("unexpected event: %+v", evt)
+		}
+	default:
+		t.Error("expected status event to be emitted on unconfigured pairing failure")
+	}
+}
+
+func TestStartPairingMalformedCredentials(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
+
+	b, paths, events := setupTestTelegram(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "not-a-valid-hex-hash-too-short")
+	b.SetConfig(cs)
+
+	ctx := context.Background()
+	_, err := b.StartPairing(ctx)
+	if err == nil {
+		t.Fatal("expected error for malformed credentials in StartPairing")
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired, got %s", st.State)
+	}
+	if strings.Contains(st.Error, "not-a-valid-hex") {
+		t.Error("SECURITY: secret leaked into status Error message")
+	}
+
+	select {
+	case evt := <-events:
+		if evt.Event != wire.EventStatus {
+			t.Errorf("unexpected event: %+v", evt)
+		}
+	default:
+		t.Error("expected status event to be emitted")
+	}
+}
+
+func TestStartPairingAlreadyPaired(t *testing.T) {
+	b, paths, _ := setupTestTelegram(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef")
+	b.SetConfig(cs)
+	b.SetPaired(true)
+
+	ctx := context.Background()
+	_, err := b.StartPairing(ctx)
+	if err == nil || !strings.Contains(err.Error(), "already paired") {
+		t.Fatalf("expected already paired error, got: %v", err)
+	}
+}
+
+func TestStartPairingSuccessFlow(t *testing.T) {
+	b, paths, events, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	if err := cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	b.SetConfig(cs)
+
+	qrChan := make(chan QRChannelItem, 4)
+	mock.GetQRChannelFunc = func(ctx context.Context) (<-chan QRChannelItem, error) {
+		return qrChan, nil
+	}
+
+	const initialURL = "tg://login?token=initial-token-sample"
+	qrChan <- QRChannelItem{Event: QRChannelEventCode, Code: initialURL}
+
+	ctx := context.Background()
+	gotURL, err := b.StartPairing(ctx)
+	if err != nil {
+		t.Fatalf("StartPairing failed: %v", err)
+	}
+	if gotURL != initialURL {
+		t.Errorf("got URL %q, want %q", gotURL, initialURL)
+	}
+
+	st := b.Status()
+	if st.State != wire.StatePairing {
+		t.Errorf("expected state %q, got %q", wire.StatePairing, st.State)
+	}
+	if st.QRURL != initialURL {
+		t.Errorf("expected QRURL %q, got %q", initialURL, st.QRURL)
+	}
+
+	// Verify pairing status event
+	var seenPairingEvent bool
+	for len(events) > 0 {
+		e := <-events
+		if e.Event == wire.EventStatus && e.Network == wire.NetworkTelegram {
+			if s, ok := e.Data.(wire.Status); ok && s.State == wire.StatePairing && s.QRURL == initialURL {
+				seenPairingEvent = true
+			}
+		}
+	}
+	if !seenPairingEvent {
+		t.Error("expected status event with StatePairing and initial QRURL")
+	}
+
+	// 2. Token refresh
+	const refreshedURL = "tg://login?token=refreshed-token-sample"
+	qrChan <- QRChannelItem{Event: QRChannelEventCode, Code: refreshedURL}
+
+	// Allow listener goroutine to process
+	time.Sleep(20 * time.Millisecond)
+
+	st = b.Status()
+	if st.QRURL != refreshedURL {
+		t.Errorf("expected refreshed QRURL %q, got %q", refreshedURL, st.QRURL)
+	}
+
+	// 3. User accepts login on phone
+	qrChan <- QRChannelItem{Event: QRChannelEventSuccess}
+	time.Sleep(20 * time.Millisecond)
+
+	st = b.Status()
+	if st.State != wire.StateConnected {
+		t.Errorf("expected state %q after success, got %q", wire.StateConnected, st.State)
+	}
+	if st.QRURL != "" {
+		t.Errorf("expected empty QRURL after pairing success, got %q", st.QRURL)
+	}
+}
+
+func TestStartPairingContextCancellation(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef")
+	b.SetConfig(cs)
+
+	qrChan := make(chan QRChannelItem)
+	mock.GetQRChannelFunc = func(ctx context.Context) (<-chan QRChannelItem, error) {
+		return qrChan, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel before first token arrives
+
+	_, err := b.StartPairing(ctx)
+	if err == nil {
+		t.Fatal("expected error on cancelled context")
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired after cancellation, got %s", st.State)
+	}
+	if st.QRURL != "" {
+		t.Errorf("expected empty QRURL after cancellation, got %s", st.QRURL)
+	}
+	if !strings.Contains(st.Error, "cancelled") {
+		t.Errorf("expected cancellation in Error, got %q", st.Error)
+	}
+}
+
+func TestStartPairing2FAPasswordNeeded(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef")
+	b.SetConfig(cs)
+
+	qrChan := make(chan QRChannelItem, 4)
+	mock.GetQRChannelFunc = func(ctx context.Context) (<-chan QRChannelItem, error) {
+		return qrChan, nil
+	}
+
+	qrChan <- QRChannelItem{Event: QRChannelEventCode, Code: "tg://login?token=sample"}
+
+	ctx := context.Background()
+	_, err := b.StartPairing(ctx)
+	if err != nil {
+		t.Fatalf("StartPairing failed: %v", err)
+	}
+
+	// Send 2FA error
+	qrChan <- QRChannelItem{
+		Event: QRChannelEventError,
+		Error: errors.New("SESSION_PASSWORD_NEEDED: 2FA required"),
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired after 2FA error, got %s", st.State)
+	}
+	if !strings.Contains(st.Error, "Telegram 2FA Cloud Password required") {
+		t.Errorf("expected 2FA cloud password message in Error, got %q", st.Error)
+	}
+}
+
+func TestStartPairingClientError(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef")
+	b.SetConfig(cs)
+
+	mock.GetQRChannelFunc = func(ctx context.Context) (<-chan QRChannelItem, error) {
+		return nil, errors.New("cannot connect to Telegram DC")
+	}
+
+	ctx := context.Background()
+	_, err := b.StartPairing(ctx)
+	if err == nil {
+		t.Fatal("expected error when GetQRChannel fails")
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired, got %s", st.State)
+	}
+	if !strings.Contains(st.Error, "Could not start Telegram QR pairing session") {
+		t.Errorf("unexpected Error message: %q", st.Error)
+	}
+}
+
+func TestStartPairingPrematureChannelClose(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef")
+	b.SetConfig(cs)
+
+	qrChan := make(chan QRChannelItem)
+	close(qrChan)
+	mock.GetQRChannelFunc = func(ctx context.Context) (<-chan QRChannelItem, error) {
+		return qrChan, nil
+	}
+
+	ctx := context.Background()
+	_, err := b.StartPairing(ctx)
+	if err == nil {
+		t.Fatal("expected error on closed channel")
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired, got %s", st.State)
+	}
+}
+
+func TestStartPairingUnpairCancelsInFlight(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef")
+	b.SetConfig(cs)
+
+	qrChan := make(chan QRChannelItem, 4)
+	mock.GetQRChannelFunc = func(ctx context.Context) (<-chan QRChannelItem, error) {
+		return qrChan, nil
+	}
+
+	qrChan <- QRChannelItem{Event: QRChannelEventCode, Code: "tg://login?token=token-active"}
+
+	ctx := context.Background()
+	_, err := b.StartPairing(ctx)
+	if err != nil {
+		t.Fatalf("StartPairing failed: %v", err)
+	}
+	if b.Status().State != wire.StatePairing {
+		t.Fatalf("expected StatePairing, got %s", b.Status().State)
+	}
+
+	// Unpair while in-flight
+	if err := b.Unpair(ctx); err != nil {
+		t.Fatalf("Unpair failed: %v", err)
+	}
+
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired, got %s", st.State)
+	}
+	if st.QRURL != "" {
+		t.Errorf("expected empty QRURL, got %s", st.QRURL)
+	}
+}
+
+func TestStartPairingGenerationMismatch(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	cs := store.NewConfigStore(paths.ConfigFile())
+	_ = cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef")
+	b.SetConfig(cs)
+
+	qrChan1 := make(chan QRChannelItem, 4)
+	qrChan2 := make(chan QRChannelItem, 4)
+
+	callCount := 0
+	mock.GetQRChannelFunc = func(ctx context.Context) (<-chan QRChannelItem, error) {
+		callCount++
+		if callCount == 1 {
+			return qrChan1, nil
+		}
+		return qrChan2, nil
+	}
+
+	qrChan1 <- QRChannelItem{Event: QRChannelEventCode, Code: "tg://login?token=gen1"}
+	qrChan2 <- QRChannelItem{Event: QRChannelEventCode, Code: "tg://login?token=gen2"}
+
+	ctx := context.Background()
+	url1, err := b.StartPairing(ctx)
+	if err != nil || url1 != "tg://login?token=gen1" {
+		t.Fatalf("StartPairing 1 failed: url=%s, err=%v", url1, err)
+	}
+
+	// Start second pairing (supersedes generation 1)
+	url2, err := b.StartPairing(ctx)
+	if err != nil || url2 != "tg://login?token=gen2" {
+		t.Fatalf("StartPairing 2 failed: url=%s, err=%v", url2, err)
+	}
+
+	// Stale event from gen1 should be ignored
+	qrChan1 <- QRChannelItem{Event: QRChannelEventSuccess}
+	time.Sleep(20 * time.Millisecond)
+
+	// Backend must still be in StatePairing with gen2 URL, not StateConnected!
+	st := b.Status()
+	if st.State != wire.StatePairing {
+		t.Errorf("stale event mutated state: got %s, want %s", st.State, wire.StatePairing)
+	}
+	if st.QRURL != "tg://login?token=gen2" {
+		t.Errorf("stale event mutated QRURL: got %s", st.QRURL)
+	}
+
+	// Gen2 success works
+	qrChan2 <- QRChannelItem{Event: QRChannelEventSuccess}
+	time.Sleep(20 * time.Millisecond)
+
+	st = b.Status()
+	if st.State != wire.StateConnected {
+		t.Errorf("gen2 success failed: got %s, want %s", st.State, wire.StateConnected)
+	}
+}
+
+func TestBackendStopMethod(t *testing.T) {
+	b, _, _, mock := setupTestTelegramWithMock(t)
+	stopCalled := false
+	mock.StopFunc = func() error {
+		stopCalled = true
+		return nil
+	}
+	b.SetClient(mock)
+
+	b.Stop()
+	if !stopCalled {
+		t.Error("expected Stop to call client Stop")
+	}
+	if b.Client() != nil {
+		t.Error("expected client to be nil after Stop")
 	}
 }
