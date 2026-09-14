@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "onelegdave.omachat",
   "name": "OmaChat",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "OneLegDave",
   "license": "MIT",
-  "description": "Chat from the Omarchy bar for Google Messages and WhatsApp. The shell owns the protocol helper; no systemd unit.",
+  "description": "Chat from the Omarchy bar for Google Messages, WhatsApp, and Telegram. The shell owns the protocol helper; no systemd unit.",
   "kinds": ["service", "bar-widget"],
   "keepLoaded": true,
   "entryPoints": {
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "OmaChat",
-    "description": "Unread badge with a conversation panel: Google Messages and WhatsApp threads, history, images, stickers, and replies",
+    "description": "Unread badge with a conversation panel: Google Messages, WhatsApp, and Telegram threads, history, images, stickers, voice notes, and replies",
     "category": "Info",
     "allowMultiple": false,
     "defaultSection": "right",
