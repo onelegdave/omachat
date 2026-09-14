@@ -806,7 +806,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "OmaChat (onelegdave.omachat) is a Native Omarchy Plugin providing unified messaging across Google Messages, WhatsApp, and Telegram. Created and maintained by OneLegDave. Codex contributes as AI development lead under OneLegDave's direction, with AI assistance from Antigravity and Grok."
+        text: "OmaChat (onelegdave.omachat) is a Native Omarchy Plugin providing unified messaging across Google Messages, WhatsApp, and Telegram. Created and maintained by OneLegDave, with AI assistance from Codex."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)

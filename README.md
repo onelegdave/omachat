@@ -151,9 +151,7 @@ for service guides, release notes, and historical reviews.
 
 ## Credits and license
 
-Created and maintained by [OneLegDave](https://www.onelegdave.dev/).
-Codex contributes as an AI development lead under OneLegDave's direction,
-with AI assistance from Antigravity and Grok on project development and review.
+Created and maintained by [OneLegDave](https://www.onelegdave.dev/), with AI assistance from Codex.
 
 The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin).
 Google Messages uses [mautrix libgm](https://github.com/mautrix/gmessages),

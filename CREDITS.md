@@ -27,9 +27,7 @@ OpenTelemetry authors, and the maintainers of the modules listed in
 remain alongside their code in [vendor/](vendor/). The inventory below links
 the retained notices directly.
 
-Codex contributes as an AI development lead under OneLegDave's direction.
-Antigravity and Grok have assisted with implementation and review. They are
-AI tools, not project owners or maintainers.
+Created and maintained by OneLegDave, with AI assistance from Codex.
 
 ## Vendored license inventory
 
