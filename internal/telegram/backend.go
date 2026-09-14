@@ -399,9 +399,27 @@ func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.Mes
 	}, nil
 }
 
-// Send rejects sending as dialog sync and send RPCs are pending subsequent milestones.
 func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, error) {
-	return nil, ErrNotConfigured
+	b.mu.RLock()
+	cli := b.client
+	b.mu.RUnlock()
+	sender, ok := cli.(SendClient)
+	if !ok {
+		return nil, ErrNotConfigured
+	}
+	id, err := parseTelegramID(p.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	msg, err := sender.SendText(ctx, id, p.Text)
+	if err != nil {
+		return nil, err
+	}
+	converted := mapMessage(msg)
+	converted.Status = wire.DeliverySent
+	converted.Delivery = wire.DeliverySent
+	b.ingestMessage(msg)
+	return &converted, nil
 }
 
 // SendMedia rejects sending media as protocol media exchange is pending subsequent milestones.

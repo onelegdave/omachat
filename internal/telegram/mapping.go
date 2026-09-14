@@ -45,6 +45,11 @@ type SyncClient interface {
 	MarkRead(ctx context.Context, conversationID int64, messageID int64) error
 }
 
+type SendClient interface {
+	SyncClient
+	SendText(ctx context.Context, conversationID int64, text string) (Message, error)
+}
+
 func mapDialog(d Dialog) wire.Conversation {
 	name := d.Name
 	if name == "" {

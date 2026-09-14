@@ -565,6 +565,28 @@ func TestTelegramIncomingMessageUpdatesCacheAndPublishes(t *testing.T) {
 	}
 }
 
+func TestTelegramSendTextRoutesAndCaches(t *testing.T) {
+	b, _, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	b.AddTestConversation(wire.Conversation{ID: "tg:7", Name: "Alice"})
+	var gotID int64
+	mock.SendTextFunc = func(_ context.Context, id int64, text string) (Message, error) {
+		gotID = id
+		return Message{ID: 12, ConversationID: id, Text: text, Timestamp: 44, FromMe: true}, nil
+	}
+	msg, err := b.Send(context.Background(), wire.SendParams{ConversationID: "tg:7", Text: "hello"})
+	if err != nil || msg == nil || msg.ID != "tg:12" || msg.Text != "hello" || !msg.FromMe || msg.Delivery != wire.DeliverySent {
+		t.Fatalf("unexpected send result: %+v err=%v", msg, err)
+	}
+	if gotID != 7 {
+		t.Fatalf("transport received conversation %d", gotID)
+	}
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: "tg:7"})
+	if len(result.Messages) != 1 || result.Messages[0].ID != "tg:12" {
+		t.Fatalf("sent message was not cached: %+v", result.Messages)
+	}
+}
+
 func TestStartPairingUnconfigured(t *testing.T) {
 	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
 	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")

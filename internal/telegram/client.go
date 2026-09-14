@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -442,6 +444,58 @@ func (g *GotdClient) MarkRead(ctx context.Context, conversationID int64, message
 	}
 	_, err := g.client.API().MessagesReadHistory(ctx, &tg.MessagesReadHistoryRequest{Peer: peer, MaxID: maxID})
 	return err
+}
+
+func (g *GotdClient) SendText(ctx context.Context, conversationID int64, text string) (Message, error) {
+	if strings.TrimSpace(text) == "" {
+		return Message{}, errors.New("Telegram message cannot be empty")
+	}
+	g.mu.RLock()
+	peer := g.peers[conversationID]
+	g.mu.RUnlock()
+	if peer == nil {
+		return Message{}, fmt.Errorf("telegram peer %d is not available", conversationID)
+	}
+	var randomID int64
+	if err := binary.Read(rand.Reader, binary.LittleEndian, &randomID); err != nil {
+		return Message{}, fmt.Errorf("generate Telegram message ID: %w", err)
+	}
+	updates, err := g.client.API().MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{Peer: peer, Message: text, RandomID: randomID})
+	if err != nil {
+		return Message{}, err
+	}
+	if u, ok := updates.(*tg.Updates); ok {
+		for _, raw := range u.Updates {
+			if update, ok := raw.(*tg.UpdateNewMessage); ok {
+				if m, ok := update.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+			if update, ok := raw.(*tg.UpdateNewChannelMessage); ok {
+				if m, ok := update.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+		}
+	}
+	if u, ok := updates.(*tg.UpdatesCombined); ok {
+		for _, raw := range u.Updates {
+			if update, ok := raw.(*tg.UpdateNewMessage); ok {
+				if m, ok := update.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+			if update, ok := raw.(*tg.UpdateNewChannelMessage); ok {
+				if m, ok := update.Message.(*tg.Message); ok {
+					return Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: true}, nil
+				}
+			}
+		}
+	}
+	if u, ok := updates.(*tg.UpdateShortSentMessage); ok {
+		return Message{ID: int64(u.ID), ConversationID: conversationID, Text: text, Timestamp: telegramTimestamp(u.Date), FromMe: u.Out}, nil
+	}
+	return Message{}, errors.New("Telegram send succeeded without a message response")
 }
 
 // gotd exposes Telegram dates as Unix seconds; OmaChat wire timestamps use

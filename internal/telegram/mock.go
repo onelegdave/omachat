@@ -22,6 +22,14 @@ type MockClient struct {
 	DialogsFunc      func(ctx context.Context, limit int) ([]Dialog, error)
 	MessagesFunc     func(ctx context.Context, conversationID int64, limit int) ([]Message, error)
 	MarkReadFunc     func(ctx context.Context, conversationID int64, messageID int64) error
+	SendTextFunc     func(ctx context.Context, conversationID int64, text string) (Message, error)
+}
+
+func (m *MockClient) SendText(ctx context.Context, conversationID int64, text string) (Message, error) {
+	if m.SendTextFunc != nil {
+		return m.SendTextFunc(ctx, conversationID, text)
+	}
+	return Message{}, nil
 }
 
 func (m *MockClient) MarkRead(ctx context.Context, conversationID int64, messageID int64) error {
