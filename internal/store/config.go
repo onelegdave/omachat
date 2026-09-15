@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 )
 
 // Config holds daemon preferences that outlive a session.
@@ -120,6 +123,88 @@ func (c *ConfigStore) EnabledServices(paths *Paths) ([]string, bool) {
 	return []string{"gmessages", "whatsapp", "telegram"}, false
 }
 
+// updateLocked serializes writers, reloads disk state, and merges only the
+// requested fields. The lock file stays in place across atomic config renames.
+func (c *ConfigStore) updateLocked(modify func(cfg map[string]any, loaded *Config)) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	lockPath := c.path + ".lock"
+	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to open config lock file: %w", err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return errors.New("config lock must be a regular file")
+	}
+	if err := f.Chmod(0600); err != nil {
+		return fmt.Errorf("secure config lock: %w", err)
+	}
+
+	for i := 0; i < 50; i++ {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			break
+		}
+		if err != syscall.EWOULDBLOCK {
+			return fmt.Errorf("failed to lock config: %w", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err != nil {
+		return errors.New("another process is currently updating the configuration, please try again")
+	}
+
+	var cfg map[string]any
+	data, err := os.ReadFile(c.path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to read config for update: %w", err)
+		}
+		cfg = make(map[string]any)
+	} else {
+		if !json.Valid(data) {
+			return errors.New("configuration is invalid JSON; it was not changed")
+		}
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.UseNumber()
+		if err := decoder.Decode(&cfg); err != nil || cfg == nil {
+			return errors.New("configuration must be a JSON object; it was not changed")
+		}
+	}
+
+	// Preserve only the unsaved fresh-install chooser, not stale credentials or
+	// preferences removed by another writer. Everything else comes from disk.
+	if _, exists := cfg["enabledServices"]; !exists && c.loaded.ServiceSelectionRequired {
+		cfg["enabledServices"] = []string{}
+		cfg["serviceSelectionRequired"] = true
+	}
+
+	var nextLoaded Config
+	if b, err := json.Marshal(cfg); err != nil {
+		return errors.New("configuration could not be encoded; it was not changed")
+	} else if err := json.Unmarshal(b, &nextLoaded); err != nil {
+		return errors.New("configuration has invalid field types; it was not changed")
+	}
+
+	modify(cfg, &nextLoaded)
+
+	newData, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	// writePrivateJSON uses 0600 tempfile and rename, preserving safety
+	if err := writePrivateJSON(c.path, append(newData, '\n')); err != nil {
+		return err
+	}
+
+	c.loaded = nextLoaded
+
+	return nil
+}
+
 // SetEnabledServices validates and persists before committing the in-memory value.
 func (c *ConfigStore) SetEnabledServices(services []string) error {
 	if services == nil {
@@ -141,36 +226,28 @@ func (c *ConfigStore) SetEnabledServices(services []string) error {
 			canonical = append(canonical, service)
 		}
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	next := c.loaded
-	next.EnabledServices = &canonical
-	next.ServiceSelectionRequired = false
-	data, err := json.Marshal(next)
-	if err != nil {
-		return err
-	}
-	if err := writePrivateJSON(c.path, data); err != nil {
-		return err
-	}
-	c.loaded = next
-	return nil
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["enabledServices"] = canonical
+		cfg["serviceSelectionRequired"] = false
+		loaded.EnabledServices = &canonical
+		loaded.ServiceSelectionRequired = false
+	})
 }
 
 // SetBrowserProfile records the chosen profile and persists it atomically.
 func (c *ConfigStore) SetBrowserProfile(name string) error {
-	c.mu.Lock()
-	c.loaded.BrowserProfile = name
-	defer c.mu.Unlock()
-	return c.saveLocked()
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["browserProfile"] = name
+		loaded.BrowserProfile = name
+	})
 }
 
 // SetGiphyAPIKey stores the GIF search key.
 func (c *ConfigStore) SetGiphyAPIKey(key string) error {
-	c.mu.Lock()
-	c.loaded.GiphyAPIKey = key
-	defer c.mu.Unlock()
-	return c.saveLocked()
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["giphyApiKey"] = key
+		loaded.GiphyAPIKey = key
+	})
 }
 
 // SetUiScale persists the panel type scale, clamped to a usable range.
@@ -181,44 +258,38 @@ func (c *ConfigStore) SetUiScale(scale float64) error {
 	if scale > 1.5 {
 		scale = 1.5
 	}
-	c.mu.Lock()
-	c.loaded.UiScale = scale
-	defer c.mu.Unlock()
-	return c.saveLocked()
-}
-
-// Caller holds mu so updates and their on-disk order agree.
-func (c *ConfigStore) saveLocked() error {
-	data, err := json.Marshal(&c.loaded)
-	if err != nil {
-		return err
-	}
-	return writePrivateJSON(c.path, data)
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["uiScale"] = scale
+		loaded.UiScale = scale
+	})
 }
 
 // SetTelegramCredentials records the Telegram API credentials and persists them atomically.
 func (c *ConfigStore) SetTelegramCredentials(apiID int, apiHash string) error {
-	c.mu.Lock()
-	c.loaded.TelegramAPIID = apiID
-	c.loaded.TelegramAPIHash = strings.TrimSpace(apiHash)
-	defer c.mu.Unlock()
-	return c.saveLocked()
+	apiHash = strings.TrimSpace(apiHash)
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["telegramApiID"] = apiID
+		cfg["telegramApiHash"] = apiHash
+		loaded.TelegramAPIID = apiID
+		loaded.TelegramAPIHash = apiHash
+	})
 }
 
 // SetTelegramAPIID records the Telegram API ID and persists it atomically.
 func (c *ConfigStore) SetTelegramAPIID(apiID int) error {
-	c.mu.Lock()
-	c.loaded.TelegramAPIID = apiID
-	defer c.mu.Unlock()
-	return c.saveLocked()
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["telegramApiID"] = apiID
+		loaded.TelegramAPIID = apiID
+	})
 }
 
 // SetTelegramAPIHash records the Telegram API hash and persists it atomically.
 func (c *ConfigStore) SetTelegramAPIHash(apiHash string) error {
-	c.mu.Lock()
-	c.loaded.TelegramAPIHash = strings.TrimSpace(apiHash)
-	defer c.mu.Unlock()
-	return c.saveLocked()
+	apiHash = strings.TrimSpace(apiHash)
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["telegramApiHash"] = apiHash
+		loaded.TelegramAPIHash = apiHash
+	})
 }
 
 // TelegramCredentials holds validated credentials for the Telegram MTProto client.

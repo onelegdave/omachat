@@ -21,9 +21,16 @@ python3 scripts/configure-telegram.py
 omarchy restart shell
 ```
 
-The helper reads configuration at startup. Restart the shell immediately after
-saving credentials, before changing OmaChat Settings, so the running helper
-loads the new values. Restarting briefly reloads the whole Omarchy shell.
+Restart the shell after saving credentials so the Telegram client uses the new
+values. Restarting briefly reloads the whole Omarchy shell. The setup script
+and helper coordinate configuration writes and preserve unrelated settings,
+including your service choices.
+
+If setup reports unreadable or invalid configuration, it stops without replacing
+that configuration. Resolve the reported problem and retry; do not delete your
+configuration to bypass the error. If another settings update holds the lock,
+wait for it to finish and retry. Do not remove `config.json.lock`: it is a shared
+coordination file, and its presence alone does not mean an update is running.
 
 Run the setup script as your normal user, without `sudo`. Enter the numeric
 `api_id` first. At the `api_hash` prompt, typing or pasting displays no characters
