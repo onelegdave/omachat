@@ -615,16 +615,6 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 		}
 		return ok(d.PluginConfig())
 
-	case wire.MethodSetTelegramCredentials:
-		p, err := decodeParams[wire.SetTelegramCredentialsParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		if err := d.SetTelegramCredentials(ctx, p.APIID, p.APIHash); err != nil {
-			return fail(err)
-		}
-		return ok(d.PluginConfig())
-
 	case wire.MethodGaiaPairing, wire.MethodPairFromBrowser:
 		return fail(errors.New("Google account pairing is not supported on WhatsApp"))
 
@@ -779,16 +769,6 @@ func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Re
 			return fail(err)
 		}
 		if err := d.SetGiphyKey(p.Key); err != nil {
-			return fail(err)
-		}
-		return ok(d.PluginConfig())
-
-	case wire.MethodSetTelegramCredentials:
-		p, err := decodeParams[wire.SetTelegramCredentialsParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		if err := d.SetTelegramCredentials(ctx, p.APIID, p.APIHash); err != nil {
 			return fail(err)
 		}
 		return ok(d.PluginConfig())

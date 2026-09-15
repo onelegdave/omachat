@@ -19,7 +19,7 @@ func (d *Daemon) SetTelegramCredentials(ctx context.Context, apiID int, apiHash 
 			return err
 		}
 		if d.tg != nil && d.serviceEnabled(wire.NetworkTelegram) {
-			_ = d.tg.UpdateCredentials(ctx)
+			d.tg.TriggerUpdateCredentials()
 		}
 		return nil
 	}
@@ -49,9 +49,7 @@ func (d *Daemon) SetTelegramCredentials(ctx context.Context, apiID int, apiHash 
 
 	// Update the Telegram backend state
 	if d.tg != nil && d.serviceEnabled(wire.NetworkTelegram) {
-		if err := d.tg.UpdateCredentials(ctx); err != nil {
-			d.log.Warn().Err(err).Msg("Telegram backend credential update warning")
-		}
+		d.tg.TriggerUpdateCredentials()
 	}
 
 	return nil

@@ -1455,7 +1455,7 @@ Item {
               Text {
                 id: bubbleText
                 width: parent.width
-                visible: row.hasText || (row.msg && row.msg.deleted)
+                visible: !!(row.hasText || (row.msg && row.msg.deleted === true))
                 height: visible ? implicitHeight : 0
                 text: {
                   if (row.msg && row.msg.deleted) return "Message deleted"

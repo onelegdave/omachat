@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1107,3 +1108,109 @@ func TestBackendUpdateCredentials(t *testing.T) {
 	}
 }
 
+func TestBackendStopWhileBlocked(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	if err := os.WriteFile(paths.TelegramSessionFile(), []byte("dummy session"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cs := store.NewConfigStore(paths.ConfigFile())
+	if err := cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	b.SetConfig(cs)
+
+	started := make(chan struct{})
+	mock.StartFunc = func(ctx context.Context) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	updateDone := make(chan error, 1)
+	go func() {
+		updateDone <- b.UpdateCredentials(context.Background())
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("credential refresh did not start")
+	}
+
+	stopDone := make(chan struct{})
+	go func() {
+		b.Stop()
+		close(stopDone)
+	}()
+
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("Stop blocked behind credential refresh")
+	}
+	select {
+	case err := <-updateDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("credential refresh error = %v, want context cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("credential refresh goroutine did not exit")
+	}
+}
+
+func TestBackendCredentialUpdatesSupersedeAndStop(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	if err := os.WriteFile(paths.TelegramSessionFile(), []byte("dummy session"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cs := store.NewConfigStore(paths.ConfigFile())
+	if err := cs.SetTelegramCredentials(1234567, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	b.SetConfig(cs)
+
+	var starts atomic.Int32
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	mock.StartFunc = func(ctx context.Context) error {
+		switch starts.Add(1) {
+		case 1:
+			close(firstStarted)
+		case 2:
+			close(secondStarted)
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	b.TriggerUpdateCredentials()
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first credential update did not start")
+	}
+	b.TriggerUpdateCredentials()
+	select {
+	case <-secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("replacement credential update did not start")
+	}
+
+	stopDone := make(chan struct{})
+	go func() {
+		b.Stop()
+		close(stopDone)
+	}()
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("Stop blocked with superseding credential updates")
+	}
+
+	b.TriggerUpdateCredentials()
+	time.Sleep(50 * time.Millisecond)
+	if got := starts.Load(); got != 2 {
+		t.Fatalf("credential update started after Stop: starts = %d, want 2", got)
+	}
+	if err := b.UpdateCredentials(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("direct credential update after Stop error = %v, want context cancellation", err)
+	}
+}

@@ -448,8 +448,8 @@ Panel {
   Component {
     id: helperView
     Item {
-      readonly property bool needGo: !!root.service && !root.service.goPresent && !root.service.helperPresent
-      readonly property bool canBuild: !!root.service && root.service.goPresent && !root.service.helperPresent
+      readonly property bool needGo: !!(root.service && !root.service.goPresent && !root.service.helperPresent)
+      readonly property bool canBuild: !!(root.service && root.service.goPresent && !root.service.helperPresent)
 
       Flickable {
         anchors.fill: parent
@@ -506,14 +506,14 @@ Panel {
                   fontFamily: root.fontFamily
                   fontSize: root.fs(Style.font.display)
                   transformOrigin: Item.Center
-                  rotation: (!!root.service && root.service.building) ? 0 : 0
+                  rotation: 0
 
                   RotationAnimation on rotation {
                     from: 0
                     to: 360
                     duration: 1200
                     loops: Animation.Infinite
-                    running: !!root.service && root.service.building
+                    running: !!(root.service && root.service.building)
                   }
                 }
               }
@@ -523,7 +523,7 @@ Panel {
           Item {
             id: buildActivityTrack
             objectName: "buildActivityIndicator"
-            visible: !!root.service && root.service.building
+            visible: !!(root.service && root.service.building)
             width: parent.width
             height: Style.space(4)
             clip: true
@@ -544,7 +544,7 @@ Panel {
               x: -width
 
               SequentialAnimation on x {
-                running: !!root.service && root.service.building
+                running: !!(root.service && root.service.building)
                 loops: Animation.Infinite
 
                 NumberAnimation {
@@ -558,7 +558,7 @@ Panel {
           }
 
           Row {
-            visible: !!root.service && root.service.building
+            visible: !!(root.service && root.service.building)
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Style.space(8)
 
@@ -571,14 +571,14 @@ Panel {
               fontFamily: root.fontFamily
               fontSize: root.fs(Style.font.caption)
               transformOrigin: Item.Center
-              rotation: (!!root.service && root.service.building) ? 0 : 0
+              rotation: 0
 
               RotationAnimation on rotation {
                 from: 0
                 to: 360
                 duration: 900
                 loops: Animation.Infinite
-                running: !!root.service && root.service.building
+                running: !!(root.service && root.service.building)
               }
             }
 
@@ -617,13 +617,13 @@ Panel {
             }
 
             Button {
-              visible: canBuild || (!!root.service && root.service.building)
+              visible: canBuild || (!!(root.service && root.service.building))
               objectName: "buildHelperButton"
               text: root.service && root.service.building ? "Building..." : "Build helper"
               iconText: root.service && root.service.building ? "󰑐" : ""
-              iconSpinning: !!root.service && root.service.building
+              iconSpinning: !!(root.service && root.service.building)
               bordered: true
-              enabled: !!root.service && !root.service.building && root.service.goPresent
+              enabled: !!(root.service && !root.service.building && root.service.goPresent)
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: if (root.service) root.service.buildHelper()

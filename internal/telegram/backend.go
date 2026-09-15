@@ -44,10 +44,14 @@ type Backend struct {
 	client        Client
 	clientFactory ClientFactory
 
-	ctx        context.Context
-	cancel     context.CancelFunc
-	pairCancel context.CancelFunc
-	gen        uint64 // pairing attempt generation to prevent stale goroutine races
+	ctx          context.Context
+	cancel       context.CancelFunc
+	pairCancel   context.CancelFunc
+	updateCancel context.CancelFunc
+	updateGen    uint64
+	stopping     bool
+	wg           sync.WaitGroup
+	gen          uint64 // pairing attempt generation to prevent stale goroutine races
 
 	convs    map[string]wire.Conversation
 	order    []string
@@ -191,7 +195,7 @@ func (b *Backend) Start(ctx context.Context) error {
 	// Keep the client attached to the backend lifetime. The separate wait
 	// context bounds startup without canceling the transport after it becomes
 	// ready.
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	waitCtx, waitCancel := context.WithTimeout(b.ctx, 20*time.Second)
 	restoreErr := make(chan error, 1)
 	go func() { restoreErr <- cli.Start(b.ctx) }()
 	var startErr error
@@ -238,8 +242,25 @@ func (b *Backend) Start(ctx context.Context) error {
 // re-evaluates credentials and existing session, and updates status and events
 // without requiring a shell or process restart.
 func (b *Backend) UpdateCredentials(ctx context.Context) error {
+	b.mu.RLock()
+	stopping := b.stopping
+	b.mu.RUnlock()
+	if stopping {
+		return context.Canceled
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	stopLifetimeCancel := context.AfterFunc(b.ctx, cancel)
+	defer func() {
+		stopLifetimeCancel()
+		cancel()
+	}()
+
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	// Ensure private media directory exists.
 	if b.paths != nil {
@@ -310,11 +331,11 @@ func (b *Backend) UpdateCredentials(ctx context.Context) error {
 	b.mu.Unlock()
 
 	b.setState(wire.StateConnecting, "")
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	waitCtx, waitCancel := context.WithTimeout(ctx, 20*time.Second)
 	defer waitCancel()
 
 	restoreErr := make(chan error, 1)
-	go func() { restoreErr <- cli.Start(b.ctx) }()
+	go func() { restoreErr <- cli.Start(ctx) }()
 	var startErr error
 	select {
 	case startErr = <-restoreErr:
@@ -323,6 +344,14 @@ func (b *Backend) UpdateCredentials(ctx context.Context) error {
 	}
 
 	if startErr != nil {
+		if errors.Is(startErr, context.Canceled) {
+			_ = cli.Stop()
+			b.mu.Lock()
+			b.client = nil
+			b.paired = false
+			b.mu.Unlock()
+			return startErr
+		}
 		b.log.Warn().Err(startErr).Msg("Telegram session restore connection failed")
 		if strings.Contains(strings.ToLower(startErr.Error()), "unauthorized") ||
 			strings.Contains(strings.ToLower(startErr.Error()), "revoked") ||
@@ -343,7 +372,7 @@ func (b *Backend) UpdateCredentials(ctx context.Context) error {
 	}
 
 	b.setState(wire.StateConnected, "")
-	syncCtx, syncCancel := context.WithTimeout(b.ctx, 30*time.Second)
+	syncCtx, syncCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer syncCancel()
 	if err := b.Refresh(syncCtx); err != nil {
 		b.log.Warn().Err(err).Msg("Telegram dialog refresh failed")
@@ -911,15 +940,27 @@ func (b *Backend) Unpair(ctx context.Context) error {
 
 // Stop cleanly stops any running pairing or client connection.
 func (b *Backend) Stop() {
+	b.mu.Lock()
+	b.stopping = true
+	cancel := b.cancel
+	updateCancel := b.updateCancel
+	b.updateCancel = nil
+	b.mu.Unlock()
+
+	if updateCancel != nil {
+		updateCancel()
+	}
+	if cancel != nil {
+		cancel()
+	}
+	b.wg.Wait()
+
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
 
 	if b.pairCancel != nil {
 		b.pairCancel()
 		b.pairCancel = nil
-	}
-	if b.cancel != nil {
-		b.cancel()
 	}
 
 	b.mu.Lock()
@@ -1002,4 +1043,37 @@ func (b *Backend) SetPaired(paired bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.paired = paired
+}
+
+// TriggerUpdateCredentials enqueues or supersedes an asynchronous credential update.
+func (b *Backend) TriggerUpdateCredentials() {
+	b.mu.Lock()
+	if b.stopping {
+		b.mu.Unlock()
+		return
+	}
+	if b.updateCancel != nil {
+		b.updateCancel()
+	}
+	ctx, cancel := context.WithCancel(b.ctx)
+	b.updateCancel = cancel
+	b.updateGen++
+	gen := b.updateGen
+	b.wg.Add(1)
+	b.mu.Unlock()
+
+	go func() {
+		defer func() {
+			b.mu.Lock()
+			if b.updateGen == gen {
+				b.updateCancel = nil
+			}
+			b.mu.Unlock()
+			b.wg.Done()
+		}()
+
+		if err := b.UpdateCredentials(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			b.log.Warn().Err(err).Msg("Async Telegram credential update failed")
+		}
+	}()
 }

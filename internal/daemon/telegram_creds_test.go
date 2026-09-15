@@ -2,12 +2,15 @@ package daemon
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 
 	"github.com/onelegdave/omachat/internal/store"
+	"github.com/onelegdave/omachat/internal/telegram"
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
@@ -130,5 +133,81 @@ func TestDaemonSetTelegramCredentials(t *testing.T) {
 	}
 	if savedDeleted := d.config.Get(); savedDeleted.TelegramAPIID != 0 || savedDeleted.TelegramAPIHash != "" {
 		t.Errorf("credentials not cleared from config: %+v", savedDeleted)
+	}
+}
+
+func TestDaemonSetTelegramCredentialsResponsiveness(t *testing.T) {
+	paths := &store.Paths{
+		Data:    t.TempDir(),
+		Cache:   t.TempDir(),
+		Runtime: t.TempDir(),
+	}
+
+	config := store.NewConfigStore(paths.ConfigFile())
+	if err := config.SetEnabledServices([]string{wire.NetworkTelegram}); err != nil {
+		t.Fatal(err)
+	}
+	d := New(zerolog.Nop(), paths)
+	mock := telegram.NewMockClient()
+	refreshStarted := make(chan struct{})
+	mock.StartFunc = func(ctx context.Context) error {
+		close(refreshStarted)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	d.tg.SetClientFactory(func(store.TelegramCredentials, string) (telegram.Client, error) {
+		return mock, nil
+	})
+	t.Cleanup(d.tg.Stop)
+
+	ctx := context.Background()
+
+	// Create a dummy session file so UpdateCredentials tries to connect
+	// and would block for 20s if it weren't asynchronous.
+	if err := os.WriteFile(paths.TelegramSessionFile(), []byte("dummy session"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	dispatchGlobal := func(req wire.Request) wire.Response {
+		d.configResponseMu.Lock()
+		defer d.configResponseMu.Unlock()
+		return d.dispatch(ctx, req)
+	}
+
+	setResponse := make(chan wire.Response, 1)
+	go func() {
+		setResponse <- dispatchGlobal(wire.Request{
+			ID:      "req-block",
+			Network: wire.NetworkTelegram,
+			Method:  wire.MethodSetTelegramCredentials,
+			Params:  map[string]any{"apiId": 123456, "apiHash": "0123456789abcdef0123456789abcdef"},
+		})
+	}()
+
+	select {
+	case resp := <-setResponse:
+		if !resp.OK {
+			t.Fatalf("credential dispatch failed: %s", resp.Error)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("credential dispatch blocked on backend refresh")
+	}
+	select {
+	case <-refreshStarted:
+	case <-time.After(time.Second):
+		t.Fatal("background credential refresh did not start")
+	}
+
+	configResponse := make(chan wire.Response, 1)
+	go func() {
+		configResponse <- dispatchGlobal(wire.Request{ID: "req-cfg", Method: wire.MethodConfig})
+	}()
+	select {
+	case resp := <-configResponse:
+		if !resp.OK {
+			t.Fatalf("config dispatch failed: %s", resp.Error)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("config dispatch remained blocked after credential response")
 	}
 }
