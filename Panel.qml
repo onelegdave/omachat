@@ -28,11 +28,19 @@ Panel {
   property string popoutAddress: ""
   property int popoutMapAttempts: 0
   property bool surfaceTransfer: false
+  property bool restartResumeArmed: false
+  property bool restartResumeCancelAfterArm: false
   readonly property int preferredPopoutWidth: Style.space(920)
   readonly property int preferredPopoutHeight: Style.space(580)
   readonly property bool popoutOpen: popoutWindow.visible
   readonly property bool anySurfaceOpen: opened || popoutOpen || surfaceTransfer
+  readonly property bool restartResumeNeeded: anySurfaceOpen && service === null
   readonly property bool contentInPopout: keyCatcher.parent === popoutContentHost
+  readonly property string restartResumeScript: {
+    var url = String(Qt.resolvedUrl("scripts/restart_resume.py"))
+    if (url.indexOf("file://") === 0) url = decodeURIComponent(url.substring("file://".length))
+    return url
+  }
   readonly property var allServiceTabs: [
     { value: "gmessages", label: "Google", icon: "󰭹", tooltip: "Google Messages" },
     { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "WhatsApp" },
@@ -89,6 +97,35 @@ Panel {
     if (noServices) return
     if (service && service.refreshConversations) service.refreshConversations(activeService)
     if (inboxLoader.item) inboxLoader.item.refreshThread()
+  }
+
+  function cancelRestartResume() {
+    restartResumeCancelAfterArm = false
+    restartResumeArmed = false
+    restartResumeProcess.operation = "cancel"
+    restartResumeProcess.command = [
+      "python3", restartResumeScript, "cancel",
+      "--old-pid", String(Quickshell.processId), "--reason", "missing-service"
+    ]
+    restartResumeProcess.running = true
+  }
+
+  function syncRestartResume() {
+    if (restartResumeNeeded) {
+      if (restartResumeArmed || restartResumeProcess.running) return
+      restartResumeProcess.operation = "arm"
+      restartResumeProcess.command = [
+        "python3", restartResumeScript, "arm",
+        "--old-pid", String(Quickshell.processId), "--reason", "missing-service"
+      ]
+      restartResumeProcess.running = true
+      return
+    }
+    if (restartResumeProcess.running && restartResumeProcess.operation === "arm") {
+      restartResumeCancelAfterArm = true
+      return
+    }
+    if (restartResumeArmed && !restartResumeProcess.running) cancelRestartResume()
   }
 
   function open() {
@@ -194,6 +231,7 @@ Panel {
   }
 
   onAnySurfaceOpenChanged: {
+    syncRestartResume()
     if (!anySurfaceOpen || !service) return
     loadConfig()
     if (needsPair && activeService === "gmessages") service.loadProfiles()
@@ -201,12 +239,15 @@ Panel {
   }
 
   onServiceChanged: {
+    syncRestartResume()
     syncActiveService()
     accountGeneration++
     unpairing = false
     unpairError = ""
     loadConfig()
   }
+
+  Component.onCompleted: syncRestartResume()
 
   onConnStateChanged: {
     if (connState === "pairing" || connState === "gaiaPairing" || connState === "connecting") {
@@ -269,6 +310,25 @@ Panel {
       if (!root.popoutOpen || popoutResolveProcess.running) return
       popoutResolveProcess.command = ["hyprctl", "-j", "clients"]
       popoutResolveProcess.running = true
+    }
+  }
+
+  Process {
+    id: restartResumeProcess
+    objectName: "restartResumeProcess"
+    property string operation: ""
+    onExited: function(code) {
+      var completed = operation
+      operation = ""
+      if (completed === "arm") {
+        root.restartResumeArmed = code === 0
+        if (root.restartResumeCancelAfterArm || !root.restartResumeNeeded) {
+          root.restartResumeCancelAfterArm = false
+          if (root.restartResumeArmed) Qt.callLater(root.cancelRestartResume)
+        }
+      } else if (completed === "cancel") {
+        root.restartResumeArmed = false
+      }
     }
   }
 
@@ -736,7 +796,7 @@ Panel {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-            text: "Enable the plugin, then restart the shell:\nomarchy plugin enable onelegdave.omachat\nomarchy restart shell"
+            text: "Enable the plugin, then restart the shell:\nomarchy plugin enable onelegdave.omachat\nomarchy restart shell\n\nKeep this setup panel open when you restart. OmaChat will reopen once the new shell is ready."
             color: root.mutedInk
             font.family: root.fontFamily
             font.pixelSize: root.fs(Style.font.body)

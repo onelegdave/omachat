@@ -111,6 +111,8 @@ ShellRoot {
  function runTests() {
    try {
     console.log("QML_TEST_BEGIN")
+    root.check(!panel.restartResumeNeeded && !panel.restartResumeArmed,
+      "ordinary loaded panel does not arm restart resume")
     serviceOptions.choose("whatsapp",false)
     root.check(fake.enabledServices.length === 3,"service edit waits for explicit apply")
     serviceOptions.save()

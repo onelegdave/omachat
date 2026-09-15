@@ -43,11 +43,13 @@ class TelegramSetupTest(unittest.TestCase):
             path.parent.mkdir(parents=True)
             path.write_text(json.dumps({"enabledServices": ["telegram"]}))
             output = io.StringIO()
-            with patch.object(setup.Path, "home", return_value=home), patch("builtins.input", return_value="12345"), patch.object(setup.getpass, "getpass", return_value="a" * 32), contextlib.redirect_stdout(output):
+            with patch.object(setup.Path, "home", return_value=home), patch("builtins.input", return_value="12345"), patch.object(setup.getpass, "getpass", return_value="a" * 32), patch.object(setup, "arm_restart_resume", return_value=True) as arm, contextlib.redirect_stdout(output):
                 setup.main()
             self.assertIn("no characters or asterisks", output.getvalue())
             self.assertIn("omarchy restart shell", output.getvalue())
             self.assertIn("Pair with Telegram", output.getvalue())
+            self.assertIn("will reopen to Telegram", output.getvalue())
+            arm.assert_called_once_with()
             self.assertNotIn("a" * 32, output.getvalue())
             self.assertEqual(json.loads(path.read_text())["enabledServices"], ["telegram"])
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -84,6 +86,6 @@ class TelegramSetupTest(unittest.TestCase):
             path.parent.mkdir(parents=True)
             path.write_text('{"enabledServices": []}')
             output = io.StringIO()
-            with patch.object(setup.Path, "home", return_value=home), patch("builtins.input", return_value="123"), patch.object(setup.getpass, "getpass", return_value="a"*32), contextlib.redirect_stdout(output):
+            with patch.object(setup.Path, "home", return_value=home), patch("builtins.input", return_value="123"), patch.object(setup.getpass, "getpass", return_value="a"*32), patch.object(setup, "arm_restart_resume", return_value=True), contextlib.redirect_stdout(output):
                 setup.main()
             self.assertEqual(json.loads(path.read_text())["enabledServices"], [])

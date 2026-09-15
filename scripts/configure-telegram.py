@@ -7,8 +7,21 @@ import os
 import tempfile
 import fcntl
 import stat
+import subprocess
 import sys
 from pathlib import Path
+
+
+def arm_restart_resume() -> bool:
+    script = Path(__file__).with_name("restart_resume.py")
+    try:
+        result = subprocess.run([
+            sys.executable, str(script), "arm-current",
+            "--reason", "telegram-setup", "--service", "telegram",
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def main() -> int:
@@ -79,10 +92,15 @@ def main() -> int:
     finally:
         os.close(fd_lock)
 
+    resume_armed = arm_restart_resume()
     print(f"Saved securely to {path}")
     print("Next, run: omarchy restart shell")
     print("This briefly reloads the whole shell and loads the saved credentials.")
-    print("Then open OmaChat > Telegram > Pair with Telegram.")
+    if resume_armed:
+        print("OmaChat will reopen to Telegram once the new shell is ready.")
+    else:
+        print("Open OmaChat again after the restart.")
+    print("Then select Telegram > Pair with Telegram.")
     print("On your phone: Telegram > Settings > Devices > Link Desktop Device, then scan the QR code.")
     return 0
 
