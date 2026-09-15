@@ -64,7 +64,7 @@ func (d *Daemon) handleSetEnabledServices(req wire.Request) wire.Response {
 
 func globalSetting(method string) bool {
 	switch method {
-	case wire.MethodConfig, wire.MethodSetGiphyKey, wire.MethodSetUiScale, wire.MethodDiscardCapture:
+	case wire.MethodConfig, wire.MethodSetGiphyKey, wire.MethodSetUiScale, wire.MethodDiscardCapture, wire.MethodSetTelegramCredentials:
 		return true
 	}
 	return false

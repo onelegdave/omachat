@@ -13,7 +13,15 @@ child process of `omarchy-shell`; OmaChat does not install a systemd unit.
 
 Create an application at [my.telegram.org](https://my.telegram.org) and enter
 its `api_id` and `api_hash` locally. OmaChat never includes these credentials
-in the repository, logs, or QML. Run:
+in the repository, logs, or QML.
+
+You can configure credentials directly in OmaChat:
+1. Open **Settings > Telegram API**.
+2. Enter your numeric `api_id` and 32-character `api_hash`.
+3. Select **Save Telegram credentials**. The helper updates immediately without
+   requiring a shell restart.
+
+Alternatively, you can configure credentials using the terminal script:
 
 ```bash
 cd ~/.config/omarchy/plugins/onelegdave.omachat
@@ -21,10 +29,10 @@ python3 scripts/configure-telegram.py
 omarchy restart shell
 ```
 
-Restart the shell after saving credentials so the Telegram client uses the new
-values. Restarting briefly reloads the whole Omarchy shell. The setup script
-and helper coordinate configuration writes and preserve unrelated settings,
-including your service choices.
+If using the script, restart the shell after saving credentials so the Telegram
+client uses the new values. Restarting briefly reloads the whole Omarchy shell.
+The setup script, in-app form, and helper coordinate configuration writes and
+preserve unrelated settings, including your service choices.
 
 If setup reports unreadable or invalid configuration, it stops without replacing
 that configuration. Resolve the reported problem and retry; do not delete your
@@ -37,7 +45,7 @@ Run the setup script as your normal user, without `sudo`. Enter the numeric
 or asterisks: the input looks blank by design. Enter the full hash and press
 Enter. This is your application API hash, not your Telegram login password.
 The `config.json` path is a storage location, not a terminal command.
-Saving these credentials does not pair your account automatically; restart,
+Saving these credentials does not pair your account automatically;
 then choose **Pair with Telegram** as described below.
 
 The configuration is stored in `~/.local/share/omachat/config.json` with mode

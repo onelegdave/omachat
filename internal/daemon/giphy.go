@@ -240,12 +240,15 @@ func (d *Daemon) PluginConfig() wire.ConfigResult {
 	if scale <= 0 {
 		scale = 1
 	}
+	_, credErr := d.config.TelegramCredentials()
 	return wire.ConfigResult{
 		EnabledServices:          enabled,
 		ServiceSelectionRequired: required,
 		RestartRequired:          d.restartPending,
 		GiphyKeySet:              strings.TrimSpace(cfg.GiphyAPIKey) != "",
 		UiScale:                  scale,
+		TelegramConfigured:       credErr == nil,
+		TelegramAPIID:            cfg.TelegramAPIID,
 	}
 }
 

@@ -566,6 +566,7 @@ Panel {
       foreground: root.foreground
       fontFamily: root.fontFamily
       uiScale: root.uiScale
+      onOpenSettingsRequested: root.settingsOpen = true
     }
   }
 

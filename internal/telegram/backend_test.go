@@ -342,7 +342,7 @@ func TestTelegramStartUnconfiguredStatus(t *testing.T) {
 	if st.State != wire.StateUnpaired {
 		t.Errorf("expected state %q for unconfigured Telegram, got %q", wire.StateUnpaired, st.State)
 	}
-	const wantHint = "Telegram API credentials required. Run: python3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py (without sudo). API hash input stays blank while typing. Then run: omarchy restart shell, reopen Telegram, and choose Pair with Telegram. Obtain credentials from my.telegram.org."
+	wantHint := hintCredentialsRequired
 	if st.Hint != wantHint {
 		t.Errorf("hint = %q, want %q", st.Hint, wantHint)
 	}
@@ -1004,3 +1004,106 @@ func TestBackendStopMethod(t *testing.T) {
 		t.Error("expected client to be nil after Stop")
 	}
 }
+
+func TestBackendUpdateCredentials(t *testing.T) {
+	t.Setenv("OMACHAT_TELEGRAM_API_ID", "")
+	t.Setenv("OMACHAT_TELEGRAM_API_HASH", "")
+
+	b, paths, events, mock := setupTestTelegramWithMock(t)
+	ctx := context.Background()
+
+	// 1. Initial Start without credentials
+	if err := b.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if st := b.Status(); st.Hint != hintCredentialsRequired || st.State != wire.StateUnpaired {
+		t.Fatalf("initial unconfigured state mismatch: %+v", st)
+	}
+
+	// Drain any initial events
+	for len(events) > 0 {
+		<-events
+	}
+
+	// 2. Update to valid credentials without session file
+	cs := store.NewConfigStore(paths.ConfigFile())
+	if err := cs.SetTelegramCredentials(123456, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	b.SetConfig(cs)
+
+	if err := b.UpdateCredentials(ctx); err != nil {
+		t.Fatalf("UpdateCredentials failed: %v", err)
+	}
+	st := b.Status()
+	if st.State != wire.StateUnpaired {
+		t.Errorf("expected StateUnpaired after credentials set, got %s", st.State)
+	}
+	if st.Hint != hintCredentialsConfigured {
+		t.Errorf("hint = %q, want %q", st.Hint, hintCredentialsConfigured)
+	}
+	if st.Error != "" {
+		t.Errorf("expected empty Error, got %q", st.Error)
+	}
+
+	// Check that a status event was published
+	select {
+	case evt := <-events:
+		if evt.Event != wire.EventStatus || evt.Network != wire.NetworkTelegram {
+			t.Errorf("unexpected event: %+v", evt)
+		}
+	default:
+		t.Error("expected status event to be published on UpdateCredentials")
+	}
+
+	// 3. Update credentials to invalid values
+	if err := cs.SetTelegramCredentials(-5, "invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.UpdateCredentials(ctx); err == nil {
+		t.Fatal("expected error on invalid credentials, got nil")
+	}
+	st = b.Status()
+	if st.Hint != hintCredentialsRequired {
+		t.Errorf("hint = %q, want %q", st.Hint, hintCredentialsRequired)
+	}
+	if st.Error == "" {
+		t.Error("expected non-empty Error for invalid credentials")
+	}
+
+	// 4. Clear credentials completely
+	if err := cs.SetTelegramCredentials(0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.UpdateCredentials(ctx); err != nil {
+		t.Fatalf("UpdateCredentials for removal failed: %v", err)
+	}
+	st = b.Status()
+	if st.Hint != hintCredentialsRequired {
+		t.Errorf("hint = %q, want %q", st.Hint, hintCredentialsRequired)
+	}
+	if st.Error != "" {
+		t.Errorf("expected clean Error on unconfigured removal, got %q", st.Error)
+	}
+
+	// 5. Update to valid credentials with existing session file
+	sessionFile := paths.TelegramSessionFile()
+	if err := os.WriteFile(sessionFile, []byte("dummy session blob"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.SetTelegramCredentials(987654, "abcdef0123456789abcdef0123456789"); err != nil {
+		t.Fatal(err)
+	}
+
+	mock.StartFunc = func(ctx context.Context) error {
+		return nil
+	}
+	if err := b.UpdateCredentials(ctx); err != nil {
+		t.Fatalf("UpdateCredentials with session failed: %v", err)
+	}
+	st = b.Status()
+	if st.State != wire.StateConnected {
+		t.Errorf("expected StateConnected with valid session, got %s", st.State)
+	}
+}
+

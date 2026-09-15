@@ -66,7 +66,11 @@ ShellRoot {
    if (!callback) return
    if (method === "messages") callback(true, {messages:[]})
    else if (method === "media") callback(!failMedia, failMedia ? "temporary failure" : {path:root.testImage})
-   else if (method === "config") callback(true,{uiScale:1,giphyKeySet:false})
+   else if (method === "config") callback(true,{uiScale:1,giphyKeySet:false,telegramConfigured:false,telegramApiId:0})
+   else if (method === "setTelegramCredentials") {
+     var isConfigured = params && params.apiId > 0 && !!params.apiHash
+     callback(true,{uiScale:1,giphyKeySet:false,telegramConfigured:isConfigured,telegramApiId:isConfigured ? params.apiId : 0})
+   }
    else callback(true, {})
   }
  }
@@ -246,6 +250,36 @@ ShellRoot {
     key.text=""
     for (var k=0;k<text.length;k++) keyboard.keyClickChar(text[k], Qt.NoModifier, 0)
     root.check(key.text === text && catcher.shortcuts === 0, "real Settings key editor receives shortcut characters")
+
+    var tgId = inspect.findChild(settings, "telegramApiIdField")
+    var tgHash = inspect.findChild(settings, "telegramApiHashField")
+    var tgSave = inspect.findChild(settings, "saveTelegramBtn")
+    root.check(tgId !== null && tgHash !== null && tgSave !== null, "Telegram credential form fields exist")
+
+    // Test validation: non-numeric api_id
+    settings.telegramIdDraft = "not-a-number"
+    settings.telegramHashDraft = "0123456789abcdef0123456789abcdef"
+    settings.saveTelegramCredentials()
+    root.check(settings.telegramStatusText.indexOf("Error") >= 0, "non-numeric api_id produces validation error")
+
+    // Test validation: invalid api_hash (wrong length / non-hex)
+    settings.telegramIdDraft = "12345"
+    settings.telegramHashDraft = "short"
+    settings.saveTelegramCredentials()
+    root.check(settings.telegramStatusText.indexOf("Error") >= 0, "invalid api_hash produces validation error")
+
+    // Test valid credentials saving
+    settings.telegramIdDraft = "12345"
+    settings.telegramHashDraft = "0123456789abcdef0123456789abcdef"
+    settings.saveTelegramCredentials()
+    root.check(settings.telegramConfigured === true && settings.telegramApiId === 12345, "valid Telegram credentials save successfully")
+    root.check(settings.telegramStatusText.indexOf("saved") >= 0, "save status text reports success")
+
+    // Test deletion / clearing credentials
+    settings.clearTelegramCredentials()
+    root.check(settings.telegramConfigured === false && settings.telegramApiId === 0, "clearing Telegram credentials removes them")
+    root.check(settings.telegramStatusText.indexOf("removed") >= 0, "removal status text reports success")
+
     settings.visible=false
 
 

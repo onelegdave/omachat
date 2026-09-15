@@ -13,6 +13,7 @@ Item {
   property string network: "gmessages"
   property string fontFamily: Style.font.family
   property real uiScale: 1.0
+  signal openSettingsRequested()
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
 
   function readableInk(surface, preferred, minRatio) {
@@ -283,6 +284,14 @@ Item {
           bordered: true
           enabled: !root.isQR
           onClicked: if (root.service) root.service.call("startPairing", null, null, "telegram")
+        }
+
+        Button {
+          visible: !root.isQR
+          text: "Telegram settings"
+          foreground: root.dim
+          fontFamily: root.fontFamily
+          onClicked: root.openSettingsRequested()
         }
       }
 

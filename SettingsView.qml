@@ -34,6 +34,13 @@ Flickable {
   property string statusText: ""
   property bool saving: false
 
+  property bool telegramConfigured: false
+  property int telegramApiId: 0
+  property string telegramIdDraft: ""
+  property string telegramHashDraft: ""
+  property string telegramStatusText: ""
+  property bool savingTelegram: false
+
   clip: true
   boundsBehavior: Flickable.StopAtBounds
   contentWidth: width
@@ -49,9 +56,63 @@ Flickable {
     service.call("config", null, function(ok, res) {
       if (!ok || !res) return
       root.giphyKeySet = res.giphyKeySet === true
+      root.telegramConfigured = res.telegramConfigured === true
+      root.telegramApiId = Number(res.telegramApiId) || 0
       var s = Number(res.uiScale)
       if (isFinite(s) && s > 0) root.uiScale = s
     }, "gmessages")
+  }
+
+  function saveTelegramCredentials() {
+    if (!service) return
+    var idStr = telegramIdDraft.trim()
+    var hashStr = telegramHashDraft.trim()
+    var idNum = parseInt(idStr, 10)
+    if ((!idNum || isNaN(idNum) || idNum <= 0) && root.telegramConfigured && root.telegramApiId > 0 && idStr === "") {
+      idNum = root.telegramApiId
+    }
+    if (!idNum || isNaN(idNum) || idNum <= 0) {
+      root.telegramStatusText = "Error: api_id must be a positive integer."
+      return
+    }
+    if (!hashStr && root.telegramConfigured) {
+      // Keep existing hash
+    } else if (hashStr.length !== 32 || !/^[0-9a-fA-F]{32}$/.test(hashStr)) {
+      root.telegramStatusText = "Error: api_hash must be a 32-character hexadecimal string."
+      return
+    }
+    savingTelegram = true
+    telegramStatusText = ""
+    service.call("setTelegramCredentials", { apiId: idNum, apiHash: hashStr }, function(ok, res) {
+      root.savingTelegram = false
+      if (!ok) {
+        root.telegramStatusText = String(res)
+        return
+      }
+      root.telegramConfigured = res && res.telegramConfigured === true
+      root.telegramApiId = res && res.telegramApiId ? Number(res.telegramApiId) : idNum
+      root.telegramIdDraft = ""
+      root.telegramHashDraft = ""
+      root.telegramStatusText = "Telegram API credentials saved."
+    }, "telegram")
+  }
+
+  function clearTelegramCredentials() {
+    if (!service) return
+    savingTelegram = true
+    telegramStatusText = ""
+    service.call("setTelegramCredentials", { apiId: 0, apiHash: "" }, function(ok, res) {
+      root.savingTelegram = false
+      if (!ok) {
+        root.telegramStatusText = String(res)
+        return
+      }
+      root.telegramConfigured = false
+      root.telegramApiId = 0
+      root.telegramIdDraft = ""
+      root.telegramHashDraft = ""
+      root.telegramStatusText = "Telegram API credentials removed."
+    }, "telegram")
   }
 
   function saveKey() {
@@ -138,6 +199,7 @@ Flickable {
           {label:"Services", section:serviceChoices},
           {label:"Service guides", section:servicesSection},
           {label:"Tools", section:toolsSection},
+          {label:"Telegram API", section:telegramSection},
           {label:"GIF search", section:gifSection},
           {label:"Credits", section:creditsSection},
           {label:"About", section:aboutSection}
@@ -361,7 +423,7 @@ Flickable {
         Text {
           width: parent.width
           wrapMode: Text.Wrap
-          text: "• Setup: Obtain your api_id and api_hash from my.telegram.org. These are application credentials, not your Telegram login password.\n1. In a terminal, run without sudo:\npython3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py\n2. Enter the numeric api_id. At the api_hash prompt, type or paste the full hash and press Enter. Input is hidden: no characters or asterisks appear, so the prompt looks blank.\n3. Immediately run: omarchy restart shell\nThis briefly reloads the whole shell and loads the saved credentials.\n4. Reopen OmaChat > Telegram > Pair with Telegram. On your phone, open Telegram > Settings > Devices > Link Desktop Device and scan the QR code. Saving credentials alone does not pair your account. The config.json path is a storage location, not a command.\n• Features: Dialog synchronization, older history paging, text, photos, captions, static WebP stickers, read receipts, and voice notes (with ffmpeg/ffplay).\n• Limitations: Animated TGS and video stickers are unsupported. Self-destructing/TTL media is not saved. Calling is unsupported."
+          text: "• Setup: Obtain your api_id and api_hash from my.telegram.org. These are application credentials, not your Telegram login password.\n1. Configure credentials directly in Settings > Telegram API credentials below, or in a terminal run:\npython3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py\n2. In OmaChat, select Telegram > Pair with Telegram. On your phone, open Telegram > Settings > Devices > Link Desktop Device and scan the QR code. Saving credentials alone does not pair your account.\n• Features: Dialog synchronization, older history paging, text, photos, captions, static WebP stickers, read receipts, and voice notes (with ffmpeg/ffplay).\n• Limitations: Animated TGS and video stickers are unsupported. Self-destructing/TTL media is not saved. Calling is unsupported."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)
@@ -376,7 +438,178 @@ Flickable {
       color: Color.popups.border
     }
 
-    // Section 5: GIPHY GIF Search
+    // Section 5: Telegram API Credentials
+    Column {
+      id: telegramSection
+      width: parent.width
+      spacing: Style.space(10)
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Telegram API credentials"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
+      }
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: root.telegramConfigured
+          ? "Telegram API credentials are configured (API ID: " + root.telegramApiId + "). Enter replacement values below to update them, or choose Delete credentials to remove them."
+          : "Telegram requires your own application credentials from my.telegram.org. Enter your api_id and api_hash below. Credentials are stored securely in your private configuration and are never transmitted elsewhere."
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        lineHeight: 1.25
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(4)
+
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "1. Open my.telegram.org and sign in with your phone number."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "2. Choose API development tools to create or view your application."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "3. Copy your numeric api_id and 32-character api_hash, paste them below, and select Save. After saving, select Pair with Telegram on the Telegram tab."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+        }
+      }
+
+      Button {
+        text: "Open my.telegram.org"
+        bordered: true
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        onClicked: root.openUrl("https://my.telegram.org")
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(8)
+
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Telegram api_id (numeric)"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+
+          TextField {
+            id: tgIdField
+            objectName: "telegramApiIdField"
+            width: parent.width
+            placeholderText: root.telegramConfigured ? ("Configured API ID: " + root.telegramApiId) : "Enter numeric api_id (e.g. 1234567)"
+            placeholderTextColor: root.mutedColor
+            font.pixelSize: fs(Style.font.body)
+            foreground: root.foreground
+            text: root.telegramIdDraft
+            inputMethodHints: Qt.ImhDigitsOnly
+            onTextChanged: root.telegramIdDraft = text
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Telegram api_hash (32-character hexadecimal string)"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+
+          TextField {
+            id: tgHashField
+            objectName: "telegramApiHashField"
+            width: parent.width
+            placeholderText: root.telegramConfigured ? "Replacement api_hash (leave blank to keep current)" : "Enter 32-character hex api_hash"
+            placeholderTextColor: root.mutedColor
+            font.pixelSize: fs(Style.font.body)
+            foreground: root.foreground
+            password: true
+            text: root.telegramHashDraft
+            onTextChanged: root.telegramHashDraft = text
+            onAccepted: root.saveTelegramCredentials()
+          }
+        }
+
+        Flow {
+          width: parent.width
+          spacing: Style.space(8)
+
+          Button {
+            id: saveTgBtn
+            objectName: "saveTelegramBtn"
+            text: root.savingTelegram ? "Saving..." : "Save Telegram credentials"
+            bordered: true
+            enabled: !root.savingTelegram && (root.telegramIdDraft.trim() !== "" || root.telegramHashDraft.trim() !== "")
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.saveTelegramCredentials()
+          }
+
+          Button {
+            id: deleteTgBtn
+            objectName: "deleteTelegramBtn"
+            visible: root.telegramConfigured
+            text: "Delete credentials"
+            foreground: root.urgentColor
+            fontFamily: root.fontFamily
+            onClicked: root.clearTelegramCredentials()
+          }
+        }
+
+        Text {
+          objectName: "telegramStatusText"
+          width: parent.width
+          visible: root.telegramStatusText !== ""
+          wrapMode: Text.Wrap
+          text: root.telegramStatusText
+          color: root.telegramStatusText.indexOf("Error") >= 0 || root.telegramStatusText.indexOf("fail") >= 0 || root.telegramStatusText.indexOf("error") >= 0
+            ? root.urgentColor : root.accentColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+        }
+      }
+    }
+
+    Rectangle {
+      width: parent.width
+      height: 1
+      color: Color.popups.border
+    }
+
+    // Section 6: GIPHY GIF Search
     Column {
       id: gifSection
       width: parent.width

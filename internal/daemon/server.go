@@ -456,6 +456,16 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 	case wire.MethodConfig:
 		return ok(d.PluginConfig())
 
+	case wire.MethodSetTelegramCredentials:
+		p, err := decodeParams[wire.SetTelegramCredentialsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetTelegramCredentials(ctx, p.APIID, p.APIHash); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
 	case wire.MethodUnpair:
 		if err := d.Unpair(ctx); err != nil {
 			return fail(err)
@@ -601,6 +611,16 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 			return fail(err)
 		}
 		if err := d.SetGiphyKey(p.Key); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetTelegramCredentials:
+		p, err := decodeParams[wire.SetTelegramCredentialsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetTelegramCredentials(ctx, p.APIID, p.APIHash); err != nil {
 			return fail(err)
 		}
 		return ok(d.PluginConfig())
@@ -759,6 +779,16 @@ func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Re
 			return fail(err)
 		}
 		if err := d.SetGiphyKey(p.Key); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetTelegramCredentials:
+		p, err := decodeParams[wire.SetTelegramCredentialsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetTelegramCredentials(ctx, p.APIID, p.APIHash); err != nil {
 			return fail(err)
 		}
 		return ok(d.PluginConfig())

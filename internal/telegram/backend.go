@@ -24,7 +24,7 @@ import (
 var ErrNotConfigured = errors.New("Telegram client is not configured: protocol library integration pending")
 
 const (
-	hintCredentialsRequired   = "Telegram API credentials required. Run: python3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py (without sudo). API hash input stays blank while typing. Then run: omarchy restart shell, reopen Telegram, and choose Pair with Telegram. Obtain credentials from my.telegram.org."
+	hintCredentialsRequired   = "Telegram API credentials required. Configure your api_id and api_hash in Settings > Telegram API, or run configure-telegram.py. Then choose Pair with Telegram. Obtain credentials from my.telegram.org."
 	hintCredentialsConfigured = "Telegram API credentials configured; pairing not yet started"
 )
 
@@ -230,6 +230,124 @@ func (b *Backend) Start(ctx context.Context) error {
 		b.log.Warn().Err(err).Msg("Telegram initial dialog refresh failed")
 	}
 	syncCancel()
+	return nil
+}
+
+// UpdateCredentials updates backend state after Telegram API credentials change.
+// It cancels any active pairing, tears down the previous client instance,
+// re-evaluates credentials and existing session, and updates status and events
+// without requiring a shell or process restart.
+func (b *Backend) UpdateCredentials(ctx context.Context) error {
+	b.sessionMu.Lock()
+	defer b.sessionMu.Unlock()
+
+	// Ensure private media directory exists.
+	if b.paths != nil {
+		if err := os.MkdirAll(b.paths.TelegramMediaDir(), 0o700); err != nil {
+			b.log.Error().Err(err).Msg("Failed to create Telegram media directory")
+			b.setState(wire.StateDisconnected, "create media dir: "+err.Error())
+			return err
+		}
+	}
+
+	// Cancel any active in-flight pairing
+	if b.pairCancel != nil {
+		b.pairCancel()
+		b.pairCancel = nil
+	}
+
+	// Tear down existing client
+	b.mu.Lock()
+	oldClient := b.client
+	b.client = nil
+	b.paired = false
+	b.gen++
+	b.mu.Unlock()
+
+	if oldClient != nil {
+		_ = oldClient.Stop()
+	}
+
+	creds, credErr := b.Credentials()
+	if credErr != nil {
+		if errors.Is(credErr, appStore.ErrTelegramUnconfigured) {
+			b.setStatusWithHint(wire.StateUnpaired, hintCredentialsRequired, "")
+			b.log.Info().Msg("Telegram credentials unconfigured; remaining in unpaired scaffold mode")
+			return nil
+		}
+		b.setStatusWithHint(wire.StateUnpaired, hintCredentialsRequired, credErr.Error())
+		b.log.Warn().Msg("Telegram credentials invalid; remaining in unpaired scaffold mode")
+		return credErr
+	}
+
+	// Credentials are valid. Check for an existing session file.
+	sessionFile := ""
+	if b.paths != nil {
+		sessionFile = b.paths.TelegramSessionFile()
+	}
+	sessionExists := false
+	if sessionFile != "" {
+		if fi, err := os.Stat(sessionFile); err == nil && fi.Size() > 0 {
+			sessionExists = true
+		}
+	}
+
+	if !sessionExists {
+		b.setStatusWithHint(wire.StateUnpaired, hintCredentialsConfigured, "")
+		b.log.Info().Msg("Telegram backend updated with valid credentials; pairing pending")
+		return nil
+	}
+
+	// Restore persisted session through the client abstraction
+	cli, err := b.getOrCreateClientLocked(creds)
+	if err != nil {
+		b.setState(wire.StateDisconnected, "init client: "+err.Error())
+		return err
+	}
+
+	b.mu.Lock()
+	b.paired = true
+	b.mu.Unlock()
+
+	b.setState(wire.StateConnecting, "")
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer waitCancel()
+
+	restoreErr := make(chan error, 1)
+	go func() { restoreErr <- cli.Start(b.ctx) }()
+	var startErr error
+	select {
+	case startErr = <-restoreErr:
+	case <-waitCtx.Done():
+		startErr = waitCtx.Err()
+	}
+
+	if startErr != nil {
+		b.log.Warn().Err(startErr).Msg("Telegram session restore connection failed")
+		if strings.Contains(strings.ToLower(startErr.Error()), "unauthorized") ||
+			strings.Contains(strings.ToLower(startErr.Error()), "revoked") ||
+			errors.Is(startErr, context.DeadlineExceeded) {
+			_ = cli.Stop()
+			b.mu.Lock()
+			b.client = nil
+			b.paired = false
+			b.mu.Unlock()
+			if b.paths != nil {
+				_ = b.paths.ClearTelegramSession()
+			}
+			b.setStatusWithHint(wire.StateUnpaired, hintCredentialsConfigured, "")
+			return nil
+		}
+		b.setState(wire.StateDisconnected, "restore session: "+startErr.Error())
+		return nil
+	}
+
+	b.setState(wire.StateConnected, "")
+	syncCtx, syncCancel := context.WithTimeout(b.ctx, 30*time.Second)
+	defer syncCancel()
+	if err := b.Refresh(syncCtx); err != nil {
+		b.log.Warn().Err(err).Msg("Telegram dialog refresh failed")
+	}
 	return nil
 }
 

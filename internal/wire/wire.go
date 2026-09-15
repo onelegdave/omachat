@@ -6,6 +6,13 @@
 // stream lets the QML side hold a single Socket with a SplitParser.
 package wire
 
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 // Network names.
 const (
 	NetworkGMessages = "gmessages"
@@ -92,8 +99,9 @@ const (
 	MethodUnpair          = "unpair"
 	MethodMedia           = "media"
 	MethodAvatar          = "avatar"
-	MethodSetTyping       = "setTyping"
-	MethodRefresh         = "refresh"
+	MethodSetTyping              = "setTyping"
+	MethodRefresh                = "refresh"
+	MethodSetTelegramCredentials = "setTelegramCredentials"
 )
 
 // ConnState describes where the daemon is in its lifecycle. The plugin keys
@@ -353,14 +361,69 @@ type SetGiphyKeyParams struct {
 	Key string `json:"key"`
 }
 
-// ConfigResult is safe to show in the panel. The GIPHY key itself stays in
-// the daemon config file and is never sent to QML.
+type SetTelegramCredentialsParams struct {
+	APIID   int    `json:"apiId"`
+	APIHash string `json:"apiHash"`
+}
+
+func (p *SetTelegramCredentialsParams) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		APIID      any    `json:"apiId"`
+		AltAPIID1  any    `json:"api_id"`
+		AltAPIID2  any    `json:"apiID"`
+		APIHash    string `json:"apiHash"`
+		AltAPIHash string `json:"api_hash"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	hash := raw.APIHash
+	if hash == "" && raw.AltAPIHash != "" {
+		hash = raw.AltAPIHash
+	}
+	p.APIHash = strings.TrimSpace(hash)
+
+	idVal := raw.APIID
+	if idVal == nil {
+		idVal = raw.AltAPIID1
+	}
+	if idVal == nil {
+		idVal = raw.AltAPIID2
+	}
+	switch v := idVal.(type) {
+	case nil:
+		p.APIID = 0
+	case float64:
+		p.APIID = int(v)
+	case int:
+		p.APIID = v
+	case string:
+		s := strings.TrimSpace(v)
+		if s == "" {
+			p.APIID = 0
+		} else {
+			n, err := strconv.Atoi(s)
+			if err != nil {
+				return fmt.Errorf("invalid apiId: %w", err)
+			}
+			p.APIID = n
+		}
+	default:
+		return fmt.Errorf("invalid apiId type")
+	}
+	return nil
+}
+
+// ConfigResult is safe to show in the panel. The GIPHY key and Telegram API hash
+// stay in the daemon config file and are never sent to QML.
 type ConfigResult struct {
 	EnabledServices          []string `json:"enabledServices"`
 	ServiceSelectionRequired bool     `json:"serviceSelectionRequired"`
 	RestartRequired          bool     `json:"restartRequired"`
 	GiphyKeySet              bool     `json:"giphyKeySet"`
 	UiScale                  float64  `json:"uiScale"`
+	TelegramConfigured       bool     `json:"telegramConfigured"`
+	TelegramAPIID            int      `json:"telegramApiId,omitempty"`
 }
 
 type SetEnabledServicesParams struct {
