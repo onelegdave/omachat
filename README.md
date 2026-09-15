@@ -37,7 +37,7 @@ locally from vendored source. Building requires **Go and a C compiler
 (gcc or clang)**, even if you only use Google Messages or Telegram.
 No helper binary is shipped in Git or downloaded by OmaChat.
 
-OmaChat remains an anchored bar panel by default. Select **Open in window**
+OmaChat remains an anchored bar panel by default. Select **Pop out**
 in the panel header when you want a standalone pop-out. The pop-out includes
 its own **Tiled** and **Floating** choices, which affect only that OmaChat
 window and do not change your desktop-wide window settings. Select

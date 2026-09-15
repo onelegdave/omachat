@@ -463,16 +463,23 @@ Panel {
             onClicked: root.settingsOpen = !root.settingsOpen
           }
 
-          PanelActionButton {
+          Button {
             id: popoutBtn
             objectName: "popoutButton"
             anchors.right: settingsBtn.left
             anchors.rightMargin: Style.space(2)
             anchors.verticalCenter: parent.verticalCenter
-            iconText: root.popoutOpen ? "󰆴" : "󰐕"
+            text: root.popoutOpen ? "Return to panel" : "Pop out"
+            iconText: root.popoutOpen ? "󰖲" : "󰏌"
             tooltipText: root.popoutOpen ? "Return to panel" : "Open in window"
             foreground: root.foreground
             fontFamily: root.fontFamily
+            fontSize: root.fs(Style.font.bodySmall)
+            iconSize: root.fs(Style.font.iconSmall)
+            horizontalPadding: Style.space(7)
+            verticalPadding: Style.space(4)
+            bordered: true
+            focusable: true
             onClicked: root.popoutOpen ? root.returnToPanel() : root.openPopout()
           }
 
