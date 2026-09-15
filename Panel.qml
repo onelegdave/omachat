@@ -492,14 +492,102 @@ Panel {
             metaColor: root.mutedInk
             fontFamily: root.fontFamily
             iconComponent: Component {
-              OpticalGlyph {
+              Item {
                 implicitWidth: root.fs(Style.font.display)
                 implicitHeight: root.fs(Style.font.display)
-                text: "󰭹"
-                color: root.accentInk
-                fontFamily: root.fontFamily
-                fontSize: root.fs(Style.font.display)
+
+                OpticalGlyph {
+                  id: helperHeroGlyph
+                  anchors.centerIn: parent
+                  implicitWidth: root.fs(Style.font.display)
+                  implicitHeight: root.fs(Style.font.display)
+                  text: root.service && root.service.building ? "󰑐" : "󰭹"
+                  color: root.accentInk
+                  fontFamily: root.fontFamily
+                  fontSize: root.fs(Style.font.display)
+                  transformOrigin: Item.Center
+                  rotation: (!!root.service && root.service.building) ? 0 : 0
+
+                  RotationAnimation on rotation {
+                    from: 0
+                    to: 360
+                    duration: 1200
+                    loops: Animation.Infinite
+                    running: !!root.service && root.service.building
+                  }
+                }
               }
+            }
+          }
+
+          Item {
+            id: buildActivityTrack
+            objectName: "buildActivityIndicator"
+            visible: !!root.service && root.service.building
+            width: parent.width
+            height: Style.space(4)
+            clip: true
+
+            Rectangle {
+              anchors.fill: parent
+              radius: height / 2
+              color: root.foreground
+              opacity: 0.12
+            }
+
+            Rectangle {
+              id: buildActivityBar
+              height: parent.height
+              radius: height / 2
+              color: root.accentInk
+              width: Math.max(Style.space(64), parent.width * 0.3)
+              x: -width
+
+              SequentialAnimation on x {
+                running: !!root.service && root.service.building
+                loops: Animation.Infinite
+
+                NumberAnimation {
+                  from: -buildActivityBar.width
+                  to: buildActivityTrack.width
+                  duration: 1400
+                  easing.type: Easing.InOutQuad
+                }
+              }
+            }
+          }
+
+          Row {
+            visible: !!root.service && root.service.building
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Style.space(8)
+
+            OpticalGlyph {
+              anchors.verticalCenter: parent.verticalCenter
+              implicitWidth: root.fs(Style.font.caption)
+              implicitHeight: root.fs(Style.font.caption)
+              text: "󰑐"
+              color: root.accentInk
+              fontFamily: root.fontFamily
+              fontSize: root.fs(Style.font.caption)
+              transformOrigin: Item.Center
+              rotation: (!!root.service && root.service.building) ? 0 : 0
+
+              RotationAnimation on rotation {
+                from: 0
+                to: 360
+                duration: 900
+                loops: Animation.Infinite
+                running: !!root.service && root.service.building
+              }
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Compiling helper in background..."
+              color: root.mutedInk
+              font.family: root.fontFamily
+              font.pixelSize: root.fs(Style.font.caption)
             }
           }
 
@@ -531,7 +619,9 @@ Panel {
             Button {
               visible: canBuild || (!!root.service && root.service.building)
               objectName: "buildHelperButton"
-              text: root.service && root.service.building ? "Building" : "Build helper"
+              text: root.service && root.service.building ? "Building..." : "Build helper"
+              iconText: root.service && root.service.building ? "󰑐" : ""
+              iconSpinning: !!root.service && root.service.building
               bordered: true
               enabled: !!root.service && !root.service.building && root.service.goPresent
               foreground: root.foreground

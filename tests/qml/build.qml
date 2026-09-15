@@ -38,6 +38,14 @@ ShellRoot {
     if (!hero || hero.meta.indexOf("several minutes") < 0 || hero.meta.indexOf("no output") < 0 || hero.meta.indexOf("starts automatically") < 0) {
      console.error("OMACHAT_BUILD_FAIL missing build guidance");Qt.quit();return
     }
+    var act=inspect.findChild(panel,"buildActivityIndicator")
+    if (!act || !act.visible) {
+     console.error("OMACHAT_BUILD_FAIL missing animated build activity indicator");Qt.quit();return
+    }
+    var btn=inspect.findChild(panel,"buildHelperButton")
+    if (!btn || !btn.iconSpinning) {
+     console.error("OMACHAT_BUILD_FAIL missing build button spinning animation");Qt.quit();return
+    }
     root.buildGuidanceChecked=true
    }
    if (root.requested && service.connected && service.servicesConfigLoaded && !root.selectionRequested) {
