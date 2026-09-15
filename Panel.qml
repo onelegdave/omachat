@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Controls as Controls
+import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -20,6 +22,17 @@ Panel {
   property bool unpairing: false
   property string unpairError: ""
   property int accountGeneration: 0
+  property string popoutMode: "floating"
+  property string appliedPopoutMode: ""
+  property string popoutModeError: ""
+  property string popoutAddress: ""
+  property int popoutMapAttempts: 0
+  property bool surfaceTransfer: false
+  readonly property int preferredPopoutWidth: Style.space(920)
+  readonly property int preferredPopoutHeight: Style.space(580)
+  readonly property bool popoutOpen: popoutWindow.visible
+  readonly property bool anySurfaceOpen: opened || popoutOpen || surfaceTransfer
+  readonly property bool contentInPopout: keyCatcher.parent === popoutContentHost
   readonly property var allServiceTabs: [
     { value: "gmessages", label: "Google", icon: "󰭹", tooltip: "Google Messages" },
     { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "WhatsApp" },
@@ -78,6 +91,88 @@ Panel {
     if (inboxLoader.item) inboxLoader.item.refreshThread()
   }
 
+  function open() {
+    if (popoutOpen) return
+    root.controller.show()
+  }
+
+  function close() {
+    if (popoutOpen) {
+      closePopout(false)
+      return
+    }
+    root.controller.hide()
+  }
+
+  function toggle() {
+    if (popoutOpen) closePopout(false)
+    else if (opened) root.controller.hide()
+    else root.controller.show()
+  }
+
+  function openPopout() {
+    if (popoutOpen) return
+    surfaceTransfer = true
+    root.controller.hide()
+    popoutModeError = ""
+    appliedPopoutMode = ""
+    popoutAddress = ""
+    popoutWindow.visible = true
+    requestPopoutMode(popoutMode)
+    Qt.callLater(function() {
+      root.surfaceTransfer = false
+      if (root.popoutOpen) keyCatcher.forceActiveFocus()
+    })
+  }
+
+  function closePopout(reopenPanel) {
+    popoutWindow.reopenPanelAfterClose = reopenPanel === true
+    popoutWindow.visible = false
+  }
+
+  function returnToPanel() {
+    surfaceTransfer = true
+    popoutWindow.reopenPanelAfterClose = false
+    popoutWindow.visible = false
+    root.controller.show()
+    Qt.callLater(function() {
+      root.surfaceTransfer = false
+      if (root.opened) keyCatcher.forceActiveFocus()
+    })
+  }
+
+  function setPopoutMode(mode) {
+    if (mode !== "tiled" && mode !== "floating") return
+    if (popoutOpen && popoutMode === mode && appliedPopoutMode === mode) return
+    popoutMode = mode
+    if (popoutOpen) requestPopoutMode(mode)
+  }
+
+  function requestPopoutMode(mode) {
+    if (mode !== "tiled" && mode !== "floating") return
+    popoutModeError = ""
+    appliedPopoutMode = ""
+    popoutMapAttempts = 0
+    modeMapTimer.requestedMode = mode
+    modeMapTimer.restart()
+  }
+
+  function dispatchPopoutMode(mode, address) {
+    var safeAddress = String(address || "")
+    if (!/^0x[0-9a-f]+$/i.test(safeAddress)) {
+      popoutModeError = "Could not identify the OmaChat window. Try the layout choice again."
+      return
+    }
+    if (popoutModeProcess.running) return
+    popoutModeProcess.requestedMode = mode
+    popoutModeProcess.command = [
+      "hyprctl", "dispatch",
+      "hl.dsp.window.float({ action = \"" + (mode === "floating" ? "on" : "off")
+        + "\", window = \"address:" + safeAddress + "\" })"
+    ]
+    popoutModeProcess.running = true
+  }
+
   function setActiveService(v) {
     if (!serviceTabs.some(function(tab) { return tab.value === v })) return
     root.settingsOpen = false
@@ -98,8 +193,8 @@ Panel {
     }, "gmessages")
   }
 
-  onOpenedChanged: {
-    if (!opened || !service) return
+  onAnySurfaceOpenChanged: {
+    if (!anySurfaceOpen || !service) return
     loadConfig()
     if (needsPair && activeService === "gmessages") service.loadProfiles()
     if (!noServices) service.loadConversations(activeService)
@@ -121,6 +216,147 @@ Panel {
     }
     if (connState === "unpaired" && inboxLoader.item && inboxLoader.item.clearNetwork) {
       inboxLoader.item.clearNetwork(activeService)
+    }
+  }
+
+  states: State {
+    name: "popout"
+    when: root.popoutOpen
+    ParentChange {
+      target: keyCatcher
+      parent: popoutContentHost
+    }
+  }
+
+  FloatingWindow {
+    id: popoutWindow
+    objectName: "omachatPopoutWindow"
+    property bool reopenPanelAfterClose: false
+    title: "OmaChat Pop-out"
+    color: root.popupBg
+    implicitWidth: root.preferredPopoutWidth
+    implicitHeight: root.preferredPopoutHeight
+    minimumSize: Qt.size(Style.space(640), Style.space(420))
+    visible: false
+
+    onVisibleChanged: {
+      if (visible) return
+      modeMapTimer.stop()
+      if (popoutResolveProcess.running) popoutResolveProcess.running = false
+      if (popoutModeProcess.running) popoutModeProcess.running = false
+      if (popoutResizeProcess.running) popoutResizeProcess.running = false
+      root.popoutAddress = ""
+      root.appliedPopoutMode = ""
+      if (reopenPanelAfterClose) {
+        reopenPanelAfterClose = false
+        Qt.callLater(function() { root.open() })
+      }
+    }
+
+    Item {
+      id: popoutContentHost
+      anchors.fill: parent
+      anchors.margins: Style.spacing.popupPadding
+    }
+  }
+
+  Timer {
+    id: modeMapTimer
+    property string requestedMode: "floating"
+    interval: 75
+    repeat: false
+    onTriggered: {
+      if (!root.popoutOpen || popoutResolveProcess.running) return
+      popoutResolveProcess.command = ["hyprctl", "-j", "clients"]
+      popoutResolveProcess.running = true
+    }
+  }
+
+  Process {
+    id: popoutResolveProcess
+    stdout: StdioCollector { id: popoutResolveStdout; waitForEnd: true }
+    stderr: StdioCollector { id: popoutResolveStderr; waitForEnd: true }
+    onExited: function(code) {
+      if (!root.popoutOpen) return
+      var address = ""
+      if (code === 0) {
+        try {
+          var clients = JSON.parse(String(popoutResolveStdout.text || "[]"))
+          for (var i = 0; i < clients.length; i++) {
+            var client = clients[i]
+            if (client && client.mapped !== false
+                && String(client.title) === popoutWindow.title
+                && String(client.initialTitle) === popoutWindow.title) {
+              address = String(client.address || "")
+              break
+            }
+          }
+        } catch (error) {
+          address = ""
+        }
+      }
+      if (/^0x[0-9a-f]+$/i.test(address)) {
+        root.popoutAddress = address
+        root.dispatchPopoutMode(modeMapTimer.requestedMode, address)
+        return
+      }
+      root.popoutMapAttempts++
+      if (root.popoutMapAttempts >= 40) {
+        var detail = String(popoutResolveStderr.text || "").trim()
+        root.popoutModeError = detail !== ""
+          ? "OmaChat could not identify its pop-out window: " + detail
+          : "OmaChat could not apply the window layout. Choose Tiled or Floating to retry."
+        return
+      }
+      modeMapTimer.restart()
+    }
+  }
+
+  Process {
+    id: popoutModeProcess
+    objectName: "popoutModeProcess"
+    property string requestedMode: ""
+    stdout: StdioCollector { id: popoutModeStdout; waitForEnd: true }
+    stderr: StdioCollector { id: popoutModeStderr; waitForEnd: true }
+    onExited: function(code) {
+      if (!root.popoutOpen) return
+      if (code === 0) {
+        if (requestedMode === "floating") {
+          popoutResizeProcess.command = [
+            "hyprctl", "dispatch",
+            "hl.dsp.window.resize({ x = " + root.preferredPopoutWidth
+              + ", y = " + root.preferredPopoutHeight
+              + ", relative = false, window = \"address:" + root.popoutAddress + "\" })"
+          ]
+          popoutResizeProcess.running = true
+          return
+        }
+        root.appliedPopoutMode = requestedMode
+        root.popoutModeError = ""
+      } else {
+        var detail = String(popoutModeStderr.text || popoutModeStdout.text || "").trim()
+        root.popoutModeError = detail !== ""
+          ? "Could not apply the window layout: " + detail
+          : "Could not apply the window layout. Choose Tiled or Floating to retry."
+      }
+    }
+  }
+
+  Process {
+    id: popoutResizeProcess
+    stdout: StdioCollector { id: popoutResizeStdout; waitForEnd: true }
+    stderr: StdioCollector { id: popoutResizeStderr; waitForEnd: true }
+    onExited: function(code) {
+      if (!root.popoutOpen) return
+      if (code === 0) {
+        root.appliedPopoutMode = "floating"
+        root.popoutModeError = ""
+      } else {
+        var detail = String(popoutResizeStderr.text || popoutResizeStdout.text || "").trim()
+        root.popoutModeError = detail !== ""
+          ? "OmaChat floated, but could not restore its pop-out size: " + detail
+          : "OmaChat floated, but could not restore its pop-out size."
+      }
     }
   }
 
@@ -228,11 +464,24 @@ Panel {
           }
 
           PanelActionButton {
+            id: popoutBtn
+            objectName: "popoutButton"
+            anchors.right: settingsBtn.left
+            anchors.rightMargin: Style.space(2)
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: root.popoutOpen ? "󰆴" : "󰐕"
+            tooltipText: root.popoutOpen ? "Return to panel" : "Open in window"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.popoutOpen ? root.returnToPanel() : root.openPopout()
+          }
+
+          PanelActionButton {
             id: unpairBtn
             objectName: "unpairButton"
             enabled: !root.unpairing
             visible: root.linkUp
-            anchors.right: settingsBtn.left
+            anchors.right: popoutBtn.left
             anchors.rightMargin: Style.space(2)
             anchors.verticalCenter: parent.verticalCenter
             iconText: "󰍃"
@@ -244,7 +493,7 @@ Panel {
 
           Rectangle {
             id: linkChip
-            anchors.right: unpairBtn.visible ? unpairBtn.left : settingsBtn.left
+            anchors.right: unpairBtn.visible ? unpairBtn.left : popoutBtn.left
             anchors.rightMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
             height: Style.space(20)
@@ -302,6 +551,52 @@ Panel {
           fontSize: root.fs(Style.font.body)
           focusable: false
           onChanged: function(v) { root.setActiveService(v) }
+        }
+
+        Row {
+          visible: root.popoutOpen
+          width: parent.width
+          height: visible ? Math.max(windowLayoutLabel.implicitHeight, windowLayoutChoices.implicitHeight) : 0
+          spacing: Style.space(10)
+
+          Text {
+            id: windowLayoutLabel
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Window layout"
+            color: root.mutedInk
+            font.family: root.fontFamily
+            font.pixelSize: root.fs(Style.font.bodySmall)
+          }
+
+          ChoiceGroup {
+            id: windowLayoutChoices
+            objectName: "windowLayoutChoices"
+            enabled: !popoutResolveProcess.running && !popoutModeProcess.running && !popoutResizeProcess.running
+            options: [
+              { value: "tiled", label: "Tiled" },
+              { value: "floating", label: "Floating" }
+            ]
+            value: root.popoutMode
+            foreground: root.foreground
+            background: Color.popups.background
+            accent: root.accentInk
+            fontFamily: root.fontFamily
+            fontSize: root.fs(Style.font.bodySmall)
+            focusable: true
+            onChanged: function(v) { root.setPopoutMode(v) }
+          }
+        }
+
+        Text {
+          objectName: "popoutModeErrorLabel"
+          width: parent.width
+          visible: root.popoutOpen && root.popoutModeError !== ""
+          text: root.popoutModeError
+          textFormat: Text.PlainText
+          color: root.urgentInk
+          font.family: root.fontFamily
+          font.pixelSize: root.fs(Style.font.bodySmall)
+          wrapMode: Text.Wrap
         }
       }
 
@@ -667,11 +962,17 @@ Panel {
       network: root.activeService
       foreground: root.foreground
       fontFamily: root.fontFamily
-      host: root
+      host: surfaceHost
       viewActive: inboxLoader.visible
       settings: root.settings
       networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : (root.activeService === "telegram" ? "Telegram" : "Google Messages")
       uiScale: root.uiScale
     }
+  }
+
+  QtObject {
+    id: surfaceHost
+    readonly property bool opened: root.anySurfaceOpen
+    property alias settingsOpen: root.settingsOpen
   }
 }
