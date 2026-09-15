@@ -17,6 +17,10 @@ token updates share the cookie lock used when saving the session. This keeps
 token rotation from racing with JSON serialization. Preserve this patch when
 updating the vendored dependency. Upstream authorship and license remain intact.
 
+It also includes a surgical backport of upstream commit 7b4cac4dc61a4617d6ede52e380d381675a445ee
+(Aug 31, 2026) to fix error code 32 (CLIENT_ATTESTATION_MISSING) during Gaia pairing,
+adding PrivateAPIConfirmation to GaiaPairingRequestContainer.
+
 WhatsApp support vendors go.mau.fi/whatsmeow and related go.mau.fi modules
 under the Mozilla Public License 2.0. Those files remain MPL-2.0; this plugin
 does not relicense them. github.com/mattn/go-sqlite3 is MIT and is linked

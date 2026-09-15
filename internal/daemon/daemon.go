@@ -482,6 +482,14 @@ func (d *Daemon) handleEvent(raw any) {
 		}
 
 	case *events.GaiaLoggedOut:
+		d.mu.RLock()
+		paired := d.paired
+		d.mu.RUnlock()
+		if d.gaiaActive && !paired {
+			d.log.Debug().Msg("Ignoring Gaia logout during active unconfirmed pairing")
+			return
+		}
+
 		d.log.Warn().Msg("Logged out by server")
 		// Reset after leaving the event callback; reset also takes sessionMu.
 		parent := d.sessionContext()

@@ -644,8 +644,8 @@ func TestStartPairingUnconfigured(t *testing.T) {
 	if st.Hint != hintCredentialsRequired {
 		t.Errorf("hint = %q, want %q", st.Hint, hintCredentialsRequired)
 	}
-	if !strings.Contains(st.Error, "credentials required") {
-		t.Errorf("expected credentials required in Error, got %q", st.Error)
+	if st.Error != "" {
+		t.Errorf("expected empty Error to avoid duplicating hint, got %q", st.Error)
 	}
 
 	select {
@@ -679,6 +679,9 @@ func TestStartPairingMalformedCredentials(t *testing.T) {
 	}
 	if strings.Contains(st.Error, "not-a-valid-hex") {
 		t.Error("SECURITY: secret leaked into status Error message")
+	}
+	if st.Error == "" || st.Error == st.Hint || st.Hint != hintCredentialsRequired {
+		t.Error("malformed credentials must retain a distinct error and setup guidance")
 	}
 
 	select {

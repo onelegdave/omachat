@@ -564,13 +564,10 @@ func (b *Backend) StartPairing(ctx context.Context) (string, error) {
 	// 2. Validate Telegram credentials
 	creds, credErr := b.Credentials()
 	if credErr != nil {
-		var userErr string
 		if errors.Is(credErr, appStore.ErrTelegramUnconfigured) {
-			userErr = hintCredentialsRequired
-			b.setStatusWithHint(wire.StateUnpaired, hintCredentialsRequired, userErr)
+			b.setStatusWithHint(wire.StateUnpaired, hintCredentialsRequired, "")
 			return "", ErrNotConfigured
 		}
-		userErr = "Telegram credentials invalid. Check your configuration."
 		b.setStatusWithHint(wire.StateUnpaired, hintCredentialsRequired, credErr.Error())
 		b.log.Warn().Err(credErr).Msg("Cannot start pairing: credentials invalid")
 		return "", fmt.Errorf("telegram credentials: %w", credErr)

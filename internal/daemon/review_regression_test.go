@@ -75,7 +75,16 @@ func newTestDaemon(t *testing.T) (*Daemon, *store.Paths) {
 		t.Fatal(err)
 	}
 	d.bindClient(d.client, d.sessionCtx)
-	t.Cleanup(func() { d.maintCancel(); d.sessionCancel() })
+	t.Cleanup(func() {
+		d.sessionMu.Lock()
+		if d.maintCancel != nil {
+			d.maintCancel()
+		}
+		if d.sessionCancel != nil {
+			d.sessionCancel()
+		}
+		d.sessionMu.Unlock()
+	})
 	return d, paths
 }
 

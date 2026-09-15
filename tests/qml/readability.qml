@@ -47,6 +47,19 @@ ShellRoot {
   Component { id: pairing; Chat.PairingView { service:fake; network:"telegram"; uiScale:1.3 } }
   Component { id: settings; Chat.SettingsView { service:fake; uiScale:1.3 } }
   function check(ok, message) { if(!ok) throw new Error(message) }
+  function checkTelegramGuidance() {
+    var probe = pairing.createObject(root)
+    fake.state = "unpaired"
+    fake.status = {state:"unpaired",hint:root.longHint,error:root.longHint}
+    check(probe.unpairWarning === "", "duplicate Telegram hint must not be repeated as a warning")
+    fake.status = {state:"unpaired",hint:root.longHint,error:"Invalid API ID"}
+    check(probe.unpairWarning === "Invalid API ID", "distinct Telegram error must remain visible")
+    fake.status = {state:"unpaired",hint:root.longHint,error:""}
+    check(probe.unpairWarning === "", "normal Telegram setup has no error warning")
+    probe.destroy()
+    fake.state = "error"
+    fake.status = {state:"error",error:"Pairing needs attention",hint:root.longHint}
+  }
   function inspect(item) {
     if(item.checked !== undefined && item.optionValue !== undefined) {
       check(Model.contrastRatio(item.foreground,item.color) >= 4.5,"choice text contrast on its actual fill")
@@ -81,6 +94,7 @@ ShellRoot {
     interval:200
     onTriggered: {
       try {
+        if(root.frame === 0) root.checkTelegramGuidance()
         root.check(!!page.item,"page loaded")
         root.check(Model.contrastRatio(page.item.foreground, Color.popups.background) >= 4.5,"page foreground contrast")
         root.inspect(page.item)

@@ -32,7 +32,7 @@ Item {
   readonly property bool isGaia: !isWhatsApp && connState === "gaiaPairing"
   readonly property bool isQR: connState === "pairing"
   readonly property bool isError: connState === "error"
-  readonly property string unpairWarning: connState === "unpaired" && status && status.error ? status.error : ""
+  readonly property string unpairWarning: connState === "unpaired" && status && status.error && status.error !== status.hint ? status.error : ""
   readonly property string emoji: status && status.emoji ? status.emoji : ""
   readonly property var profiles: service ? (service.browserProfiles || []) : []
   property bool profilePickerOpen: false

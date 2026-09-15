@@ -16,6 +16,7 @@ helper:
 
 test:
 	go test -mod=vendor ./...
+	go test -mod=vendor go.mau.fi/mautrix-gmessages/pkg/libgm
 
 test-ui:
 	node --test tests/model*.test.cjs
