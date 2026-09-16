@@ -74,11 +74,13 @@ vendored `mautrix-meta` client. It currently includes:
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
-The active installed checkout was fast-forwarded to `bade9ba` on 2026-09-16.
+The active installed checkout was fast-forwarded to `b1f8f3b` on 2026-09-16.
 The helper was rebuilt from vendored source, and the Omarchy shell was cleanly
-restarted after the WhatsApp GIF transport correction. The new shell-owned
-helper connected successfully, and the WhatsApp tab visibly loaded its live
-conversation list.
+restarted after the WhatsApp reaction and contact-name correction. The new
+shell-owned helper reported the expected source fingerprint and a connected
+WhatsApp backend through the live owner-only socket. Native panel inspection
+was unavailable in that session, so the visible name and phone-side reaction
+delivery remain explicit live checks rather than assumed results.
 
 The 2026-09-16 live parity pass confirmed that a video-backed Messenger GIF
 stays inline and loops, a new incoming reply appears without sending or
