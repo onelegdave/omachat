@@ -73,6 +73,8 @@ remaining session. API application credentials remain in the shared config.
 ## Supported behavior
 
 - Dialog and message synchronization with peer access-hash resolution.
+- Older-message paging, including channels and supergroups, through **Load older messages**.
+  The initial inbox sync lists up to 50 recent conversations; history is fetched in pages of up to 100 messages when a conversation is opened.
 - Live incoming text and media updates.
 - Outbound text, photos with captions, and OGG/Opus or M4A voice notes.
 - On-demand inbound photo and audio downloads.
@@ -81,8 +83,14 @@ remaining session. API application credentials remain in the shared config.
 
 Animated TGS stickers and video stickers remain unsupported. Telegram media
 references are live-only and are repopulated by refresh; downloaded files may
-remain in the local cache. Telegram self-destructing or TTL media never gets a
+remain in the local cache. Individual downloads stop at 32 MiB, and the Telegram
+attachment cache evicts older files above 256 MiB. Telegram self-destructing or TTL media never gets a
 download reference or cached copy.
+
+Older releases used ambiguous Telegram conversation and attachment IDs. On
+upgrade, OmaChat ignores that old conversation cache and rebuilds it from Telegram.
+Old attachment filenames are not reused. The paired session and API credentials
+are preserved.
 
 ## Storage and isolation
 

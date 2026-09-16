@@ -456,14 +456,17 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: inboxLoader.visible && inboxLoader.item && (inboxLoader.item.composerFocus === true || inboxLoader.item.linkConfirmOpen === true)
-      onCloseRequested: root.close()
-      onTabRequested: function(direction) { root.switchPanel(direction) }
-      onTextKey: function(t) {
-        if (t === "1") root.setActiveService("gmessages")
-        else if (t === "2") root.setActiveService("whatsapp")
-        else if (t === "3") root.setActiveService("telegram")
-        else if (t === "r" || t === "R") root.refresh()
+      objectName: "chatKeyCatcher"
+      // Let Tab, arrows, Enter and Space reach the focused shared control.
+      // The stock catcher consumes them for panels with a custom cursor model.
+      Keys.onPressed: function(event) {
+        var editing = inboxLoader.visible && inboxLoader.item && (inboxLoader.item.composerFocus || inboxLoader.item.linkConfirmOpen)
+        if (editing || root.settingsOpen) return
+        if (event.key === Qt.Key_Escape) { root.close(); event.accepted = true; return }
+        if (event.text === "1") { root.setActiveService("gmessages"); event.accepted = true }
+        else if (event.text === "2") { root.setActiveService("whatsapp"); event.accepted = true }
+        else if (event.text === "3") { root.setActiveService("telegram"); event.accepted = true }
+        else if (event.text === "r" || event.text === "R") { root.refresh(); event.accepted = true }
       }
 
       Column {
@@ -501,6 +504,9 @@ Panel {
           }
 
           PanelActionButton {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: tooltipText
             id: refreshBtn
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
@@ -512,6 +518,9 @@ Panel {
           }
 
           PanelActionButton {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: tooltipText
             id: settingsBtn
             anchors.right: refreshBtn.left
             anchors.rightMargin: Style.space(2)
@@ -544,6 +553,9 @@ Panel {
           }
 
           PanelActionButton {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: tooltipText
             id: unpairBtn
             objectName: "unpairButton"
             enabled: !root.unpairing
@@ -607,6 +619,34 @@ Panel {
           wrapMode: Text.Wrap
         }
 
+        Flow {
+          width:parent.width
+          spacing:Style.space(8)
+          visible:!!root.service && (!!root.service.helperNeedsRebuild || (!!root.service.updates && root.service.updates.noticeVisible))
+          Button {
+            objectName:"updateNoticeButton"
+            text:root.service && root.service.helperNeedsRebuild ? "Rebuild helper to finish update" : "Update available"
+            focusable:true; bordered:true; foreground:root.foreground; fontFamily:root.fontFamily
+            Accessible.role:Accessible.Button
+            Accessible.name:text
+            fontSize:root.fs(Style.font.bodySmall)
+            onClicked:{
+              root.settingsOpen=true
+              Qt.callLater(function(){ if(bodyLoader.item && typeof bodyLoader.item.showUpdates === "function") bodyLoader.item.showUpdates() })
+            }
+          }
+          Button {
+            text:"Dismiss"
+            Accessible.role:Accessible.Button
+            Accessible.name:"Dismiss update notice"
+            fontSize:root.fs(Style.font.bodySmall)
+            visible:!!root.service && !root.service.helperNeedsRebuild && !!root.service.updates && root.service.updates.noticeVisible
+            enabled:visible && !root.service.updates.busy
+            focusable:true; bordered:true; foreground:root.foreground; fontFamily:root.fontFamily
+            onClicked:root.service.updates.run("dismiss")
+          }
+        }
+
         ChoiceGroup {
           width: parent.width
           options: root.serviceTabs
@@ -616,7 +656,7 @@ Panel {
           accent: root.accentInk
           fontFamily: root.fontFamily
           fontSize: root.fs(Style.font.body)
-          focusable: false
+          focusable: true
           onChanged: function(v) { root.setActiveService(v) }
         }
 
@@ -845,9 +885,9 @@ Panel {
               if (root.service && root.service.building)
                 return "Building OmaChat's messaging helper on this computer. The first build can take several minutes, depending on your hardware. Go may show no output while compiling; a quiet screen does not mean the build has stopped. Please wait and do not restart the Omarchy shell during the build. The helper starts automatically when compilation succeeds, or a build error appears here if it fails. This uses the included source without installing packages or downloading modules."
               if (needGo)
-                return "OmaChat needs a small background program, the messaging helper (omachatd), to connect your chosen services. It is built on your computer from the included source. Building requires Go 1.27+ and a C compiler (gcc or clang). Open Settings > Tools to check what is missing, review its source, and choose whether to install it. Then return here, choose Retry to recheck Go, and select Build helper."
+                return "OmaChat needs a small background program, the messaging helper (omachatd), to connect your chosen services. It is built on your computer from the included source. Building requires Go 1.27+, Python 3, and a C compiler (gcc or clang). Open Settings > Tools to check what is missing, review its source, and choose whether to install it. Then return here, choose Retry to recheck Go, and select Build helper."
               if (canBuild)
-                return "Go was found. Check Settings > Tools to confirm Go 1.27+ and a C compiler (gcc or clang) are available. Choose Build helper to compile the included source for your selected services. The first build can take several minutes and may show no output. The helper starts automatically on success. Rebuild after updates that change the helper. No dependencies are installed automatically."
+                return "Go was found. Check Settings > Tools to confirm Go 1.27+, Python 3, and a C compiler (gcc or clang) are available. Choose Build helper to compile the included source for your selected services. The first build can take several minutes and may show no output. The helper starts automatically on success. Rebuild after updates that change the helper. No dependencies are installed automatically."
               return "The protocol helper runs as a background process owned by the Omarchy shell."
             }
             foreground: root.foreground
@@ -970,6 +1010,9 @@ Panel {
             spacing: Style.space(8)
 
             Button {
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
               visible: needGo
               text: "Open Go package"
               bordered: true
@@ -979,6 +1022,9 @@ Panel {
             }
 
             Button {
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
               visible: canBuild || (!!(root.service && root.service.building))
               objectName: "buildHelperButton"
               text: root.service && root.service.building ? "Building..." : "Build helper"
@@ -992,6 +1038,9 @@ Panel {
             }
 
             Button {
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: text
               text: "Retry"
               foreground: root.foreground
               fontFamily: root.fontFamily

@@ -1020,6 +1020,9 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 		return wire.MediaResult{}, fmt.Errorf("write cached media: %w", err)
 	}
 	_ = os.Chmod(targetPath, 0o600)
+	if err := appStore.PruneMedia(cacheDir, targetPath); err != nil {
+		b.log.Warn().Err(err).Msg("Could not trim WhatsApp media")
+	}
 	b.mu.Unlock()
 
 	return wire.MediaResult{Key: key, Path: targetPath}, nil

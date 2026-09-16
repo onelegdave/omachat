@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/onelegdave/omachat/internal/buildinfo"
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
@@ -19,6 +20,9 @@ var osChmod = os.Chmod
 // maxFrame bounds a single request line so a runaway client cannot exhaust
 // memory. Requests are small; replies can be large.
 const maxFrame = 1 << 20
+
+// Bound per-client work while allowing independent requests to make progress.
+const maxRequestsPerConnection = 16
 
 // Serve accepts plugin connections on the Unix socket until ctx is cancelled.
 func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
@@ -125,6 +129,8 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	go func() { <-ctx.Done(); conn.Close() }()
+	slots := make(chan struct{}, maxRequestsPerConnection)
 
 	w := &connWriter{enc: json.NewEncoder(conn)}
 
@@ -170,9 +176,14 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 			_ = w.send(wire.Response{OK: false, Error: "malformed request: " + err.Error()})
 			continue
 		}
-		// Each request gets its own goroutine so a slow fetch does not block
-		// the rest of the UI's calls on the same connection.
+		// Apply backpressure before creating a goroutine.
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
 		go func(req wire.Request) {
+			defer func() { <-slots }()
 			// A pre-change config snapshot must not be written after the setter's
 			// restart-required acknowledgement on another concurrent request.
 			if globalSetting(req.Method) || req.Method == wire.MethodSetEnabledServices {
@@ -209,6 +220,9 @@ func decodeParams[T any](raw any) (T, error) {
 }
 
 func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
+	if req.Method == "buildInfo" {
+		return wire.Response{ID: req.ID, OK: true, Result: map[string]string{"sourceID": buildinfo.SourceID}}
+	}
 	if req.Network != "" && !wire.IsKnownNetwork(req.Network) {
 		return wire.Response{ID: req.ID, Error: "unknown network: " + req.Network}
 	}

@@ -3,7 +3,9 @@ package telegram
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -68,10 +70,11 @@ type ClientFactory func(creds appStore.TelegramCredentials, sessionPath string) 
 
 // GotdClient wraps a gotd/td MTProto client, implementing the Client interface.
 type GotdClient struct {
-	appID       int
-	appHash     string
-	sessionPath string
-	log         zerolog.Logger
+	sessionStore *FileSessionStorage
+	appID        int
+	appHash      string
+	sessionPath  string
+	log          zerolog.Logger
 
 	mu         sync.RWMutex
 	peers      map[int64]tg.InputPeerClass
@@ -80,9 +83,11 @@ type GotdClient struct {
 	cancel     context.CancelFunc
 	running    bool
 	connected  bool
+	stopped    bool
 	onMessage  func(Message)
 	mediaRefs  map[string]tg.InputFileLocationClass
 	mediaExts  map[string]string
+	downloadWG sync.WaitGroup
 }
 
 // SetMessageHandler registers the callback used for live incoming updates.
@@ -112,15 +117,15 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 		wrapper.mu.Lock()
 		for userID, user := range entities.Users {
 			if user.AccessHash != 0 {
-				wrapper.peers[userID] = &tg.InputPeerUser{UserID: userID, AccessHash: user.AccessHash}
+				wrapper.peers[userPeerID(userID)] = &tg.InputPeerUser{UserID: userID, AccessHash: user.AccessHash}
 			}
 		}
 		for chatID := range entities.Chats {
-			wrapper.peers[chatID] = &tg.InputPeerChat{ChatID: chatID}
+			wrapper.peers[chatPeerID(chatID)] = &tg.InputPeerChat{ChatID: chatID}
 		}
 		for channelID, channel := range entities.Channels {
 			if channel.AccessHash != 0 {
-				wrapper.peers[channelID] = &tg.InputPeerChannel{ChannelID: channelID, AccessHash: channel.AccessHash}
+				wrapper.peers[channelPeerID(channelID)] = &tg.InputPeerChannel{ChannelID: channelID, AccessHash: channel.AccessHash}
 			}
 		}
 		converted := wrapper.mediaMessage(m, id)
@@ -143,15 +148,16 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 		SessionStorage: storage,
 	})
 	wrapper = &GotdClient{
-		appID:       appID,
-		appHash:     appHash,
-		sessionPath: sessionPath,
-		log:         log.With().Str("component", "gotd").Logger(),
-		client:      client,
-		peers:       make(map[int64]tg.InputPeerClass),
-		mediaRefs:   make(map[string]tg.InputFileLocationClass),
-		mediaExts:   make(map[string]string),
-		dispatcher:  dispatcher,
+		appID:        appID,
+		appHash:      appHash,
+		sessionPath:  sessionPath,
+		sessionStore: storage,
+		log:          log.With().Str("component", "gotd").Logger(),
+		client:       client,
+		peers:        make(map[int64]tg.InputPeerClass),
+		mediaRefs:    make(map[string]tg.InputFileLocationClass),
+		mediaExts:    make(map[string]string),
+		dispatcher:   dispatcher,
 	}
 	return wrapper
 }
@@ -169,6 +175,10 @@ func DefaultClientFactory(log zerolog.Logger) ClientFactory {
 // Start connects the client in the background and verifies whether the session is authorized.
 func (g *GotdClient) Start(ctx context.Context) error {
 	g.mu.Lock()
+	if g.stopped {
+		g.mu.Unlock()
+		return context.Canceled
+	}
 	if g.running {
 		g.mu.Unlock()
 		return nil
@@ -176,6 +186,7 @@ func (g *GotdClient) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	g.cancel = cancel
 	g.running = true
+
 	g.mu.Unlock()
 
 	ready := make(chan error, 1)
@@ -226,16 +237,21 @@ func (g *GotdClient) Start(ctx context.Context) error {
 	}
 }
 
-// Stop terminates the MTProto connection.
+// Stop terminates the MTProto connection. It blocks until any in-flight
+// DownloadMedia commit has either finished or observed the stop and aborted,
+// so a stale download cannot write into the cache after Stop returns.
 func (g *GotdClient) Stop() error {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	if g.cancel != nil {
 		g.cancel()
 		g.cancel = nil
 	}
 	g.running = false
 	g.connected = false
+	g.stopped = true
+	g.sessionStore.close()
+	g.mu.Unlock()
+	g.downloadWG.Wait()
 	return nil
 }
 
@@ -266,8 +282,14 @@ func (g *GotdClient) GetQRChannel(ctx context.Context) (<-chan QRChannelItem, er
 
 	runCtx, cancel := context.WithCancel(ctx)
 	g.mu.Lock()
+	if g.stopped {
+		g.mu.Unlock()
+		cancel()
+		return nil, context.Canceled
+	}
 	g.cancel = cancel
 	g.running = true
+
 	g.mu.Unlock()
 
 	go func() {
@@ -357,21 +379,24 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 	}
 	for _, u := range users {
 		if x, ok := u.(*tg.User); ok {
-			names[fmt.Sprintf("tg:%d", x.ID)] = strings.TrimSpace(x.FirstName + " " + x.LastName)
+			id := userPeerID(x.ID)
+			names[fmt.Sprintf("tg:%d", id)] = strings.TrimSpace(x.FirstName + " " + x.LastName)
 			if x.AccessHash != 0 {
-				peers[x.ID] = &tg.InputPeerUser{UserID: x.ID, AccessHash: x.AccessHash}
+				peers[id] = &tg.InputPeerUser{UserID: x.ID, AccessHash: x.AccessHash}
 			}
 		}
 	}
 	for _, c := range chats {
 		switch x := c.(type) {
 		case *tg.Chat:
-			names[fmt.Sprintf("tg:%d", x.ID)] = x.Title
-			peers[x.ID] = &tg.InputPeerChat{ChatID: x.ID}
+			id := chatPeerID(x.ID)
+			names[fmt.Sprintf("tg:%d", id)] = x.Title
+			peers[id] = &tg.InputPeerChat{ChatID: x.ID}
 		case *tg.Channel:
-			names[fmt.Sprintf("tg:%d", x.ID)] = x.Title
+			id := channelPeerID(x.ID)
+			names[fmt.Sprintf("tg:%d", id)] = x.Title
 			if x.AccessHash != 0 {
-				peers[x.ID] = &tg.InputPeerChannel{ChannelID: x.ID, AccessHash: x.AccessHash}
+				peers[id] = &tg.InputPeerChannel{ChannelID: x.ID, AccessHash: x.AccessHash}
 			}
 		}
 	}
@@ -402,13 +427,24 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 		out = append(out, Dialog{ID: id, Name: names[fmt.Sprintf("tg:%d", id)], Preview: preview.Text, Unread: d.UnreadCount > 0, Timestamp: preview.Timestamp, IsGroup: isGroupPeer(d.Peer)})
 	}
 	g.mu.Lock()
-	g.peers = peers
+	for id, peer := range peers {
+		g.peers[id] = peer
+	}
 	g.mu.Unlock()
 	return out, nil
 }
 
-// Messages fetches text messages for a user or basic group peer.
+// Messages fetches the most recent text messages for a peer. It delegates to
+// MessagesPage with no cursor, preserving the ReadClient contract used by
+// offline mocks and existing callers.
 func (g *GotdClient) Messages(ctx context.Context, conversationID int64, limit int) ([]Message, error) {
+	page, err := g.MessagesPage(ctx, conversationID, 0, limit)
+	return page.Messages, err
+}
+
+// MessagesPage fetches a page of history older than beforeID (exclusive), or
+// the most recent page when beforeID is zero.
+func (g *GotdClient) MessagesPage(ctx context.Context, conversationID int64, beforeID int64, limit int) (HistoryPage, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -416,30 +452,42 @@ func (g *GotdClient) Messages(ctx context.Context, conversationID int64, limit i
 	peer := g.peers[conversationID]
 	g.mu.RUnlock()
 	if peer == nil {
-		return nil, fmt.Errorf("telegram peer %d is not available", conversationID)
+		return HistoryPage{}, fmt.Errorf("telegram peer %d is not available", conversationID)
 	}
-	res, err := g.client.API().MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{Peer: peer, Limit: limit})
+	offsetID := 0
+	if beforeID > 0 {
+		offsetID = int(beforeID)
+	}
+	res, err := g.client.API().MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{Peer: peer, Limit: limit, OffsetID: offsetID})
 	if err != nil {
-		return nil, err
+		return HistoryPage{}, err
 	}
+	return g.historyPage(res, conversationID, limit), nil
+}
+
+func (g *GotdClient) historyPage(res tg.MessagesMessagesClass, conversationID int64, limit int) HistoryPage {
 	var raws []tg.MessageClass
 	switch x := res.(type) {
 	case *tg.MessagesMessages:
 		raws = x.Messages
 	case *tg.MessagesMessagesSlice:
 		raws = x.Messages
+	case *tg.MessagesChannelMessages:
+		raws = x.Messages
 	}
-	out := make([]Message, 0, len(raws))
+	out := HistoryPage{Messages: make([]Message, 0, len(raws)), HasMore: len(raws) >= limit}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	for _, raw := range raws {
-		m, ok := raw.(*tg.Message)
-		if !ok {
-			continue
+		id := int64(raw.GetID())
+		if id > 0 && (out.CursorID == 0 || id < out.CursorID) {
+			out.CursorID = id
 		}
-		g.mu.Lock()
-		out = append(out, g.mediaMessage(m, conversationID))
-		g.mu.Unlock()
+		if m, ok := raw.(*tg.Message); ok {
+			out.Messages = append(out.Messages, g.mediaMessage(m, conversationID))
+		}
 	}
-	return out, nil
+	return out
 }
 
 // MarkRead acknowledges Telegram history up to messageID. A zero message ID
@@ -454,6 +502,13 @@ func (g *GotdClient) MarkRead(ctx context.Context, conversationID int64, message
 	maxID := 0
 	if messageID > 0 {
 		maxID = int(messageID)
+	}
+	if channelPeer, ok := peer.(*tg.InputPeerChannel); ok {
+		_, err := g.client.API().ChannelsReadHistory(ctx, &tg.ChannelsReadHistoryRequest{
+			Channel: &tg.InputChannel{ChannelID: channelPeer.ChannelID, AccessHash: channelPeer.AccessHash},
+			MaxID:   maxID,
+		})
+		return err
 	}
 	_, err := g.client.API().MessagesReadHistory(ctx, &tg.MessagesReadHistoryRequest{Peer: peer, MaxID: maxID})
 	return err
@@ -627,7 +682,7 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 		if p, ok := photo.Photo.(*tg.Photo); ok {
 			for _, raw := range p.Sizes {
 				if s, ok := raw.(*tg.PhotoSize); ok {
-					key := fmt.Sprintf("tg:%d", m.ID)
+					key := mediaKey(conversationID, m.ID)
 					g.mediaRefs[key] = &tg.InputPhotoFileLocation{ID: p.ID, AccessHash: p.AccessHash, FileReference: p.FileReference, ThumbSize: s.Type}
 					out.MediaKey = key
 					break
@@ -651,7 +706,7 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 				}
 			}
 			if isAudio {
-				key := fmt.Sprintf("tg:%d", m.ID)
+				key := mediaKey(conversationID, m.ID)
 				g.mediaRefs[key] = &tg.InputDocumentFileLocation{ID: d.ID, AccessHash: d.AccessHash, FileReference: d.FileReference}
 				mimeType := d.MimeType
 				if mimeType == "" {
@@ -660,7 +715,7 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 				g.mediaExts[key] = telegramMediaExt(mimeType)
 				out.MediaKey, out.MediaMime, out.MediaAudio = key, mimeType, true
 			} else if isSticker && strings.EqualFold(d.MimeType, "image/webp") {
-				key := fmt.Sprintf("tg:%d", m.ID)
+				key := mediaKey(conversationID, m.ID)
 				g.mediaRefs[key] = &tg.InputDocumentFileLocation{ID: d.ID, AccessHash: d.AccessHash, FileReference: d.FileReference}
 				g.mediaExts[key] = ".webp"
 				out.MediaKey, out.MediaMime, out.MediaSticker = key, "image/webp", true
@@ -668,6 +723,13 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 		}
 	}
 	return out
+}
+
+// mediaKey namespaces a media reference by its typed conversation ID and
+// message ID. Channel and basic-group message IDs are local to that peer, so
+// the message ID alone is ambiguous across conversations (finding 2).
+func mediaKey(conversationID int64, messageID int) string {
+	return fmt.Sprintf("tg:%d:%d", conversationID, messageID)
 }
 
 func telegramMediaExt(mimeType string) string {
@@ -685,22 +747,49 @@ func telegramMediaExt(mimeType string) string {
 	}
 }
 
+// maxTelegramMediaBytes bounds a single downloaded attachment. It is enforced
+// during streaming via cappedWriter, not after the full body has already
+// landed on disk (finding 5).
+const maxTelegramMediaBytes = 32 * 1024 * 1024
+
+// cappedWriter rejects a write that would push the total past limit, aborting
+// the download mid-stream instead of after the fact.
+type cappedWriter struct {
+	w       io.Writer
+	limit   int64
+	written int64
+}
+
+func (c *cappedWriter) Write(p []byte) (int, error) {
+	if c.written+int64(len(p)) > c.limit {
+		return 0, fmt.Errorf("telegram media exceeds %d byte limit", c.limit)
+	}
+	n, err := c.w.Write(p)
+	c.written += int64(n)
+	return n, err
+}
+
 func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string, error) {
-	g.mu.RLock()
+	g.mu.Lock()
+	if g.stopped {
+		g.mu.Unlock()
+		return "", errors.New("Telegram client is stopped")
+	}
 	location := g.mediaRefs[key]
-	g.mu.RUnlock()
+	ext := ".jpg"
+	if value := g.mediaExts[key]; value != "" {
+		ext = value
+	}
+	g.downloadWG.Add(1)
+	g.mu.Unlock()
+	defer g.downloadWG.Done()
+
 	if location == nil {
 		return "", errors.New("Telegram media reference is unavailable; refresh the conversation")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	ext := ".jpg"
-	g.mu.RLock()
-	if value := g.mediaExts[key]; value != "" {
-		ext = value
-	}
-	g.mu.RUnlock()
 	final := filepath.Join(dir, safeMediaName(key)+ext)
 	if st, err := os.Stat(final); err == nil && st.Mode().IsRegular() {
 		return final, nil
@@ -711,17 +800,27 @@ func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	_, err = g.client.Download(location).Stream(ctx, io.Writer(tmp))
+	capped := &cappedWriter{w: tmp, limit: maxTelegramMediaBytes}
+	_, streamErr := g.client.Download(location).Stream(ctx, capped)
 	closeErr := tmp.Close()
-	if err != nil {
-		return "", err
+	if streamErr != nil {
+		return "", streamErr
 	}
 	if closeErr != nil {
 		return "", closeErr
 	}
-	st, err := os.Stat(tmpName)
-	if err != nil || st.Size() == 0 || st.Size() > 32*1024*1024 {
-		return "", errors.New("downloaded Telegram media is invalid or too large")
+	if capped.written == 0 {
+		return "", errors.New("downloaded Telegram media is empty")
+	}
+	// Re-check after the transfer completes: Stop() may have been called
+	// while this download was in flight, and must not observe a commit
+	// (rename into the cache) after it has already returned (finding 4-style
+	// lifecycle race, applied to media).
+	g.mu.RLock()
+	stopped := g.stopped
+	g.mu.RUnlock()
+	if stopped {
+		return "", errors.New("Telegram client stopped before media could be saved")
 	}
 	if err := os.Rename(tmpName, final); err != nil {
 		return "", err
@@ -729,17 +828,12 @@ func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string
 	return final, nil
 }
 
+// safeMediaName hashes the full media key so filenames are unambiguous across
+// conversations and message IDs, and so pre-fix caches (keyed only by
+// message ID) are never reused for the wrong peer (finding 2).
 func safeMediaName(key string) string {
-	var b strings.Builder
-	for _, r := range key {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			b.WriteRune(r)
-		}
-	}
-	if b.Len() == 0 {
-		return "media"
-	}
-	return b.String()
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
 }
 
 // gotd exposes Telegram dates as Unix seconds; OmaChat wire timestamps use
@@ -748,14 +842,27 @@ func telegramTimestamp(seconds int) int64 {
 	return int64(seconds) * 1_000_000
 }
 
+// channelIDOffset is Telegram Bot API's signed-ID convention: user IDs stay
+// positive, basic-group (chat) IDs are negated, and channel/supergroup IDs
+// are offset by -10^12 before negation. Without this, a user, chat, and
+// channel that happen to share a raw numeric ID collide in every peer map
+// (finding 1). See https://core.telegram.org/api/bots/ids.
+const channelIDOffset = 1_000_000_000_000
+
+func userPeerID(userID int64) int64 { return userID }
+
+func chatPeerID(chatID int64) int64 { return -chatID }
+
+func channelPeerID(channelID int64) int64 { return -(channelIDOffset + channelID) }
+
 func peerID(p tg.PeerClass) int64 {
 	switch x := p.(type) {
 	case *tg.PeerUser:
-		return x.UserID
+		return userPeerID(x.UserID)
 	case *tg.PeerChat:
-		return x.ChatID
+		return chatPeerID(x.ChatID)
 	case *tg.PeerChannel:
-		return x.ChannelID
+		return channelPeerID(x.ChannelID)
 	}
 	return 0
 }

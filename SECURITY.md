@@ -19,6 +19,8 @@ or working exploit details in a public issue.
 - Telegram session and chat cache: `~/.local/share/omachat/telegram.session` and `telegram_store.json` (0600)
 - Config (browser profile, GIPHY key, Telegram API credentials): `~/.local/share/omachat/config.json` (0600)
 - Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, and `media_telegram/`
+- Telegram conversation caches from before typed peer IDs are ignored on upgrade;
+  pairing credentials are retained and ambiguous attachment filenames are not reused.
 - Control socket: `$XDG_RUNTIME_DIR/omachat/daemon.sock` (0600)
 
 OmaChat's private directories are restricted to 0700. The socket is restricted
@@ -27,10 +29,16 @@ as the same user, or from root. Stored credentials and caches are not encrypted
 by OmaChat. Trusted XDG parent directories and a trusted desktop account are
 part of the security boundary.
 
+Update preferences and cached public release metadata live in
+`~/.local/state/omachat/updates.json` (or under `XDG_STATE_HOME`). They are
+separate from messaging credentials. Daily checks are off by default.
+
 ## What is enforced
 
-- Incoming attachments, avatars, and GIF fetches are read through a bounded
-  reader. A declared `Content-Length` is never trusted as the allocation size.
+- Incoming attachments, avatars, and GIF fetches are read or written through a bounded
+  stream. Telegram downloads stop at 32 MiB while transferring. Each service
+  evicts old downloaded attachments above its 256 MiB cache budget. A declared
+  `Content-Length` is never trusted as the allocation size.
 - Group avatar URLs must be `https` and must resolve to a public address.
   Loopback, private, link-local, and carrier-grade NAT ranges are refused.
 - OmaChat's direct child-process launches use argument arrays, not interpolated
@@ -49,6 +57,11 @@ part of the security boundary.
   sends the query and API key to GIPHY; the QML picker loads preview images
   directly from allowed GIPHY HTTPS hosts. No claim of offline-only operation
   or anonymity is made.
+- Manual update checks and optional daily checks request public release metadata
+  from GitHub. They send no messaging credentials or message content; GitHub
+  receives ordinary request metadata, including the client IP address. Updates
+  require an explicit action and the native updater's terminal confirmation.
+  The updater follows the repository default branch, not a pinned release tag.
 - Source review and regression tests are limited checks, not a guarantee that
   this project or its dependencies contain no vulnerabilities. Keep the desktop
   toolchain and external tools current through your normal update workflow.

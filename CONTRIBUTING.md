@@ -11,7 +11,11 @@ omarchy plugin validate .
 ```
 
 `make helper` and the panel Build helper button compile `omachatd` with
-`CGO_ENABLED=1`. WhatsApp session storage uses `github.com/mattn/go-sqlite3`,
+`CGO_ENABLED=1` through `scripts/updates.py build`. This stamps a source
+fingerprint for the running-helper check and replaces the executable only
+after a successful offline build. Direct `go build` remains useful for
+development, but an unstamped helper will prompt for a rebuild in the UI.
+WhatsApp session storage uses `github.com/mattn/go-sqlite3`,
 which needs a C compiler (`gcc` or `clang`). The plugin does not install Go
 or a C toolchain automatically.
 
@@ -27,13 +31,35 @@ the app so the user can choose whether to install them. Keep all three
 
 ## Release
 
-1. Match `manifest.json` version, README, and any tag.
-2. Run the checks above. If dependency versions changed, regenerate `vendor/`
-   deliberately during development and review the resulting licenses and diff.
-   User builds must continue working with module downloads disabled.
-3. Screenshots in git (`preview.png`, `docs/screenshots/`) must not show real contacts, phone numbers, message bodies, avatars of real people, hostnames, or accounts. Use fake demo data or crop/censor first.
-4. Preserve upstream credits, licenses, and existing history.
-5. Push `main` and, for a numbered release, an immutable `vX.Y.Z` tag and GitHub Release.
+1. Keep the default branch release-ready: the native Omarchy updater fetches
+   its HEAD, not the latest GitHub Release tag. Prepare release changes together
+   so users do not receive an incomplete migration.
+2. Match `manifest.json`, the README release link, the immutable `vX.Y.Z` tag,
+   and the GitHub Release. Publish stable releases without the prerelease flag
+   so the in-app latest-release check can discover them.
+3. Run `make test test-ui lint validate` and the race checks below. If dependency
+   versions changed, regenerate `vendor/` deliberately and review licenses and
+   the diff. User builds must work with module downloads disabled.
+4. Exercise an upgrade from the preceding release in an isolated profile:
+   preserve saved settings and synthetic account data, confirm the release
+   notice and native update instructions, detect the old helper, rebuild, and
+   verify the running helper matches. Test cancellation, offline checks, a
+   failed build retaining the previous executable, and a successful retry.
+   Never use personal messages or credentials in fixtures.
+5. Release notes must state the user-visible changes, security fixes without
+   private data, known limits, the command
+   `omarchy plugin update onelegdave.omachat`, whether rebuilding is required,
+   and any migration or re-pairing steps. Do not promise account preservation
+   when a release deliberately requires re-pairing.
+6. Screenshots in git (`preview.png`, `docs/screenshots/`) must use synthetic
+   data and contain no real contacts, phone numbers, messages, avatars,
+   hostnames, or accounts. Preserve upstream credits, licenses, and history.
+7. Publish the branch, immutable tag, and GitHub Release as one release task.
+   After the [oldsmaru acceptance check](docs/oldsmaru-checklist.md) and owner
+   submission approval, submit the matching version, release URL, and commit
+   to the marketplace. Until then, preserve the documented submission hold.
+   Verify the remote results, including the release metadata seen by the app.
+   A submitted marketplace change awaiting review is pending, not published.
 
 ## Regression checks
 

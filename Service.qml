@@ -29,6 +29,21 @@ Item {
     return Quickshell.env("HOME") + "/.cache/omachat/daemon.sock"
   }
 
+  property alias updates: updateManager
+  UpdateManager { id:updateManager; pluginDir:root.pluginDir }
+  property string runningSourceID: ""
+  property bool helperBuildChecked: false
+  property bool restartingBuild: false
+  readonly property bool helperNeedsRebuild: helperBuildChecked && updateManager.expectedSourceID !== "" && runningSourceID !== updateManager.expectedSourceID
+  function checkRunningBuild() {
+    var generation=connectionGeneration
+    call("buildInfo", null, function(ok,res) {
+      if (!root.connected || generation !== root.connectionGeneration) return
+      root.runningSourceID=ok && res ? (res.sourceID || "") : ""
+      root.helperBuildChecked=true
+    }, "gmessages")
+  }
+
   property bool helperPresent: false
   property bool goPresent: false
   property bool building: false
@@ -335,14 +350,17 @@ Item {
         root.helperError = "Could not create " + root.pluginDir + "/bin"
         return
       }
-      buildProc.command = ["/usr/bin/go", "-C", root.pluginDir, "build", "-mod=vendor", "-o", root.helperPath, "./cmd/omachatd"]
+      buildProc.command = ["python3", root.pluginDir + "/scripts/updates.py", "build"]
       buildProc.running = false
       buildProc.running = true
+      buildStartTimeout.restart()
     }
   }
 
   Process {
     id: buildProc
+    onStarted: buildStartTimeout.stop()
+    stdout: StdioCollector { id:buildResult; waitForEnd:true }
     command: ["/usr/bin/go", "version"]
     environment: ({ GOPROXY: "off", CGO_ENABLED: "1" })
     stderr: SplitParser {
@@ -352,19 +370,39 @@ Item {
       }
     }
     onExited: function(code) {
+      buildStartTimeout.stop()
       root.building = false
       if (code === 0) {
         root.helperPresent = true
         root.helperError = ""
         root.helperState = "ready"
-        root.startHelper()
+        updateManager.inspect()
+        if (helperProc.running) {
+          root.restartingBuild=true
+          helperProc.running=false
+        } else if(root.connected) {
+          root.helperError="Built successfully, but another helper still owns the connection. Restart the Omarchy shell. If this persists, stop the separately launched omachatd, restart the shell, and check Updates again."
+          root.checkRunningBuild()
+        } else root.startHelper()
       } else {
-        root.helperState = "missing"
+        root.helperState = root.helperPresent ? "running" : "missing"
         var tail = root.buildLog.trim()
+        try { var result=JSON.parse(buildResult.text); if(result.error) tail += "\n" + result.error } catch(e) {}
         root.helperError = tail !== ""
           ? "Build failed (exit " + code + "):\n" + tail
           : "Build failed (exit " + code + "). The shared helper needs Go and a C compiler (gcc or clang) for all services. Check Settings > Tools to review missing requirements and choose whether to install them. OmaChat never installs dependencies automatically."
       }
+    }
+  }
+
+  Timer {
+    id:buildStartTimeout
+    interval:5000
+    onTriggered: {
+      if (!root.building || buildProc.running) return
+      root.building=false
+      root.helperState=root.helperPresent ? "running" : "missing"
+      root.helperError="Could not start the build. Python 3 is required. Review Settings > Tools, then try again. The previous executable was kept."
     }
   }
 
@@ -380,6 +418,16 @@ Item {
     }
     onExited: function(code) {
       root._startingHelper = false
+      if (root.restartingBuild) {
+        root.restartingBuild=false
+        root.connected=false
+        root.helperBuildChecked=false
+        root.runningSourceID=""
+        root._restartMs=1000
+        root.rebuildSocket()
+        restartTimer.restart()
+        return
+      }
       if (root.restartingServices) {
         restartGrace.stop()
         root.connected=false
@@ -443,6 +491,7 @@ Item {
             root.call("status", null, function(ok, res) { if (ok && res) root.statusWA = res }, "whatsapp")
             root.call("status", null, function(ok, res) { if (ok && res) root.statusTG = res }, "telegram")
             root.loadServiceConfig()
+            root.checkRunningBuild()
           })
         } else {
           root.failPending(root.restartingServices ? "Helper restarting after service changes. A submitted message may still arrive; check before retrying." : "Disconnected from omachatd")

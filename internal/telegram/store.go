@@ -9,7 +9,10 @@ import (
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
+const cacheVersion = 2
+
 type storedData struct {
+	Version       int                          `json:"version"`
 	Conversations map[string]wire.Conversation `json:"conversations"`
 	Order         []string                     `json:"order"`
 	Messages      map[string][]wire.Message    `json:"messages"`
@@ -25,7 +28,7 @@ func loadStoredData(path string) storedData {
 	if err != nil || errors.Is(err, os.ErrNotExist) {
 		return out
 	}
-	if json.Unmarshal(b, &out) != nil {
+	if json.Unmarshal(b, &out) != nil || out.Version != cacheVersion {
 		return emptyStoredData()
 	}
 	if out.Conversations == nil {
@@ -41,6 +44,7 @@ func loadStoredData(path string) storedData {
 }
 
 func saveStoredData(path string, data storedData) error {
+	data.Version = cacheVersion
 	b, err := json.Marshal(data)
 	if err != nil {
 		return err

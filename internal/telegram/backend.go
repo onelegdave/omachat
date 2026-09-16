@@ -7,6 +7,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,14 +45,17 @@ type Backend struct {
 	client        Client
 	clientFactory ClientFactory
 
-	ctx          context.Context
-	cancel       context.CancelFunc
-	pairCancel   context.CancelFunc
-	updateCancel context.CancelFunc
-	updateGen    uint64
-	stopping     bool
-	wg           sync.WaitGroup
-	gen          uint64 // pairing attempt generation to prevent stale goroutine races
+	ctx           context.Context
+	cancel        context.CancelFunc
+	pairCancel    context.CancelFunc
+	updateCancel  context.CancelFunc
+	updateGen     uint64
+	stopping      bool
+	wg            sync.WaitGroup
+	gen           uint64 // pairing attempt generation to prevent stale goroutine races
+	epoch         uint64 // account lifetime, independent of QR attempt generation
+	accountCtx    context.Context
+	accountCancel context.CancelFunc
 
 	convs    map[string]wire.Conversation
 	order    []string
@@ -88,6 +92,7 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event), cf
 			Hint:    hintCredentialsRequired,
 		},
 	}
+	b.accountCtx, b.accountCancel = context.WithCancel(ctx)
 	if paths != nil {
 		stored := loadStoredData(paths.TelegramStoreFile())
 		b.convs, b.order, b.messages = stored.Conversations, stored.Order, stored.Messages
@@ -114,7 +119,9 @@ func (b *Backend) SetConfig(cs *appStore.ConfigStore) {
 func (b *Backend) SetClient(c Client) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.retireAccountLocked()
 	b.client = c
+	b.bindIncomingLocked(c)
 }
 
 // SetClientFactory overrides the client factory (primarily used for unit testing).
@@ -213,6 +220,7 @@ func (b *Backend) Start(ctx context.Context) error {
 			// screen instead of trapping the panel in reconnecting.
 			_ = cli.Stop()
 			b.mu.Lock()
+			b.retireAccountLocked()
 			b.client = nil
 			b.paired = false
 			b.mu.Unlock()
@@ -280,6 +288,7 @@ func (b *Backend) UpdateCredentials(ctx context.Context) error {
 	// Tear down existing client
 	b.mu.Lock()
 	oldClient := b.client
+	b.retireAccountLocked()
 	b.client = nil
 	b.paired = false
 	b.gen++
@@ -347,6 +356,7 @@ func (b *Backend) UpdateCredentials(ctx context.Context) error {
 		if errors.Is(startErr, context.Canceled) {
 			_ = cli.Stop()
 			b.mu.Lock()
+			b.retireAccountLocked()
 			b.client = nil
 			b.paired = false
 			b.mu.Unlock()
@@ -358,6 +368,7 @@ func (b *Backend) UpdateCredentials(ctx context.Context) error {
 			errors.Is(startErr, context.DeadlineExceeded) {
 			_ = cli.Stop()
 			b.mu.Lock()
+			b.retireAccountLocked()
 			b.client = nil
 			b.paired = false
 			b.mu.Unlock()
@@ -394,19 +405,65 @@ func (b *Backend) getOrCreateClientLocked(creds appStore.TelegramCredentials) (C
 		return nil, err
 	}
 	b.client = cli
-	if incoming, ok := cli.(incomingHandlerClient); ok {
-		incoming.SetMessageHandler(b.ingestMessage)
-	}
+	b.bindIncomingLocked(cli)
 	return cli, nil
 }
 
+// retireAccountLocked invalidates results before files or the client are cleared.
+// Caller holds mu; account cancellation never waits for a provider response.
+func (b *Backend) retireAccountLocked() {
+	b.epoch++
+	if b.accountCancel != nil {
+		b.accountCancel()
+	}
+	b.accountCtx, b.accountCancel = context.WithCancel(b.ctx)
+}
+
+func (b *Backend) bindIncomingLocked(cli Client) {
+	if incoming, ok := cli.(incomingHandlerClient); ok {
+		epoch := b.epoch
+		incoming.SetMessageHandler(func(msg Message) { _ = b.ingestMessageFor(msg, epoch) })
+	}
+}
+
+func (b *Backend) operation(ctx context.Context) (context.Context, func(), Client, uint64) {
+	b.mu.RLock()
+	cli, epoch, account := b.client, b.epoch, b.accountCtx
+	b.mu.RUnlock()
+	bound, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(account, cancel)
+	if account.Err() != nil {
+		cancel()
+	}
+	return bound, func() { stop(); cancel() }, cli, epoch
+}
+
+// saveLocked serializes both JSON reads and atomic file replacement with mutations.
+func (b *Backend) saveLocked() error {
+	if b.paths == nil {
+		return nil
+	}
+	return saveStoredData(b.paths.TelegramStoreFile(), storedData{Conversations: b.convs, Order: b.order, Messages: b.messages})
+}
+
 func (b *Backend) ingestMessage(msg Message) {
+	b.mu.RLock()
+	epoch := b.epoch
+	b.mu.RUnlock()
+	_ = b.ingestMessageFor(msg, epoch)
+}
+
+func (b *Backend) ingestMessageFor(msg Message, epoch uint64) error {
 	if msg.ConversationID == 0 || msg.ID == 0 {
-		return
+		return nil
 	}
 	converted := mapMessage(msg)
 	conversationID := fmt.Sprintf("tg:%d", msg.ConversationID)
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.epoch != epoch || b.stopping {
+		return context.Canceled
+	}
 	if _, exists := b.convs[conversationID]; !exists {
 		name := msg.SenderName
 		if name == "" {
@@ -415,29 +472,39 @@ func (b *Backend) ingestMessage(msg Message) {
 		b.convs[conversationID] = mapDialog(Dialog{ID: msg.ConversationID, Name: name, Preview: msg.Text, Timestamp: msg.Timestamp})
 		b.order = append([]string{conversationID}, b.order...)
 	}
-	items := b.messages[conversationID]
-	seen := false
-	for _, item := range items {
-		if item.ID == converted.ID {
-			seen = true
-			break
-		}
-	}
-	if !seen {
-		items = append(items, converted)
-	}
-	b.messages[conversationID] = items
+	b.messages[conversationID] = mergeHistory(b.messages[conversationID], []wire.Message{converted})
 	conv := b.convs[conversationID]
 	conv.Preview, conv.Timestamp, conv.Unread = msg.Text, msg.Timestamp, !msg.FromMe
 	b.convs[conversationID] = conv
-	snapshot := storedData{Conversations: b.convs, Order: b.order, Messages: b.messages}
-	b.mu.Unlock()
-	if b.paths != nil {
-		_ = saveStoredData(b.paths.TelegramStoreFile(), snapshot)
+	if err := b.saveLocked(); err != nil {
+		b.log.Warn().Err(err).Msg("Could not save Telegram chat cache")
 	}
+	// Publish before releasing mu so a later unpair status cannot be overtaken.
 	if b.publish != nil {
 		b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkTelegram, Data: converted})
 	}
+	return nil
+}
+
+func mergeHistory(existing, incoming []wire.Message) []wire.Message {
+	byID := make(map[string]wire.Message, len(existing)+len(incoming))
+	for _, m := range existing {
+		byID[m.ID] = m
+	}
+	for _, m := range incoming {
+		byID[m.ID] = m
+	}
+	out := make([]wire.Message, 0, len(byID))
+	for _, m := range byID {
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Timestamp == out[j].Timestamp {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Timestamp < out[j].Timestamp
+	})
+	return out
 }
 
 // Status returns the current Telegram status.
@@ -542,24 +609,59 @@ func (b *Backend) Conversations(count int) []wire.Conversation {
 	return out
 }
 
-// Messages returns the cached messages for a conversation.
+// Messages fetches one bounded server page when the client supports pagination.
 func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.MessagesResult, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	msgs := b.messages[p.ConversationID]
-	if msgs == nil {
-		msgs = []wire.Message{}
+	ctx, finish, cli, epoch := b.operation(ctx)
+	defer finish()
+	pager, ok := cli.(HistoryClient)
+	if !ok {
+		b.mu.RLock()
+		defer b.mu.RUnlock()
+		return wire.MessagesResult{ConversationID: p.ConversationID, Messages: append([]wire.Message{}, b.messages[p.ConversationID]...)}, nil
 	}
-	return wire.MessagesResult{
-		ConversationID: p.ConversationID,
-		Messages:       msgs,
-	}, nil
+	id, err := parseTelegramID(p.ConversationID)
+	if err != nil {
+		return wire.MessagesResult{}, err
+	}
+	before := int64(0)
+	if p.CursorID != "" {
+		before, err = parseTelegramMessageID(p.CursorID)
+		if err != nil {
+			return wire.MessagesResult{}, err
+		}
+	}
+	count := int(p.Count)
+	if count <= 0 {
+		count = 60
+	}
+	if count > 100 {
+		count = 100
+	}
+	page, err := pager.MessagesPage(ctx, id, before, count)
+	if err != nil {
+		return wire.MessagesResult{}, err
+	}
+	msgs := mapMessages(page.Messages, id)
+	result := wire.MessagesResult{ConversationID: p.ConversationID, Messages: msgs}
+	if page.HasMore && page.CursorID > 0 && (before == 0 || page.CursorID < before) {
+		result.HasMore = true
+		result.CursorID = fmt.Sprintf("tg:%d", page.CursorID)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.epoch != epoch || ctx.Err() != nil {
+		return wire.MessagesResult{}, context.Canceled
+	}
+	b.messages[p.ConversationID] = mergeHistory(b.messages[p.ConversationID], msgs)
+	if err := b.saveLocked(); err != nil {
+		b.log.Warn().Err(err).Msg("Could not save Telegram history")
+	}
+	return result, nil
 }
 
 func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, error) {
-	b.mu.RLock()
-	cli := b.client
-	b.mu.RUnlock()
+	ctx, finish, cli, epoch := b.operation(ctx)
+	defer finish()
 	sender, ok := cli.(SendClient)
 	if !ok {
 		return nil, ErrNotConfigured
@@ -576,14 +678,18 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, e
 	converted.TmpID = p.TmpID
 	converted.Status = wire.DeliverySent
 	converted.Delivery = wire.DeliverySent
-	b.ingestMessage(msg)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err := b.ingestMessageFor(msg, epoch); err != nil {
+		return nil, err
+	}
 	return &converted, nil
 }
 
 func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.SendMediaResult, error) {
-	b.mu.RLock()
-	cli := b.client
-	b.mu.RUnlock()
+	ctx, finish, cli, epoch := b.operation(ctx)
+	defer finish()
 	sender, ok := cli.(MediaClient)
 	if !ok {
 		return nil, ErrNotConfigured
@@ -631,7 +737,12 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.
 			Path: p.Path,
 		}}
 	}
-	b.ingestMessage(msg)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err := b.ingestMessageFor(msg, epoch); err != nil {
+		return nil, err
+	}
 	return &wire.SendMediaResult{Message: &out}, nil
 }
 
@@ -643,9 +754,8 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaRes
 	if key == "" {
 		return nil, fmt.Errorf("empty Telegram media key: %w", ErrNotConfigured)
 	}
-	b.mu.RLock()
-	cli := b.client
-	b.mu.RUnlock()
+	ctx, finish, cli, epoch := b.operation(ctx)
+	defer finish()
 	media, ok := cli.(MediaClient)
 	if !ok {
 		return nil, ErrNotConfigured
@@ -654,14 +764,21 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaRes
 	if err != nil {
 		return nil, err
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.epoch != epoch || ctx.Err() != nil {
+		return nil, context.Canceled
+	}
+	if err := appStore.PruneMedia(b.paths.TelegramMediaDir(), path); err != nil {
+		b.log.Warn().Err(err).Msg("Could not trim Telegram media")
+	}
 	return &wire.MediaResult{Key: key, Path: path}, nil
 }
 
 // MarkRead acknowledges Telegram history and clears the local unread flag.
 func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
-	b.mu.RLock()
-	cli := b.client
-	b.mu.RUnlock()
+	ctx, finish, cli, epoch := b.operation(ctx)
+	defer finish()
 	syncClient, ok := cli.(SyncClient)
 	if !ok {
 		return ErrNotConfigured
@@ -672,7 +789,7 @@ func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 	}
 	messageID := int64(0)
 	if p.MessageID != "" {
-		messageID, err = parseTelegramID(p.MessageID)
+		messageID, err = parseTelegramMessageID(p.MessageID)
 		if err != nil {
 			return err
 		}
@@ -681,16 +798,15 @@ func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 		return err
 	}
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.epoch != epoch || ctx.Err() != nil {
+		return context.Canceled
+	}
 	if conv, exists := b.convs[p.ConversationID]; exists {
 		conv.Unread = false
 		b.convs[p.ConversationID] = conv
 	}
-	snapshot := storedData{Conversations: b.convs, Order: b.order, Messages: b.messages}
-	b.mu.Unlock()
-	if b.paths != nil {
-		return saveStoredData(b.paths.TelegramStoreFile(), snapshot)
-	}
-	return nil
+	return b.saveLocked()
 }
 
 // StartPairing initiates the gotd QR authentication flow in a context-safe way.
@@ -829,45 +945,20 @@ func (b *Backend) StartPairing(ctx context.Context) (string, error) {
 func (b *Backend) listenQRChannel(qrChan <-chan QRChannelItem, cancel context.CancelFunc, gen uint64) {
 	for item := range qrChan {
 		b.mu.Lock()
-		if b.gen != gen {
+		if b.gen != gen || b.stopping {
 			b.mu.Unlock()
 			return
 		}
-		b.mu.Unlock()
-
+		terminal := false
 		switch item.Event {
 		case QRChannelEventCode:
-			b.setQRURL(item.Code)
+			b.status.QRURL = item.Code
 		case QRChannelEventSuccess:
-			b.mu.Lock()
-			if b.gen != gen {
-				b.mu.Unlock()
-				return
-			}
 			b.paired = true
 			b.status.State = wire.StateConnected
-			b.status.QRURL = ""
-			b.status.Hint = ""
-			b.status.Error = ""
-			st := b.status
-			b.mu.Unlock()
-
-			if b.publish != nil {
-				b.publish(wire.Event{
-					Event:   wire.EventStatus,
-					Network: wire.NetworkTelegram,
-					Data:    st,
-				})
-			}
-			b.log.Info().Msg("Telegram pairing completed successfully")
-			return
+			b.status.QRURL, b.status.Hint, b.status.Error = "", "", ""
+			terminal = true
 		case QRChannelEventError:
-			cancel()
-			b.mu.Lock()
-			if b.gen != gen {
-				b.mu.Unlock()
-				return
-			}
 			b.status.State = wire.StateUnpaired
 			b.status.Hint = hintCredentialsConfigured
 			b.status.QRURL = ""
@@ -876,17 +967,20 @@ func (b *Backend) listenQRChannel(qrChan <-chan QRChannelItem, cancel context.Ca
 			} else if item.Error != nil {
 				b.status.Error = "Telegram pairing failed: " + item.Error.Error()
 			}
-			st := b.status
+			terminal = true
+		default:
 			b.mu.Unlock()
-
-			if b.publish != nil {
-				b.publish(wire.Event{
-					Event:   wire.EventStatus,
-					Network: wire.NetworkTelegram,
-					Data:    st,
-				})
+			continue
+		}
+		// Keep generation validation and event publication atomic with unpair.
+		if b.publish != nil {
+			b.publish(wire.Event{Event: wire.EventStatus, Network: wire.NetworkTelegram, Data: b.status})
+		}
+		b.mu.Unlock()
+		if terminal {
+			if item.Event == QRChannelEventError {
+				cancel()
 			}
-			b.log.Warn().Err(item.Error).Msg("Telegram QR pairing failed")
 			return
 		}
 	}
@@ -909,6 +1003,7 @@ func (b *Backend) Unpair(ctx context.Context) error {
 	b.convs = make(map[string]wire.Conversation)
 	b.order = nil
 	b.messages = make(map[string][]wire.Message)
+	b.retireAccountLocked()
 	b.client = nil
 	b.paired = false
 	b.mu.Unlock()
@@ -965,6 +1060,7 @@ func (b *Backend) Stop() {
 
 	b.mu.Lock()
 	cli := b.client
+	b.retireAccountLocked()
 	b.client = nil
 	b.paired = false
 	b.mu.Unlock()
@@ -976,9 +1072,8 @@ func (b *Backend) Stop() {
 
 // Refresh performs a no-op refresh while unpaired.
 func (b *Backend) Refresh(ctx context.Context) error {
-	b.mu.RLock()
-	cli := b.client
-	b.mu.RUnlock()
+	ctx, finish, cli, epoch := b.operation(ctx)
+	defer finish()
 	reader, ok := cli.(ReadClient)
 	if !ok {
 		return nil
@@ -1000,23 +1095,34 @@ func (b *Backend) Refresh(ctx context.Context) error {
 		msgs[conv.ID] = mapMessages(items, id)
 	}
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.epoch != epoch || ctx.Err() != nil {
+		return context.Canceled
+	}
+	// Preserve updates that arrived while the provider page was in flight.
+	for id, items := range b.messages {
+		msgs[id] = mergeHistory(msgs[id], items)
+	}
 	b.convs, b.order, b.messages = make(map[string]wire.Conversation, len(convs)), order, msgs
 	for _, conv := range convs {
 		b.convs[conv.ID] = conv
 	}
-	snapshot := storedData{Conversations: b.convs, Order: b.order, Messages: b.messages}
-	b.mu.Unlock()
-	if b.paths != nil {
-		return saveStoredData(b.paths.TelegramStoreFile(), snapshot)
-	}
-	return nil
+	return b.saveLocked()
 }
 
 func parseTelegramID(value string) (int64, error) {
 	value = strings.TrimPrefix(value, "tg:")
 	id, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || id <= 0 {
+	if err != nil || id == 0 || id < -4000000000000 || id > 1099511627775 {
 		return 0, fmt.Errorf("invalid Telegram ID %q", value)
+	}
+	return id, nil
+}
+
+func parseTelegramMessageID(value string) (int64, error) {
+	id, err := strconv.ParseInt(strings.TrimPrefix(value, "tg:"), 10, 64)
+	if err != nil || id <= 0 || id > 2147483647 {
+		return 0, fmt.Errorf("invalid Telegram message ID %q", value)
 	}
 	return id, nil
 }

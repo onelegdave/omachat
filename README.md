@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, and Telegram.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current release: **0.3.11**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.11).
+Current release: **0.3.12**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.12).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -33,7 +33,7 @@ omarchy plugin add https://github.com/onelegdave/omachat --enable
 ```
 
 Open OmaChat from the bar. All services use one helper, `omachatd`, built
-locally from vendored source. Building requires **Go and a C compiler
+locally from vendored source. Building requires **Go, Python 3, and a C compiler
 (gcc or clang)**, even if you only use Google Messages or Telegram.
 No helper binary is shipped in Git or downloaded by OmaChat.
 
@@ -51,7 +51,7 @@ manager's own confirmation prompt. You decide which tools and features you want.
 You can also install tools manually. For example:
 
 ```bash
-omarchy pkg add go gcc
+omarchy pkg add go gcc python
 ```
 
 Then select **Build helper** in the panel. This compiles the included source
@@ -65,6 +65,39 @@ Install action can request sudo in a terminal, after your confirmation.
 
 See [dependencies and optional features](docs/dependencies.md) for the full
 tool list. Availability varies by desktop; do not assume a tool is installed.
+
+## Updates
+
+Open **Settings > Updates** to see your installed version, check for a newer
+release, and read its release notes. Daily checks are optional and off by
+default. Checks contact GitHub for public release metadata; they do not send
+messages or account credentials. GitHub can see the request's IP address.
+You can dismiss a release notice until another release is available.
+
+Select **Update** to open Omarchy's updater in a terminal. Review its changes
+and confirm there. You can also run it yourself:
+
+```bash
+omarchy plugin update onelegdave.omachat
+```
+
+After the plugin reloads, follow any **Rebuild helper** notice in Settings.
+Wait for the build and helper restart to finish before treating the update as
+complete. A failed build keeps the previous executable; review the error and
+retry after addressing it. Updating does not deliberately remove your paired
+accounts. Read release notes for any migration or re-pairing requirements.
+
+Omarchy's updater follows the repository's default branch, not a specific
+release tag. A canceled or failed update has not installed the release.
+If the panel does not reload, run `omarchy restart shell`, then check Settings
+again. If a helper outside this plugin is still running, the app may ask you
+to restart the shell rather than claiming the new helper is active. If that
+does not resolve it, stop the separately launched `omachatd` first.
+
+For notifications outside OmaChat, open the
+[GitHub repository](https://github.com/onelegdave/omachat), select **Watch >
+Custom > Releases**, and follow the
+[release notes](https://github.com/onelegdave/omachat/releases).
 
 ## Connect your services
 
@@ -135,11 +168,17 @@ to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google
 records M4A and Telegram records OGG/Opus. Google GIF search requires your own
 GIPHY API key in Settings; sending a local GIF does not require a key.
 
+Use Tab to move between controls, arrow keys and Enter to open a conversation,
+and Space or Enter to activate focused buttons. Pending and failed text sends
+remain visible when you return to their conversation during the current shell session.
+
 ## Privacy, storage, and removal
 
 Sessions, chat caches, media, and drafts are separated by service. All three
 services share the helper process and configuration file. Private files are
 kept locally; see [Security](SECURITY.md) for protections and limitations.
+Each service limits its downloaded attachment cache to 256 MiB and evicts older
+files as new downloads complete.
 
 | Location | Contents |
 | --- | --- |

@@ -47,6 +47,8 @@ Flickable {
   contentHeight: col.implicitHeight + Style.space(32)
   Controls.ScrollBar.vertical: Controls.ScrollBar { policy: Controls.ScrollBar.AsNeeded }
 
+  function showUpdates() { jumpTo(updatesSection) }
+
   function jumpTo(section) {
     contentY = Math.max(0, Math.min(section.y, contentHeight - height))
   }
@@ -196,6 +198,7 @@ Flickable {
       spacing: Style.space(8)
       Repeater {
         model: [
+          {label:"Updates", section:updatesSection},
           {label:"Services", section:serviceChoices},
           {label:"Service guides", section:servicesSection},
           {label:"Tools", section:toolsSection},
@@ -205,6 +208,9 @@ Flickable {
           {label:"About", section:aboutSection}
         ]
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           required property var modelData
           text: modelData.label
           bordered: true
@@ -213,6 +219,17 @@ Flickable {
           onClicked: root.jumpTo(modelData.section)
         }
       }
+    }
+
+    UpdateSettings {
+      id:updatesSection
+      objectName:"updatesSection"
+      width:parent.width
+      service:root.service
+      fontFamily:root.fontFamily
+      uiScale:root.uiScale
+      foreground:root.foreground
+      mutedColor:root.mutedColor
     }
 
     ServiceOptions {
@@ -268,7 +285,7 @@ Flickable {
         accent: root.accentColor
         fontFamily: root.fontFamily
         fontSize: fs(Style.font.body)
-        focusable: false
+        focusable: true
         onChanged: function(v) {
           var n = Number(v)
           if (!isFinite(n) || !root.service) return
@@ -497,6 +514,9 @@ Flickable {
       }
 
       Button {
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: text
         text: "Open my.telegram.org"
         bordered: true
         foreground: root.foreground
@@ -568,6 +588,9 @@ Flickable {
           spacing: Style.space(8)
 
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: text
             id: saveTgBtn
             objectName: "saveTelegramBtn"
             text: root.savingTelegram ? "Saving..." : "Save Telegram credentials"
@@ -579,6 +602,9 @@ Flickable {
           }
 
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: text
             id: deleteTgBtn
             objectName: "deleteTelegramBtn"
             visible: root.telegramConfigured
@@ -668,6 +694,9 @@ Flickable {
       }
 
       Button {
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: text
         text: "Open GIPHY Dashboard"
         bordered: true
         foreground: root.foreground
@@ -691,6 +720,9 @@ Flickable {
           onTextChanged: root.keyDraft = text
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           id: saveBtn
           text: root.saving ? "Saving" : "Save"
           bordered: true
@@ -702,6 +734,9 @@ Flickable {
       }
 
       Button {
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: text
         visible: root.giphyKeySet
         text: "Delete key"
         foreground: root.urgentColor
@@ -872,6 +907,9 @@ Flickable {
         width: parent.width
         spacing: Style.space(8)
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "Marc Ford"
           bordered: true
           foreground: root.foreground
@@ -879,6 +917,9 @@ Flickable {
           onClicked: root.openUrl("https://github.com/MarcFord/gmessages-omarchy-plugin")
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "mautrix"
           bordered: true
           foreground: root.foreground
@@ -886,6 +927,9 @@ Flickable {
           onClicked: root.openUrl("https://github.com/mautrix/gmessages")
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "whatsmeow"
           bordered: true
           foreground: root.foreground
@@ -893,6 +937,9 @@ Flickable {
           onClicked: root.openUrl("https://github.com/tulir/whatsmeow")
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "gotd/td"
           bordered: true
           foreground: root.foreground
@@ -900,6 +947,9 @@ Flickable {
           onClicked: root.openUrl("https://github.com/gotd/td")
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "Omarchy"
           bordered: true
           foreground: root.foreground
@@ -907,6 +957,9 @@ Flickable {
           onClicked: root.openUrl("https://omarchy.org/")
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "All credits and licenses"
           bordered: true
           foreground: root.foreground
@@ -951,6 +1004,9 @@ Flickable {
       Row {
         spacing: Style.space(8)
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "onelegdave.dev"
           bordered: true
           foreground: root.foreground
@@ -958,6 +1014,9 @@ Flickable {
           onClicked: root.openUrl(root.siteUrl)
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "OmaDroid"
           bordered: true
           foreground: root.foreground
@@ -965,6 +1024,9 @@ Flickable {
           onClicked: root.openUrl("https://github.com/onelegdave/omadroid")
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "System QuikView"
           bordered: true
           foreground: root.foreground
@@ -1008,6 +1070,9 @@ Flickable {
       Row {
         spacing: Style.space(8)
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "Report an issue"
           bordered: true
           foreground: root.foreground
@@ -1015,6 +1080,9 @@ Flickable {
           onClicked: root.openUrl(root.issuesUrl)
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: "GitHub repository"
           bordered: true
           foreground: root.foreground

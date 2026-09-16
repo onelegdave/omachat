@@ -60,6 +60,9 @@ Item {
   property string searchQuery: ""
   property string selectedConvID: ""
   property var _draftsByNet: ({})
+  property var _pendingSends: ({})
+  property var _networkEpochs: ({})
+  property int mediaSendToken: 0
   property int selectionGeneration: 0
   property var messages: []
   property var grouped: []
@@ -97,6 +100,7 @@ Item {
   property var pendingAnchor: null
   property string threadError: ""
   property var mediaPaths: ({})
+  property var _mediaNetworks: ({})
   property var mediaRequests: ({})
   property string pendingAttachment: ""
   property bool sendingMedia: false
@@ -159,6 +163,11 @@ Item {
     var prev = _previousNetwork
     _previousNetwork = network
     if (prev === network) return
+    mediaSendToken++
+    sendingMedia = false
+    mediaRequests = ({})
+    mediaRetry.queue = []
+    mediaRetry.stop()
     selectionGeneration++
     historyRequest++
     loadingMessages=false
@@ -307,7 +316,7 @@ Item {
       historyCursorStalled = true
       historyError = root.isWhatsApp
         ? "WhatsApp repeated the cached history cursor. Refresh the conversation to try again."
-        : "Google repeated the history cursor. Refresh the conversation to try again."
+        : (root.isTelegram ? "Telegram repeated the history cursor. Refresh the conversation to try again." : "Google repeated the history cursor. Refresh the conversation to try again.")
     }
     historyCursorID = id
     historyCursorTime = time
@@ -330,7 +339,15 @@ Item {
       if (!ok) { threadError = String(res); return }
       threadError = ""
       var initial = messages.length === 0
-      displayMessages(Model.mergePage(messages, res.messages || [], false), initial || messageList.atYEnd)
+      var fetched = res.messages || []
+      var netPending = root._pendingSends[root.network] || {}
+      var convPending = netPending[target] || []
+      var combined = Model.mergePage(convPending, fetched, false)
+      var remaining = convPending.filter(function(local) {
+        return !fetched.some(function(remote) { return Model.sameMessage(local, remote) })
+      })
+      root.storeLocalSends(root.network, target, remaining)
+      displayMessages(Model.mergePage(messages, combined, false), initial || messageList.atYEnd)
       historyError = ""
       if (!historyExpanded || historyCursorStalled) {
         readHistoryCursor(res, false)
@@ -370,27 +387,73 @@ Item {
 
   function sendMessage(rawText) {
     var text = (rawText || "").trim()
-    if (text === "" || selectedConvID === "" || !service) return
-    var convID = selectedConvID
+    if (text === "" || root.selectedConvID === "" || !root.service) return
+    var convID = root.selectedConvID
     var tmpID = Model.transactionID()
-    mergeMessage({
+    var targetNet = root.network
+    var epoch = root._networkEpochs[targetNet] || 0
+    root.mergeMessage({
       id: tmpID, tmpID: tmpID, conversationID: convID, text: text,
       timestamp: Date.now() * 1000, fromMe: true, pending: true, provisional: true, failed: false
-    })
-    service.call("send", { conversationID: convID, text: text, tmpID: tmpID }, function(ok, res) {
-      if (convID !== selectedConvID) return
-      if (ok) { mergeMessage(res); return }
-      displayMessages(Model.failSend(messages, tmpID), messageList.atYEnd)
-      threadError = String(res)
-    }, root.network)
+    }, targetNet)
+    root.service.call("send", { conversationID: convID, text: text, tmpID: tmpID }, function(ok, res) {
+      if ((root._networkEpochs[targetNet] || 0) !== epoch) return
+      var nextPending = Object.assign({}, root._pendingSends)
+      var netPending = Object.assign({}, nextPending[targetNet] || {})
+      var convPending = (netPending[convID] || []).slice()
+      if (ok) {
+        root.mergeMessage(Object.assign({}, res, {tmpID:tmpID}), targetNet, true)
+        return
+      }
+      convPending = Model.failSend(convPending, tmpID)
+      if (convPending.length > 0) netPending[convID] = convPending
+      else delete netPending[convID]
+      nextPending[targetNet] = netPending
+      root._pendingSends = nextPending
+
+      if (convID === root.selectedConvID && targetNet === root.network) {
+        root.displayMessages(Model.failSend(root.messages, tmpID), messageList.atYEnd)
+        root.threadError = String(res)
+      }
+    }, targetNet)
   }
 
-  function mergeMessage(msg) {
-    var follow = messages.length === 0 || messageList.atYEnd || (msg.fromMe && msg.provisional)
-    displayMessages(Model.mergeMessage(messages, msg), follow)
+  function chooseEmoji(emoji) {
+    if (!emoji) return
+    if (root.emojiPickerForReact && root.reactingTo) root.react(root.reactingTo, emoji)
+    else composer.text += emoji
+    root.emojiPickerOpen = false
+    root.emojiPickerForReact = false
+    composer.forceActiveFocus()
+  }
+
+  onEmojiPickerOpenChanged: if (emojiPickerOpen) Qt.callLater(function() { emojiGrid.forceActiveFocus() })
+
+  function storeLocalSends(net, convID, rows) {
+    var next = Object.assign({}, root._pendingSends)
+    var conversations = Object.assign({}, next[net] || {})
+    if (rows.length) conversations[convID] = rows
+    else delete conversations[convID]
+    next[net] = conversations
+    root._pendingSends = next
+  }
+
+  function mergeMessage(msg, targetNet, localSend) {
+    if (!msg) return
+    var net = targetNet || root.network
+    var convPending = (root._pendingSends[net] || {})[msg.conversationID] || []
+    if (msg.provisional || localSend || convPending.some(function(m) { return Model.sameMessage(m, msg) }))
+      root.storeLocalSends(net, msg.conversationID, Model.mergeMessage(convPending, msg))
+    if (net === root.network && msg.conversationID === root.selectedConvID) {
+      var follow = root.messages.length === 0 || messageList.atYEnd || (msg.fromMe && msg.provisional)
+      root.displayMessages(Model.mergeMessage(root.messages, msg), follow)
+    }
   }
 
   function _withMedia(mediaID, value) {
+    var owners = Object.assign({}, _mediaNetworks)
+    owners[mediaID] = root.network
+    _mediaNetworks = owners
     var next = {}
     for (var k in mediaPaths) next[k] = mediaPaths[k]
     next[mediaID] = value
@@ -412,33 +475,27 @@ Item {
   }
 
   function _clearMediaForNetwork(net) {
-    var targetNet = net || root.network
-    var nextPaths = {}
-    for (var k in mediaPaths) {
-      var separator = k.indexOf("\x1f")
-      var conversationID = separator >= 0 ? k.substring(0, separator) : k
-      var isWA = conversationID.indexOf("@") >= 0
-      if (targetNet === "whatsapp" && isWA) continue
-      if (targetNet === "gmessages" && !isWA) continue
-      nextPaths[k] = mediaPaths[k]
+    var target = net || root.network
+    var paths = {}, requests = {}, owners = {}
+    var keys = Object.assign({}, mediaPaths, mediaRequests, _mediaNetworks)
+    for (var key in keys) {
+      var owner = _mediaNetworks[key] || (key.indexOf("tg:") === 0 ? "telegram" : (key.indexOf("@") >= 0 ? "whatsapp" : "gmessages"))
+      if (owner === target) continue
+      if (mediaPaths[key]) paths[key] = mediaPaths[key]
+      if (mediaRequests[key]) requests[key] = mediaRequests[key]
+      owners[key] = owner
     }
-    mediaPaths = nextPaths
-
-    var nextReqs = {}
-    for (var rk in mediaRequests) {
-      var requestSeparator = rk.indexOf("\x1f")
-      var requestConversationID = requestSeparator >= 0 ? rk.substring(0, requestSeparator) : rk
-      var isWAKey = requestConversationID.indexOf("@") >= 0
-      if (targetNet === "whatsapp" && isWAKey) continue
-      if (targetNet === "gmessages" && !isWAKey) continue
-      nextReqs[rk] = mediaRequests[rk]
-    }
-    mediaRequests = nextReqs
+    mediaPaths = paths
+    mediaRequests = requests
+    _mediaNetworks = owners
     mediaRetry.queue = []
     mediaRetry.stop()
   }
 
   function setMediaRequest(key, state) {
+    var owners = Object.assign({}, _mediaNetworks)
+    owners[key] = root.network
+    _mediaNetworks = owners
     var next = Object.assign({}, mediaRequests)
     next[key] = state
     mediaRequests = next
@@ -449,7 +506,10 @@ Item {
     var tries = attempt === undefined ? 0 : attempt
     if (tries === 0 && (mediaRequests[key] === "loading" || (mediaRequests[key] === "ready" && mediaPaths[key]))) return
     setMediaRequest(key, "loading")
+    var targetNet = root.network
+    var epoch = root._networkEpochs[targetNet] || 0
     service.call("media", { key: key }, function(ok, res) {
+      if (targetNet !== root.network || epoch !== (root._networkEpochs[targetNet] || 0)) return
       if (ok && res && res.path) _withMedia(key, res.path)
       if (ok && res && res.path && !res.thumbnail) {
         setMediaRequest(key, "ready")
@@ -560,33 +620,40 @@ Item {
   }
 
   function sendAttachment(caption) {
-    if (!service || sendingMedia || pendingAttachment === "" || selectedConvID === "") return
-    stopPlayback()
-    threadError = ""
-    var path = pendingAttachment
-    var convID = selectedConvID
+    if (!root.service || root.sendingMedia || root.pendingAttachment === "" || root.selectedConvID === "") return
+    root.stopPlayback()
+    root.threadError = ""
+    var path = root.pendingAttachment
+    var convID = root.selectedConvID
+    var targetNet = root.network
+    var generation = root.selectionGeneration
+    var token = ++root.mediaSendToken
     var tmpID = Model.transactionID()
-    sendingMedia = true
-    service.call("sendMedia", { conversationID: convID, path: path, caption: caption || "", tmpID: tmpID },
+    root.sendingMedia = true
+    root.service.call("sendMedia", { conversationID: convID, path: path, caption: caption || "", tmpID: tmpID },
       function(ok, res) {
-        sendingMedia = false
-        if (convID !== selectedConvID) return
-        if (!ok) { threadError = String(res); return }
-        if (pendingAttachment === path) pendingAttachment = ""
-        pendingVoiceSeconds = 0
+        if (token !== root.mediaSendToken || generation !== root.selectionGeneration || targetNet !== root.network) return
+        root.sendingMedia = false
+        if (!ok) {
+           if (convID === root.selectedConvID && targetNet === root.network && generation === root.selectionGeneration)
+             root.threadError = String(res)
+           return
+        }
+        if (targetNet === root.network && root.pendingAttachment === path) root.pendingAttachment = ""
+        if (targetNet === root.network) root.pendingVoiceSeconds = 0
         if (res.message && res.message.attachments) {
           for (var ai = 0; ai < res.message.attachments.length; ai++) {
             var sentAttachment = res.message.attachments[ai]
             if (sentAttachment && sentAttachment.key) root._withMedia(sentAttachment.key, path)
           }
         }
-        mergeMessage(res.message)
-        if (res.captionMessage) mergeMessage(res.captionMessage)
-        if (res.captionError) {
+        root.mergeMessage(res.message, targetNet, true)
+        if (res.captionMessage) root.mergeMessage(res.captionMessage, targetNet, true)
+        if (res.captionError && convID === root.selectedConvID && targetNet === root.network && generation === root.selectionGeneration) {
           if (composer.text === "") composer.text = String(caption || "").trim()
-          threadError = "Attachment submitted, but the caption could not be confirmed. Check the conversation before retrying. " + String(res.captionError)
+          root.threadError = "Attachment submitted, but the caption could not be confirmed. Check the conversation before retrying. " + String(res.captionError)
         }
-      }, root.network)
+      }, targetNet)
   }
 
   function discardPendingCapture() {
@@ -759,16 +826,16 @@ Item {
 
   readonly property var statusWA: service && typeof service.statusFor === "function" ? service.statusFor("whatsapp") : (service ? service.statusWA : null)
   onStatusWAChanged: if (statusWA && statusWA.state === "unpaired") root.clearNetwork("whatsapp")
+  readonly property var statusTG: service && typeof service.statusFor === "function" ? service.statusFor("telegram") : (service ? service.statusTG : null)
+  onStatusTGChanged: if (statusTG && statusTG.state === "unpaired") root.clearNetwork("telegram")
   readonly property var statusGM: service && typeof service.statusFor === "function" ? service.statusFor("gmessages") : (service ? service.status : null)
   onStatusGMChanged: if (statusGM && statusGM.state === "unpaired") root.clearNetwork("gmessages")
 
   Connections {
     target: root.service
     function onMessageReceived(msg, net) {
-      if (net && net !== root.network) return
-      if (msg.conversationID !== root.selectedConvID) return
-      root.mergeMessage(msg)
-      if (root.panelOpen && !msg.fromMe) root.markThreadRead()
+      root.mergeMessage(msg, net || root.network)
+      if ((!net || net === root.network) && msg.conversationID === root.selectedConvID && root.panelOpen && !msg.fromMe) root.markThreadRead()
     }
     function onPaired(net) {
       root.clearNetwork(net)
@@ -776,6 +843,17 @@ Item {
   }
 
   function clearNetwork(net) {
+    var targetNet = net || root.network
+    var epochs = Object.assign({}, root._networkEpochs)
+    epochs[targetNet] = (epochs[targetNet] || 0) + 1
+    root._networkEpochs = epochs
+    if (targetNet === root.network) {
+      root.mediaSendToken++; root.sendingMedia = false
+      root.stopPlayback()
+      if (root.recording) root.stopRecording(false)
+      root.pendingAttachment = ""
+      attachCaption.text = ""
+    }
     if (net && net !== root.network) {
       var nextSel = Object.assign({}, root._selectedByNet)
       delete nextSel[net]
@@ -783,6 +861,9 @@ Item {
       var nextDrafts = Object.assign({}, root._draftsByNet)
       delete nextDrafts[net]
       root._draftsByNet = nextDrafts
+      var nextPending = Object.assign({}, root._pendingSends)
+      delete nextPending[net]
+      root._pendingSends = nextPending
       root._clearMediaForNetwork(net)
       return
     }
@@ -795,9 +876,12 @@ Item {
     var d2 = Object.assign({}, root._draftsByNet)
     delete d2[root.network]
     root._draftsByNet = d2
+    var p2 = Object.assign({}, root._pendingSends)
+    delete p2[root.network]
+    root._pendingSends = p2
     root.messages = []
     root.grouped = []
-    if (root.composer) root.composer.text = ""
+    composer.text = ""
     root._clearMediaForNetwork(root.network)
   }
 
@@ -996,6 +1080,17 @@ Item {
 
     ListView {
       id: convList
+      objectName: "convList"
+      activeFocusOnTab: true
+      keyNavigationEnabled: true
+      Accessible.role: Accessible.List
+      Accessible.name: "Conversations"
+      Keys.onReturnPressed: {
+        if (currentItem && currentItem.modelData) root.selectConversation(currentItem.modelData.id)
+      }
+      Keys.onEnterPressed: {
+        if (currentItem && currentItem.modelData) root.selectConversation(currentItem.modelData.id)
+      }
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: unreadChip.visible ? unreadChip.bottom : searchField.bottom
@@ -1008,7 +1103,10 @@ Item {
 
       delegate: Rectangle {
         id: convItem
+        required property int index
         required property var modelData
+        Accessible.role: Accessible.ListItem
+        Accessible.name: modelData.name || "Conversation"
         readonly property bool selected: modelData.id === root.selectedConvID
         width: convList.width
         height: Math.max(Style.space(60), fs(Style.font.bodySmall) + fs(Style.font.caption) + Style.space(24))
@@ -1016,8 +1114,8 @@ Item {
         color: selected
           ? root.selectedFill
           : (convMouse.containsMouse ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent")
-        border.width: selected ? 1 : 0
-        border.color: Color.accent
+        border.width: selected || (convItem.ListView.isCurrentItem && convList.activeFocus) ? 1 : 0
+        border.color: convItem.ListView.isCurrentItem && convList.activeFocus ? Color.accent : (selected ? Color.accent : "transparent")
 
         Rectangle {
           visible: convItem.selected
@@ -1033,7 +1131,7 @@ Item {
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: root.selectConversation(convItem.modelData.id)
+          onClicked: { convList.currentIndex = index; convList.forceActiveFocus(); root.selectConversation(convItem.modelData.id) }
         }
 
         Avatar {
@@ -1191,9 +1289,12 @@ Item {
       anchors.top: threadSep.bottom
       height: root.selectedConvID !== "" ? Math.max(Style.space(40), historyStatus.implicitHeight + Style.space(12), children[0].implicitHeight) : 0
       spacing: Style.space(8)
-      visible: root.selectedConvID !== "" && root.messages.length > 0
+      visible: root.selectedConvID !== "" && (root.messages.length > 0 || root.hasOlder)
 
       Button {
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: root.loadingOlder ? "Loading older messages..." : "Load older messages"
         objectName: "loadOlderButton"
         anchors.verticalCenter: parent.verticalCenter
         visible: root.hasOlder || root.loadingOlder
@@ -1598,6 +1699,9 @@ Item {
             Repeater {
               model: root.reactionChoices
               Button {
+                focusable: true
+                Accessible.role: Accessible.Button
+                Accessible.name: modelData
                 required property string modelData
                 text: modelData
                 bordered: true
@@ -1614,6 +1718,9 @@ Item {
               }
             }
             Button {
+              focusable: true
+              Accessible.role: Accessible.Button
+              Accessible.name: "+"
               text: "+"
               bordered: true
               tooltipText: "More reactions"
@@ -1663,6 +1770,9 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(6)
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: root.playingVoice ? "Stop" : "Play"
             text: root.playingVoice ? "Stop" : "Play"
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -1670,6 +1780,9 @@ Item {
             onClicked: root.playingVoice ? root.stopPlayback() : root.playPendingVoice()
           }
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: "Redo"
             text: "Redo"
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -1677,6 +1790,9 @@ Item {
             onClicked: { root.stopPlayback(); root.startRecording() }
           }
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: "Cancel"
             text: "Cancel"
             foreground: root.dim
             fontFamily: root.fontFamily
@@ -1684,6 +1800,9 @@ Item {
             onClicked: root.cancelAttachment()
           }
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: root.sendingMedia ? "Sending" : "Send"
             text: root.sendingMedia ? "Sending" : "Send"
             bordered: true
             foreground: root.foreground
@@ -1735,12 +1854,18 @@ Item {
         anchors.bottomMargin: Style.space(10)
         spacing: Style.space(6)
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: "Cancel"
           text: "Cancel"
           foreground: root.dim
           fontFamily: root.fontFamily
           onClicked: root.cancelAttachment()
         }
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: root.sendingMedia ? "Sending" : (root.pendingIsGif ? "Send GIF" : "Send image")
           text: root.sendingMedia ? "Sending" : (root.pendingIsGif ? "Send GIF" : "Send image")
           bordered: true
           foreground: root.foreground
@@ -1765,6 +1890,10 @@ Item {
 
       Button {
         id: sendButton
+        objectName: "sendButton"
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: "Send message"
         anchors.right: parent.right
         anchors.rightMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
@@ -1781,6 +1910,10 @@ Item {
 
       PanelActionButton {
         id: attachButton
+        objectName: "attachButton"
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: "Attach photo or GIF"
         anchors.left: parent.left
         anchors.leftMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
@@ -1797,6 +1930,9 @@ Item {
       PanelActionButton {
         id: micButton
         objectName: "micButton"
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: "Microphone"
         visible: !root.isWhatsApp
         anchors.left: attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
@@ -1814,6 +1950,9 @@ Item {
       PanelActionButton {
         id: gifButton
         objectName: "gifButton"
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: "Search GIFs"
         visible: !root.isWhatsApp && !root.isTelegram
         anchors.left: micButton.visible ? micButton.right : attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
@@ -1830,6 +1969,9 @@ Item {
 
       PanelActionButton {
         id: emojiButton
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: "Insert emoji"
         anchors.left: gifButton.visible ? gifButton.right : (micButton.visible ? micButton.right : attachButton.right)
         anchors.leftMargin: Style.space(2)
         anchors.verticalCenter: parent.verticalCenter
@@ -1915,6 +2057,9 @@ Item {
         }
 
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: "Open settings"
           visible: root.gifNeedsKey
           text: "Open settings"
           bordered: true
@@ -1937,6 +2082,14 @@ Item {
         }
 
         GridView {
+          id: gifGrid
+          activeFocusOnTab: true
+          keyNavigationEnabled: true
+          Keys.onReturnPressed: if (currentItem) root.pickGif(currentItem.modelData)
+          Keys.onEnterPressed: if (currentItem) root.pickGif(currentItem.modelData)
+          Keys.onEscapePressed: { root.gifPickerOpen = false; composer.forceActiveFocus() }
+          highlight: Rectangle { color: "transparent"; border.width: 2; border.color: Color.accent }
+          highlightFollowsCurrentItem: true
           width: parent.width
           height: Style.space(128)
           visible: !root.gifNeedsKey
@@ -1995,6 +2148,15 @@ Item {
       clip: true
 
       GridView {
+        id: emojiGrid
+        objectName: "emojiGrid"
+        activeFocusOnTab: true
+        keyNavigationEnabled: true
+        Keys.onReturnPressed: if (currentItem) root.chooseEmoji(currentItem.text)
+        Keys.onEnterPressed: if (currentItem) root.chooseEmoji(currentItem.text)
+        Keys.onEscapePressed: { root.emojiPickerOpen = false; composer.forceActiveFocus() }
+        highlight: Rectangle { color: "transparent"; border.width: 2; border.color: Color.accent }
+        highlightFollowsCurrentItem: true
         anchors.fill: parent
         anchors.margins: Style.space(8)
         cellWidth: Style.space(52)
@@ -2014,16 +2176,7 @@ Item {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
             onClicked: {
-              var emoji = parent.text
-              if (root.emojiPickerForReact && root.reactingTo) {
-                root.react(root.reactingTo, emoji)
-                root.emojiPickerOpen = false
-                root.emojiPickerForReact = false
-                return
-              }
-              composer.text += emoji
-              root.emojiPickerOpen = false
-              composer.forceActiveFocus()
+              root.chooseEmoji(parent.text)
             }
           }
         }

@@ -41,6 +41,17 @@ type ReadClient interface {
 	Messages(ctx context.Context, conversationID int64, limit int) ([]Message, error)
 }
 
+// HistoryClient is an optional capability for fetching older pages of a
+// conversation's history. beforeID is exclusive: passing the oldest message
+// ID already held returns the page immediately preceding it. A zero beforeID
+// returns the most recent page. Implementations that don't support paging
+// need not satisfy this interface; callers should type-assert for it.
+type HistoryClient interface {
+	MessagesPage(ctx context.Context, conversationID int64, beforeID int64, limit int) (HistoryPage, error)
+}
+
+var _ HistoryClient = (*GotdClient)(nil)
+
 // SyncClient adds the operation needed to acknowledge a conversation after it
 // has been opened. Keeping it separate preserves the read-only seam used by
 // offline clients and tests.
@@ -118,4 +129,11 @@ func initials(name string) string {
 		return string(r)
 	}
 	return "?"
+}
+
+// HistoryPage preserves the raw cursor even when a page contains only service events.
+type HistoryPage struct {
+	Messages []Message
+	CursorID int64
+	HasMore  bool
 }

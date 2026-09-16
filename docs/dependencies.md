@@ -25,13 +25,14 @@ All three services share a locally compiled helper:
 | Requirement | Purpose | Your choice |
 | --- | --- | --- |
 | Go 1.27.0 or newer (see `go.mod`) | Compile the helper from `vendor/` | Install Go yourself if you want to build and use OmaChat |
+| Python 3 | Offline helper builds, source checks, release checks, and setup tools | Required for the in-app build and update workflow |
 | C compiler (`gcc` or `clang`) | CGO SQLite in the shared helper | Required at build time for every service |
 | `qrencode` | Render pairing QR codes | Needed for WhatsApp/Telegram QR pairing and Google's QR fallback |
 
 Example build-tool installation, only if you choose to run it:
 
 ```bash
-omarchy pkg add go gcc
+omarchy pkg add go gcc python
 ```
 
 Then choose **Build helper**. Source dependencies are already in `vendor/`;

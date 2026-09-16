@@ -24,7 +24,7 @@ TOOLS = [
     tool("libsecret", "Secret Service tool", "Google browser pairing; also needs an unlocked desktop keyring.", ["secret-tool"], "libsecret"),
     tool("clipboard", "Wayland clipboard", "Copy message text.", ["wl-copy"], "wl-clipboard"),
     tool("xdg", "Desktop link opener", "Open links, source pages, and downloaded files.", ["xdg-open"], "xdg-utils"),
-    tool("python", "Python 3", "Run this checklist and the Telegram credential setup assistant.", ["python3"], "python"),
+    tool("python", "Python 3", "Build and verify the helper, check releases, and run setup tools.", ["python3"], "python"),
 ]
 
 

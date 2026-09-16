@@ -141,6 +141,9 @@ Column {
     width: parent.width
     spacing: Style.space(8)
     Button {
+      focusable: true
+      Accessible.role: Accessible.Button
+      Accessible.name: text
       text: checklist.loading ? "Checking..." : "Recheck"
       bordered: true
       foreground: checklist.foreground
@@ -149,6 +152,9 @@ Column {
       onClicked: checklist.fetch()
     }
     Button {
+      focusable: true
+      Accessible.role: Accessible.Button
+      Accessible.name: text
       text: "Dependency guide"
       bordered: true
       foreground: checklist.foreground
@@ -156,6 +162,9 @@ Column {
       onClicked: checklist.openUrl("https://github.com/onelegdave/omachat/blob/main/docs/dependencies.md")
     }
     Button {
+      focusable: true
+      Accessible.role: Accessible.Button
+      Accessible.name: text
       text: "Review install code"
       bordered: true
       foreground: checklist.foreground
@@ -209,6 +218,9 @@ Column {
           spacing: Style.space(8)
 
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: text
             text: "Review source"
             objectName: "dependencySource-" + modelData.id
             bordered: true
@@ -218,6 +230,9 @@ Column {
           }
 
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: text
             objectName: "dependencyInstall-" + modelData.id
             visible: !modelData.installed
             enabled: !checklist.loading && checklist.pendingInstall === ""

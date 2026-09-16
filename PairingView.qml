@@ -201,6 +201,9 @@ Item {
       }
 
       Button {
+        focusable: true
+        Accessible.role: Accessible.Button
+        Accessible.name: text
         visible: root.qrError !== "" && root.isQR
         anchors.horizontalCenter: parent.horizontalCenter
         text: "Retry QR code"
@@ -242,6 +245,9 @@ Item {
         visible: !root.isGaia && !root.isWhatsApp && !root.isTelegram
 
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: root.isQR ? "Pair with Google instead" : (root.isError ? "Try again" : "Pair with Google")
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -250,6 +256,9 @@ Item {
         }
 
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           visible: !root.isQR
           text: "Use a QR code"
           foreground: root.dim
@@ -264,6 +273,9 @@ Item {
         visible: root.isWhatsApp && !root.isQR
 
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: root.isError ? "Try again" : "Use a QR code"
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -278,6 +290,9 @@ Item {
         visible: root.isTelegram && root.status && root.status.state !== "connected"
 
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           text: root.isQR ? "Pairing..." : (root.isError ? "Try again" : "Pair with Telegram")
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -287,6 +302,9 @@ Item {
         }
 
         Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
           visible: !root.isQR
           text: "Telegram settings"
           foreground: root.dim
@@ -320,6 +338,9 @@ Item {
           }
 
           Button {
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: text
             anchors.verticalCenter: parent.verticalCenter
             visible: root.profiles.length > 1
             text: root.profilePickerOpen ? "Hide" : "Change"

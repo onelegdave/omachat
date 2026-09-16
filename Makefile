@@ -1,5 +1,4 @@
 PLUGIN_ID := onelegdave.omachat
-VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 .PHONY: helper test test-ui lint validate clean
 
@@ -12,7 +11,7 @@ helper:
 		exit 1; \
 	fi
 	mkdir -p bin
-	CGO_ENABLED=1 go build -mod=vendor -ldflags "-X main.version=$(VERSION)" -o bin/omachatd ./cmd/omachatd
+	python3 scripts/updates.py build
 
 test:
 	go test -mod=vendor ./...

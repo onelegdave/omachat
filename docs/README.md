@@ -1,6 +1,6 @@
 # OmaChat documentation
 
-Current user documentation describes OmaChat v0.3.11, a Native Omarchy Plugin
+Current user documentation describes OmaChat v0.3.12, a Native Omarchy Plugin
 for Google Messages, WhatsApp, and Telegram.
 
 - [Theme screenshots with fictional chats](screenshots/README.md)
@@ -15,7 +15,7 @@ for Google Messages, WhatsApp, and Telegram.
 - [Development and release workflow](../CONTRIBUTING.md)
 - [Security and local data](../SECURITY.md)
 - [Credits and third-party notices](../CREDITS.md)
-- [Optional service selection proposal](service-selection-plan.md) (not yet implemented)
+- [Optional service selection proposal](service-selection-plan.md) (historical design; service selection is implemented)
 - [Release notes](https://github.com/onelegdave/omachat/releases)
 - [Functionality follow-up](feature-roadmap.md)
 - [Historical reviews and verification](history/README.md)
