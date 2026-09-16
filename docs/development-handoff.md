@@ -74,12 +74,12 @@ vendored `mautrix-meta` client. It currently includes:
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
-The active installed checkout was fast-forwarded to `d5b2773` on 2026-09-16.
+The active installed checkout was fast-forwarded to `c05462d` on 2026-09-16.
 The helper was rebuilt from vendored source, and the Omarchy shell was cleanly
-restarted after the WhatsApp cross-platform audio fallback. The new shell-owned
-helper (PID `1556429`) reported source fingerprint
-`8eb78583b090ebf9d0b0269e41341efabdb3826067e53138f4a49365e1a87ab1`
-through the live owner-only socket, and WhatsApp reported connected. OneLegDave
+restarted after Telegram reactions and the helper-connection feedback were
+installed. The new shell-owned helper (PID `81867`) reported source fingerprint
+`940f20c58f92f60e1e9464a4bd7ee792d6df96a5f29d12e4998717119a163aec`
+through the live owner-only socket, and Telegram reported connected. OneLegDave
 already live-confirmed the cross-service notification badges and subsequently
 confirmed that the cross-platform WhatsApp audio fallback plays successfully
 on the previously failing iPhone.
@@ -194,9 +194,10 @@ go test -race -mod=vendor -count=1 ./...
 git diff --check
 ```
 
-At handoff creation on 2026-09-16, every command above passed on `dev` after
-the documentation change. No live account action was performed as part of
-those checks.
+At handoff update on 2026-09-16, every command above passed on `dev`. The exact
+feature commit was installed, its helper fingerprint matched the source, and
+Telegram reported connected. No message or reaction was sent as part of those
+checks.
 
 `make test-ui` uses synthetic content. Save screenshots only to a temporary
 artifact directory, inspect them, and remove them after review. A live
