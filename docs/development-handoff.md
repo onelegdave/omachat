@@ -41,15 +41,16 @@ evidence, but neither is the source of truth for branch state.
 | --- | --- | --- |
 | `origin/main` | Public stable releases only | `c4dcafa`, release `v0.3.13` |
 | `private-dev/dev` | Private integration branch and source of truth for active development | Messenger implementation and the completed live parity pass; the current branch tip contains this handoff after it is pushed |
-| `public-beta/beta` | Public, opt-in builds for invited testers | `371826f`, tagged `v0.4.0`, with current `dev` ancestry plus beta onboarding |
+| `public-beta/beta` | Public, opt-in builds for invited testers | `766bb84`, tagged and published as prerelease `v0.4.1`, with current `dev` ancestry plus beta onboarding |
 
 Develop on `dev` and push it only to `private-dev/dev`. The public beta now
-contains the verified Messenger development series through `ce16264`, merged as
-`371826f` while preserving its beta-only branding, onboarding, and reporting
-links. Promote later development work to `public-beta/beta` only when
-OneLegDave chooses it for beta testing. Stable promotion to `origin/main`,
-version changes, tags, releases, and marketplace updates are separate,
-explicit release work.
+contains the reviewed development series through `a9658b6`, merged as
+`766bb84` while preserving its beta-only branding, onboarding, and privacy-safe
+reporting links. Its manifest, README, About page, annotated `v0.4.1` tag, and
+public GitHub prerelease all agree on version 0.4.1. Promote later development
+work to `public-beta/beta` only when OneLegDave chooses it for beta testing.
+Stable promotion to `origin/main`, version changes, tags, releases, and
+marketplace updates are separate, explicit release work.
 
 The old `codex/messenger-backend` worktree branch is not the continuation
 point. Its single patch is patch-equivalent to work already integrated and
