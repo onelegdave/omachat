@@ -74,11 +74,11 @@ vendored `mautrix-meta` client. It currently includes:
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
-The active installed checkout remained at `4affe76` during the 2026-09-16 live
-parity pass, with a running shell-owned helper built from that source. The next
-`dev` commit, `6d28851`, only removes a private chat name from a test-fixture
-note, so there is no known runtime difference. Recheck this live instead of
-assuming it remains true.
+The active installed checkout was fast-forwarded to `ff95559` on 2026-09-16,
+the helper was rebuilt from vendored source, and the Omarchy shell was cleanly
+restarted. The new shell-owned helper connected successfully and the Messenger
+tab visibly loaded live conversation data. The feature-specific live actions
+below still require OneLegDave's confirmation.
 
 The 2026-09-16 live parity pass confirmed that a video-backed Messenger GIF
 stays inline and loops, a new incoming reply appears without sending or
@@ -100,6 +100,12 @@ with synthetic Go and QML coverage. The exact next work is a deliberate live
 Messenger pass for each feature, using only disposable content and recording no
 personal identifiers in fixtures or logs. Calling remains explicitly out of
 scope and unsupported.
+
+The synthetic gate passed `make test`, `make lint`, `make validate`,
+`make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and
+`git diff --check`. Live verification is pending for reaction add/remove,
+incoming and outgoing typing presence, recorded voice-note delivery, and a GIF
+chosen through search.
 
 ## Runtime and data safety
 
