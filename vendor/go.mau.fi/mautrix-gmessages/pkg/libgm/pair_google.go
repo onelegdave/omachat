@@ -493,7 +493,7 @@ func (c *Client) cancelGaiaPairing(ctx context.Context, sess *PairingSession) er
 	})
 }
 
-func buildGaiaPairingRequest(sess *PairingSession, action gmproto.ActionType, msg []byte) (*gmproto.GaiaPairingRequestContainer, gmproto.MessageType) {
+func (c *Client) sendGaiaPairingMessage(ctx context.Context, sess *PairingSession, action gmproto.ActionType, msg []byte) (*gmproto.GaiaPairingResponseContainer, error) {
 	reqContainer := &gmproto.GaiaPairingRequestContainer{
 		PairingAttemptID: sess.UUID.String(),
 		BrowserDetails:   util.BrowserDetailsMessage,
@@ -503,16 +503,10 @@ func buildGaiaPairingRequest(sess *PairingSession, action gmproto.ActionType, ms
 	msgType := gmproto.MessageType_GAIA_2
 	if action == gmproto.ActionType_CREATE_GAIA_PAIRING_CLIENT_FINISHED {
 		msgType = gmproto.MessageType_BUGLE_MESSAGE
-		reqContainer.PrivateAPIConfirmation = "This is an undocumented API. Use or access of undocumented Google APIs without express authorization is prohibited per the Google API Terms of Service (https://developers.google.com/terms)."
 	} else {
 		reqContainer.ProposedVerificationCodeVersion = 1
 		reqContainer.ProposedKeyDerivationVersion = 1
 	}
-	return reqContainer, msgType
-}
-
-func (c *Client) sendGaiaPairingMessage(ctx context.Context, sess *PairingSession, action gmproto.ActionType, msg []byte) (*gmproto.GaiaPairingResponseContainer, error) {
-	reqContainer, msgType := buildGaiaPairingRequest(sess, action, msg)
 	respCh, err := c.sessionHandler.sendAsyncMessage(ctx, SendMessageParams{
 		Action:      action,
 		Data:        reqContainer,
