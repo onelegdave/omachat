@@ -102,6 +102,15 @@ migrations can still make re-pairing necessary.
 
 ## Exact next work
 
+Google account pairing in the v0.4.1 beta regressed when commit `c23dcaf`
+re-vendored dependencies while adding Messenger and silently removed the
+v0.3.7 Gaia pairing backport. The `PrivateAPIConfirmation` finish-request
+field, error-code definitions 32 through 35, token/session synchronization,
+and the focused vendored regression test are restored on `dev`. The complete
+synthetic gate and independent Claude/agy reviews pass. A fresh-pair live check
+on oldsmaru and a corrected beta release are the next required steps; do not
+move the existing `v0.4.1` tag.
+
 Voice recording, GIF search, and reactions are implemented and live-confirmed
 by OneLegDave. The first reaction pass exposed a Messenger-only UI gate that hid
 the existing action; `081e75f` fixed it and the visible recheck passed. Typing
@@ -209,6 +218,12 @@ At handoff update on 2026-09-16, every command above passed on `dev`, including
 the product-claims regression test. The exact audited feature commit was
 installed, its helper fingerprint matched the source, and all four services
 reported connected. No message or reaction was sent as part of those checks.
+
+After restoring the Google Gaia pairing backport, the full gate passed again:
+`make test`, `make lint`, `make validate`, `make test-ui`,
+`go test -race -mod=vendor -count=1 ./...`, and `git diff --check`. The focused
+vendored test also fails against the regressed tree and passes with the restored
+request field. Live fresh-pair verification on oldsmaru remains pending.
 
 `make test-ui` uses synthetic content. Save screenshots only to a temporary
 artifact directory, inspect them, and remove them after review. A live
