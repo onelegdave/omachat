@@ -27,7 +27,8 @@ OpenTelemetry authors, and the maintainers of the modules listed in
 remain alongside their code in [vendor/](vendor/). The inventory below links
 the retained notices directly.
 
-Created and maintained by OneLegDave, with AI assistance from Codex.
+Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
+([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex.
 
 ## Vendored license inventory
 

@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, and Telegram.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current release: **0.3.12**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.12).
+Current release: **0.3.13**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.13).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -224,9 +224,14 @@ Marketplace submission is pending the [oldsmaru acceptance check](docs/oldsmaru-
 See [marketplace readiness](docs/marketplace-readiness.md) for check results,
 review capabilities, and their limits. OmaChat is not claiming marketplace approval.
 
+## Support my work
+
+I build OmaChat as a free, open-source project. If you find it useful, you can [buy me a coffee](https://buymeacoffee.com/onelegdave). Contributions are entirely optional and never required to use any feature.
+
 ## Credits and license
 
-Created and maintained by [OneLegDave](https://www.onelegdave.dev/), with AI assistance from Codex.
+Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
+([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex.
 
 The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin).
 Google Messages uses [mautrix libgm](https://github.com/mautrix/gmessages),

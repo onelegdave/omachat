@@ -28,6 +28,9 @@ Flickable {
   readonly property string siteUrl: "https://www.onelegdave.dev/"
   readonly property string repoUrl: "https://github.com/onelegdave/omachat"
   readonly property string issuesUrl: "https://github.com/onelegdave/omachat/issues"
+  readonly property string githubProfileUrl: "https://github.com/onelegdave"
+  readonly property string xProfileUrl: "https://x.com/OneLegDavePDX"
+  readonly property string coffeeUrl: "https://buymeacoffee.com/onelegdave"
 
   property bool giphyKeySet: false
   property string keyDraft: ""
@@ -1001,7 +1004,8 @@ Flickable {
         lineHeight: 1.25
       }
 
-      Row {
+      Flow {
+        width: parent.width
         spacing: Style.space(8)
         Button {
           focusable: true
@@ -1012,6 +1016,37 @@ Flickable {
           foreground: root.foreground
           fontFamily: root.fontFamily
           onClicked: root.openUrl(root.siteUrl)
+        }
+        Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          text: "GitHub"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl(root.githubProfileUrl)
+        }
+        Button {
+          visible: root.xProfileUrl.length > 0
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          text: "X"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl(root.xProfileUrl)
+        }
+        Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          text: "OmaChat"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl(root.repoUrl)
         }
         Button {
           focusable: true
@@ -1032,6 +1067,33 @@ Flickable {
           foreground: root.foreground
           fontFamily: root.fontFamily
           onClicked: root.openUrl("https://github.com/onelegdave/system-quikview")
+        }
+      }
+
+      Column {
+        width: parent.width
+        visible: root.coffeeUrl.length > 0
+        spacing: Style.space(8)
+
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "I build OmaChat as a free, open-source project. Support is entirely optional and never required to use any feature."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          lineHeight: 1.25
+        }
+
+        Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          text: "Buy Me a Coffee"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.openUrl(root.coffeeUrl)
         }
       }
     }
