@@ -40,6 +40,8 @@ var ErrNotConfigured = errors.New("Messenger client not configured")
 
 const unsupportedMessageText = "Unsupported Messenger message. Open Messenger to view it."
 
+const encryptedHistoryNotice = "Older messages in this end-to-end encrypted conversation are not currently supported. New messages will appear while OmaChat is connected."
+
 type sessionData struct {
 	Cookies map[string]string `json:"cookies"`
 }
@@ -508,8 +510,9 @@ func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.Mes
 	}
 	b.mu.RLock()
 	cli := b.client
+	threadType := b.threadTypes[thread]
 	b.mu.RUnlock()
-	if cli != nil {
+	if cli != nil && !threadType.IsWhatsApp() {
 		resp, fetchErr := cli.ExecuteTasks(ctx, &socket.FetchMessagesTask{ThreadKey: thread, Direction: 0, ReferenceTimestampMs: p.CursorTime, ReferenceMessageId: p.CursorID, SyncGroup: 1})
 		if fetchErr != nil {
 			return wire.MessagesResult{}, fetchErr
@@ -523,7 +526,11 @@ func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.Mes
 	if count > 0 && len(list) > count {
 		list = list[len(list)-count:]
 	}
-	return wire.MessagesResult{ConversationID: p.ConversationID, Messages: list}, nil
+	result := wire.MessagesResult{ConversationID: p.ConversationID, Messages: list}
+	if threadType.IsWhatsApp() {
+		result.HistoryNotice = encryptedHistoryNotice
+	}
+	return result, nil
 }
 func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, error) {
 	thread, err := strconv.ParseInt(p.ConversationID, 10, 64)

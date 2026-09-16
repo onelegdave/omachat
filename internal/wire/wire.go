@@ -275,6 +275,7 @@ type MessagesResult struct {
 	CursorID       string    `json:"cursorID,omitempty"`
 	CursorTime     int64     `json:"cursorTime,omitempty"`
 	HasMore        bool      `json:"hasMore"`
+	HistoryNotice  string    `json:"historyNotice,omitempty"`
 }
 
 type SendParams struct {

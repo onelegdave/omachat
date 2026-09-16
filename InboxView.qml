@@ -95,6 +95,7 @@ Item {
   property string historyCursorID: ""
   property double historyCursorTime: 0
   property string historyError: ""
+  property string historyNotice: ""
   property var historyCursors: ({})
   property int historyRequest: 0
   property int viewportRevision: 0
@@ -239,6 +240,7 @@ Item {
     historyCursorID = ""
     historyCursorTime = 0
     historyError = ""
+    historyNotice = ""
     historyCursors = ({})
     stopPlayback()
     if (recording) stopRecording(false)
@@ -350,6 +352,7 @@ Item {
       root.storeLocalSends(root.network, target, remaining)
       displayMessages(Model.mergePage(messages, combined, false), initial || messageList.atYEnd)
       historyError = ""
+      historyNotice = String(res.historyNotice || "")
       if (!historyExpanded || historyCursorStalled) {
         readHistoryCursor(res, false)
       }
@@ -1292,7 +1295,7 @@ Item {
       anchors.top: threadSep.bottom
       height: root.selectedConvID !== "" ? Math.max(Style.space(40), historyStatus.implicitHeight + Style.space(12), children[0].implicitHeight) : 0
       spacing: Style.space(8)
-      visible: root.selectedConvID !== "" && (root.messages.length > 0 || root.hasOlder)
+      visible: root.selectedConvID !== "" && (root.messages.length > 0 || root.hasOlder || root.historyNotice !== "")
 
       Button {
         focusable: true
@@ -1312,7 +1315,7 @@ Item {
         objectName: "historyStatus"
         anchors.verticalCenter: parent.verticalCenter
         width: Math.max(0, parent.width - (parent.children[0].visible ? parent.children[0].width + parent.spacing : 0))
-        text: root.historyError || (!root.hasOlder && !root.loadingMessages ? (root.isWhatsApp ? "Showing cached WhatsApp history. On-demand phone history is not requested in this version." : "All available history loaded") : "")
+        text: root.historyError || root.historyNotice || (!root.hasOlder && !root.loadingMessages ? (root.isWhatsApp ? "Showing cached WhatsApp history. On-demand phone history is not requested in this version." : "All available history loaded") : "")
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
         color: root.historyError ? root.errorInk : root.dim

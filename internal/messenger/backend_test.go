@@ -168,3 +168,29 @@ func TestHandleTableLabelsUnsupportedHistory(t *testing.T) {
 		t.Fatalf("unsupported historical message = %#v", got)
 	}
 }
+
+func TestEncryptedHistoryReturnsAnHonestNotice(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.threadTypes[9] = table.ENCRYPTED_OVER_WA_ONE_TO_ONE
+	b.messages["9"] = []wire.Message{{ID: "live", ConversationID: "9", Text: "received while connected"}}
+
+	result, err := b.Messages(context.Background(), wire.MessagesParams{ConversationID: "9", Count: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.HistoryNotice != encryptedHistoryNotice {
+		t.Fatalf("history notice = %q", result.HistoryNotice)
+	}
+	if len(result.Messages) != 1 || result.Messages[0].ID != "live" {
+		t.Fatalf("live encrypted messages = %#v", result.Messages)
+	}
+
+	b.threadTypes[10] = table.ONE_TO_ONE
+	result, err = b.Messages(context.Background(), wire.MessagesParams{ConversationID: "10", Count: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.HistoryNotice != "" {
+		t.Fatalf("unencrypted history notice = %q, want empty", result.HistoryNotice)
+	}
+}
