@@ -466,7 +466,7 @@ Flickable {
         Text {
           width: parent.width
           wrapMode: Text.Wrap
-          text: "• Setup: Sign in to facebook.com or messenger.com in Chrome, Chromium, or Brave, unlock the desktop keyring, then select Pair from browser in the Messenger tab. Pairing copies only the required session cookies into Messenger's private session store.\n• Features: Encrypted personal and group conversations, history, text sending, and read receipts.\n• Limitations: Meta does not provide a personal-inbox API, so this uses an unofficial protocol client that may break or require re-pairing when Meta changes its service. Calling and media sending are unavailable in the initial release."
+          text: "• Setup: Sign in to facebook.com or messenger.com in Chrome, Chromium, or Brave, unlock the desktop keyring, then select Pair from browser in the Messenger tab. Pairing copies only the required session cookies into Messenger's private session store.\n• Features: Encrypted personal and group conversations, history, text and media sending, read receipts, reactions, typing indicators, voice notes (with ffmpeg/ffplay), and optional GIPHY search.\n• Limitations: Meta does not provide a personal-inbox API, so this uses an unofficial protocol client that may break or require re-pairing when Meta changes its service. Calling is unavailable."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)
@@ -670,7 +670,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "Google Messages GIF search (optional)"
+        text: "Google Messages and Messenger GIF search (optional)"
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.heading)

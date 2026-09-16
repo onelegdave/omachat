@@ -22,26 +22,30 @@ const messengerCacheVersion = 1
 // respectively): everything here is safe to keep around so live messages and
 // thread classification survive a helper restart.
 type storedMessengerData struct {
-	Version       int                          `json:"version"`
-	SelfID        int64                        `json:"selfID,omitempty"`
-	Conversations map[string]wire.Conversation `json:"conversations"`
-	Messages      map[string][]wire.Message    `json:"messages"`
-	ContactNames  map[int64]string             `json:"contactNames"`
-	ThreadNames   map[int64]string             `json:"threadNames"`
-	Participants  map[int64][]int64            `json:"participants"`
-	ThreadTypes   map[int64]table.ThreadType   `json:"threadTypes"`
-	ThreadToJID   map[int64]waTypes.JID        `json:"threadToJID"`
+	Version        int                          `json:"version"`
+	SelfID         int64                        `json:"selfID,omitempty"`
+	Conversations  map[string]wire.Conversation `json:"conversations"`
+	Messages       map[string][]wire.Message    `json:"messages"`
+	ContactNames   map[int64]string             `json:"contactNames"`
+	ThreadNames    map[int64]string             `json:"threadNames"`
+	Participants   map[int64][]int64            `json:"participants"`
+	ThreadTypes    map[int64]table.ThreadType   `json:"threadTypes"`
+	ThreadToJID    map[int64]waTypes.JID        `json:"threadToJID"`
+	ReactionActors map[string]map[int64]string  `json:"reactionActors,omitempty"`
+	ReactionIDs    map[string]map[int64]string  `json:"reactionIDs,omitempty"`
 }
 
 func emptyStoredMessengerData() storedMessengerData {
 	return storedMessengerData{
-		Conversations: map[string]wire.Conversation{},
-		Messages:      map[string][]wire.Message{},
-		ContactNames:  map[int64]string{},
-		ThreadNames:   map[int64]string{},
-		Participants:  map[int64][]int64{},
-		ThreadTypes:   map[int64]table.ThreadType{},
-		ThreadToJID:   map[int64]waTypes.JID{},
+		Conversations:  map[string]wire.Conversation{},
+		Messages:       map[string][]wire.Message{},
+		ContactNames:   map[int64]string{},
+		ThreadNames:    map[int64]string{},
+		Participants:   map[int64][]int64{},
+		ThreadTypes:    map[int64]table.ThreadType{},
+		ThreadToJID:    map[int64]waTypes.JID{},
+		ReactionActors: map[string]map[int64]string{},
+		ReactionIDs:    map[string]map[int64]string{},
 	}
 }
 
@@ -74,6 +78,12 @@ func loadStoredMessengerData(path string) storedMessengerData {
 	}
 	if out.ThreadToJID == nil {
 		out.ThreadToJID = map[int64]waTypes.JID{}
+	}
+	if out.ReactionActors == nil {
+		out.ReactionActors = map[string]map[int64]string{}
+	}
+	if out.ReactionIDs == nil {
+		out.ReactionIDs = map[string]map[int64]string{}
 	}
 	return out
 }
@@ -148,20 +158,28 @@ func (b *Backend) mergeStoredMessengerDataLocked(data storedMessengerData) {
 		b.threadToJID[id] = jid
 		b.jidToThread[jid.ToNonAD().String()] = id
 	}
+	for messageID, actors := range data.ReactionActors {
+		b.reactionActors[messageID] = actors
+	}
+	for messageID, ids := range data.ReactionIDs {
+		b.reactionIDs[messageID] = ids
+	}
 }
 
 // snapshotStoredMessengerDataLocked captures the fields safe to persist.
 // Caller must hold b.mu.
 func (b *Backend) snapshotStoredMessengerDataLocked() storedMessengerData {
 	return storedMessengerData{
-		SelfID:        b.selfID,
-		Conversations: b.convs,
-		Messages:      b.messages,
-		ContactNames:  b.contactNames,
-		ThreadNames:   b.threadNames,
-		Participants:  b.participants,
-		ThreadTypes:   b.threadTypes,
-		ThreadToJID:   b.threadToJID,
+		SelfID:         b.selfID,
+		Conversations:  b.convs,
+		Messages:       b.messages,
+		ContactNames:   b.contactNames,
+		ThreadNames:    b.threadNames,
+		Participants:   b.participants,
+		ThreadTypes:    b.threadTypes,
+		ThreadToJID:    b.threadToJID,
+		ReactionActors: b.reactionActors,
+		ReactionIDs:    b.reactionIDs,
 	}
 }
 

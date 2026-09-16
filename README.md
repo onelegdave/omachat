@@ -120,10 +120,11 @@ start pairing again.
 | --- | --- | --- | --- | --- |
 | Conversation list, text, per-chat drafts | Yes | Yes | Yes | Yes |
 | Photos and captions | Yes | Yes | Yes | Yes |
-| Send GIF files | Yes | Yes | No dedicated GIF sending support | As a file attachment |
-| Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Incoming playback only |
-| GIPHY search | Optional personal API key | Unavailable | Unavailable | Unavailable |
-| Reactions | Yes | Unavailable | Unavailable | Unavailable initially |
+| Send GIF files | Yes | Yes | No dedicated GIF sending support | Yes |
+| Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
+| GIPHY search | Optional personal API key | Unavailable | Unavailable | Optional personal API key |
+| Reactions | Yes | Unavailable | Unavailable | Yes |
+| Typing indicators | No dedicated display | Unavailable | Unavailable | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
 | Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable |
@@ -165,10 +166,11 @@ Messenger sends a document caption as a separate message. Failed media downloads
 can be retried. Incoming GIFs play inline;
 video opens in an external player.
 
-For Google Messages or Telegram voice notes, choose **Rec**, record, **Play**
+For Google Messages, Telegram, or Messenger voice notes, choose **Rec**, record, **Play**
 to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google
-records M4A and Telegram records OGG/Opus. Google GIF search requires your own
-GIPHY API key in Settings; sending a local GIF does not require a key.
+and Messenger record M4A, and Telegram records OGG/Opus. Google and Messenger
+GIF search require your own GIPHY API key in Settings; sending a local GIF does
+not require a key.
 
 Use Tab to move between controls, arrow keys and Enter to open a conversation,
 and Space or Enter to activate focused buttons. Pending and failed text sends

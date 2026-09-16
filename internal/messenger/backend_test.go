@@ -213,6 +213,68 @@ func TestLateContactNameUpdatesStoredMessages(t *testing.T) {
 	}
 }
 
+func TestHandleTableAppliesMessengerReactionsAndTyping(t *testing.T) {
+	var published []wire.Event
+	b := New(zerolog.Nop(), nil, func(event wire.Event) { published = append(published, event) })
+	b.selfID = 1
+	b.contactNames[2] = "Ada"
+	b.handleTable(&table.LSTable{
+		LSUpsertMessage: []*table.LSUpsertMessage{{ThreadKey: 7, MessageId: "m1", Text: "hello", SenderId: 2}},
+		LSUpsertReaction: []*table.LSUpsertReaction{
+			{ThreadKey: 7, MessageId: "m1", ActorId: 1, Reaction: "👍"},
+			{ThreadKey: 7, MessageId: "m1", ActorId: 2, Reaction: "👍"},
+		},
+		LSUpdateTypingIndicator: []*table.LSUpdateTypingIndicator{{ThreadKey: 7, SenderId: 2, IsTyping: true}},
+	})
+	got := b.messages["7"][0]
+	if len(got.Reactions) != 1 || got.Reactions[0].Emoji != "👍" || got.Reactions[0].Count != 2 || !got.Reactions[0].Mine {
+		t.Fatalf("reactions = %#v", got.Reactions)
+	}
+	foundTyping := false
+	for _, event := range published {
+		state, ok := event.Data.(wire.Typing)
+		if event.Event == wire.EventTyping && ok && state.ConversationID == "7" && state.SenderName == "Ada" && state.Typing {
+			foundTyping = true
+		}
+	}
+	if !foundTyping {
+		t.Fatalf("typing event not published: %#v", published)
+	}
+	b.handleTable(&table.LSTable{LSDeleteReaction: []*table.LSDeleteReaction{{ThreadKey: 7, MessageId: "m1", ActorId: 1}}})
+	got = b.messages["7"][0]
+	if len(got.Reactions) != 1 || got.Reactions[0].Count != 1 || got.Reactions[0].Mine {
+		t.Fatalf("reaction removal = %#v", got.Reactions)
+	}
+}
+
+func TestHandleTablePreservesAndDeletesAggregateReactions(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.handleTable(&table.LSTable{
+		LSUpsertMessage:            []*table.LSUpsertMessage{{ThreadKey: 7, MessageId: "m1", Text: "hello", SenderId: 2}},
+		LSUpdateOrInsertReactionV2: []*table.LSUpdateOrInsertReactionV2{{ThreadKey: 7, MessageID: "m1", ReactionFBID: 9, ReactionLiteral: "❤️", Count: 3, ViewerIsReactor: true}},
+	})
+	b.handleTable(&table.LSTable{LSUpsertMessage: []*table.LSUpsertMessage{{ThreadKey: 7, MessageId: "m1", Text: "edited", SenderId: 2}}})
+	if got := b.messages["7"][0].Reactions; len(got) != 1 || got[0].Count != 3 || !got[0].Mine {
+		t.Fatalf("aggregate reaction after message upsert = %#v", got)
+	}
+	b.handleTable(&table.LSTable{LSDeleteReactionV2: []*table.LSDeleteReactionV2{{ThreadKey: 7, MessageID: "m1", ReactionFBID: 9}}})
+	if got := b.messages["7"][0].Reactions; len(got) != 0 {
+		t.Fatalf("aggregate reaction after delete = %#v", got)
+	}
+}
+
+func TestMessengerVoiceCaptureClassification(t *testing.T) {
+	if !messengerOutboundAudio("/tmp/voice-123.m4a", "application/octet-stream") {
+		t.Fatal("voice capture filename must be sent as audio")
+	}
+	if !messengerOutboundAudio("/tmp/note.bin", "audio/mp4") {
+		t.Fatal("audio MIME type must be sent as audio")
+	}
+	if messengerOutboundAudio("/tmp/photo.png", "image/png") {
+		t.Fatal("image must not be sent as audio")
+	}
+}
+
 func TestConversationNamesUseTitlesContactsAndParticipants(t *testing.T) {
 	b := New(zerolog.Nop(), nil, nil)
 	b.selfID = 1

@@ -367,8 +367,53 @@ func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(d.PluginConfig())
-	case wire.MethodDiscardCapture, wire.MethodReact, wire.MethodSetTyping, wire.MethodGifSearch, wire.MethodGifFetch:
-		return fail(errors.New("this feature is not supported on Messenger yet"))
+	case wire.MethodReact:
+		p, err := decodeParams[wire.ReactParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err = d.fb.React(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodSetTyping:
+		p, err := decodeParams[wire.SetTypingParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err = d.fb.SetTyping(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodDiscardCapture:
+		p, err := decodeParams[wire.DiscardCaptureParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err = d.DiscardCapture(p.Path); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodGifSearch:
+		p, err := decodeParams[wire.GifSearchParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.GifSearch(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodGifFetch:
+		p, err := decodeParams[wire.GifFetchParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		path, err := d.GifFetch(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(map[string]string{"path": path})
 	case wire.MethodStartPairing, wire.MethodGaiaPairing:
 		return fail(errors.New("use browser pairing for Messenger"))
 	default:

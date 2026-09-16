@@ -65,6 +65,8 @@ type Backend struct {
 	threadToJID    map[int64]waTypes.JID
 	jidToThread    map[string]int64
 	threadTypes    map[int64]table.ThreadType
+	reactionActors map[string]map[int64]string
+	reactionIDs    map[string]map[int64]string
 	media          map[string]*messengerMedia
 	contactAvatars map[int64]string
 	threadAvatars  map[int64]string
@@ -82,6 +84,8 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *B
 		threadNames: make(map[int64]string), participants: make(map[int64][]int64),
 		threadToJID: make(map[int64]waTypes.JID), jidToThread: make(map[string]int64),
 		threadTypes:    make(map[int64]table.ThreadType),
+		reactionActors: make(map[string]map[int64]string),
+		reactionIDs:    make(map[string]map[int64]string),
 		media:          make(map[string]*messengerMedia),
 		contactAvatars: make(map[int64]string),
 		threadAvatars:  make(map[int64]string),
@@ -280,6 +284,11 @@ func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 		cli.Disconnect()
 		return fmt.Errorf("connect E2EE transport: %w", err)
 	}
+	// Encrypted Messenger chats use the WhatsApp transport, which only emits
+	// chat-presence events while this device is marked available.
+	if err = e2ee.SendPresence(ctx, waTypes.PresenceAvailable); err != nil {
+		b.log.Warn().Err(err).Msg("Could not enable encrypted Messenger typing indicators")
+	}
 	b.mu.Lock()
 	b.e2eeClient = e2ee
 	b.mu.Unlock()
@@ -417,6 +426,29 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 			}
 		}
 	}
+	for _, reaction := range tbl.LSUpsertReaction {
+		if msg, ok := b.setActorReactionLocked(reaction.ThreadKey, reaction.MessageId, reaction.ActorId, reaction.Reaction); ok {
+			queue(msg)
+		}
+	}
+	for _, reaction := range tbl.LSDeleteReaction {
+		if msg, ok := b.setActorReactionLocked(reaction.ThreadKey, reaction.MessageId, reaction.ActorId, ""); ok {
+			queue(msg)
+		}
+	}
+	for _, reaction := range tbl.LSUpdateOrInsertReactionV2 {
+		if msg, ok := b.setAggregateReactionLocked(reaction.ThreadKey, reaction.MessageID, reaction.ReactionFBID, reaction.ReactionLiteral, int(reaction.Count), reaction.ViewerIsReactor); ok {
+			queue(msg)
+		}
+	}
+	for _, reaction := range tbl.LSDeleteReactionV2 {
+		if msg, ok := b.deleteAggregateReactionLocked(reaction.ThreadKey, reaction.MessageID, reaction.ReactionFBID); ok {
+			queue(msg)
+		}
+	}
+	for _, typing := range tbl.LSUpdateTypingIndicator {
+		b.publishTypingLocked(typing.ThreadKey, typing.SenderId, typing.IsTyping)
+	}
 	b.refreshConversationNamesLocked()
 	avatarJobs := b.avatarJobsLocked()
 	b.recountUnreadLocked()
@@ -450,6 +482,123 @@ func (b *Backend) setMappingLocked(threadKey, jid int64, typ table.ThreadType) {
 	b.threadToJID[threadKey] = j
 	b.jidToThread[j.ToNonAD().String()] = threadKey
 	b.threadTypes[threadKey] = typ
+}
+
+func (b *Backend) threadForJIDLocked(jid waTypes.JID) int64 {
+	thread := b.jidToThread[jid.String()]
+	if thread == 0 {
+		thread = parseUser(jid.User)
+		if thread != 0 {
+			typ := table.ENCRYPTED_OVER_WA_ONE_TO_ONE
+			if jid.Server == waTypes.GroupServer {
+				typ = table.ENCRYPTED_OVER_WA_GROUP
+			}
+			b.setMappingLocked(thread, thread, typ)
+		}
+	}
+	return thread
+}
+
+func (b *Backend) messageIndexLocked(thread int64, messageID string) (string, int, bool) {
+	key := strconv.FormatInt(thread, 10)
+	for i := range b.messages[key] {
+		if b.messages[key][i].ID == messageID {
+			return key, i, true
+		}
+	}
+	return key, -1, false
+}
+
+func (b *Backend) setActorReactionLocked(thread int64, messageID string, actor int64, emoji string) (wire.Message, bool) {
+	key, index, ok := b.messageIndexLocked(thread, messageID)
+	if !ok || actor == 0 {
+		return wire.Message{}, false
+	}
+	actors := b.reactionActors[messageID]
+	if actors == nil {
+		actors = make(map[int64]string)
+		b.reactionActors[messageID] = actors
+	}
+	if emoji == "" {
+		delete(actors, actor)
+	} else {
+		actors[actor] = emoji
+	}
+	counts := make(map[string]int)
+	mine := make(map[string]bool)
+	for reactor, value := range actors {
+		if value == "" {
+			continue
+		}
+		counts[value]++
+		if reactor == b.selfID {
+			mine[value] = true
+		}
+	}
+	emojis := make([]string, 0, len(counts))
+	for value := range counts {
+		emojis = append(emojis, value)
+	}
+	sort.Strings(emojis)
+	reactions := make([]wire.Reaction, 0, len(emojis))
+	for _, value := range emojis {
+		reactions = append(reactions, wire.Reaction{Emoji: value, Count: counts[value], Mine: mine[value]})
+	}
+	b.messages[key][index].Reactions = reactions
+	return b.messages[key][index], true
+}
+
+func (b *Backend) setAggregateReactionLocked(thread int64, messageID string, reactionID int64, emoji string, count int, mine bool) (wire.Message, bool) {
+	key, index, ok := b.messageIndexLocked(thread, messageID)
+	if !ok || emoji == "" {
+		return wire.Message{}, false
+	}
+	ids := b.reactionIDs[messageID]
+	if ids == nil {
+		ids = make(map[int64]string)
+		b.reactionIDs[messageID] = ids
+	}
+	if reactionID != 0 {
+		ids[reactionID] = emoji
+	}
+	reactions := append([]wire.Reaction(nil), b.messages[key][index].Reactions...)
+	found := false
+	for i := range reactions {
+		if reactions[i].Emoji == emoji {
+			reactions[i].Count, reactions[i].Mine, found = count, mine, true
+			break
+		}
+	}
+	if !found && count > 0 {
+		reactions = append(reactions, wire.Reaction{Emoji: emoji, Count: count, Mine: mine})
+	}
+	filtered := reactions[:0]
+	for _, reaction := range reactions {
+		if reaction.Count > 0 {
+			filtered = append(filtered, reaction)
+		}
+	}
+	b.messages[key][index].Reactions = filtered
+	return b.messages[key][index], true
+}
+
+func (b *Backend) deleteAggregateReactionLocked(thread int64, messageID string, reactionID int64) (wire.Message, bool) {
+	emoji := b.reactionIDs[messageID][reactionID]
+	if emoji == "" {
+		return wire.Message{}, false
+	}
+	delete(b.reactionIDs[messageID], reactionID)
+	return b.setAggregateReactionLocked(thread, messageID, 0, emoji, 0, false)
+}
+
+func (b *Backend) publishTypingLocked(thread, sender int64, typing bool) {
+	if b.publish == nil || thread == 0 || sender == b.selfID {
+		return
+	}
+	b.publish(wire.Event{Event: wire.EventTyping, Network: wire.NetworkMessenger, Data: wire.Typing{
+		ConversationID: strconv.FormatInt(thread, 10), SenderID: strconv.FormatInt(sender, 10),
+		SenderName: b.contactNames[sender], Typing: typing,
+	}})
 }
 func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS int64, unread, group, readOnly bool, avatar string, typ table.ThreadType) {
 	key := strconv.FormatInt(id, 10)
@@ -571,6 +720,9 @@ func (b *Backend) addMessageWithAttachmentsLocked(thread int64, id, text string,
 			if len(msg.Attachments) == 0 {
 				msg.Attachments = list[i].Attachments
 			}
+			if len(msg.Reactions) == 0 {
+				msg.Reactions = list[i].Reactions
+			}
 			list[i] = msg
 			b.messages[key] = list
 			return msg
@@ -584,6 +736,17 @@ func (b *Backend) addMessageWithAttachmentsLocked(thread int64, id, text string,
 func (b *Backend) handleE2EEEvent(raw any) {
 	switch evt := raw.(type) {
 	case *events.FBMessage:
+		if reaction := fbReaction(evt); reaction != nil {
+			b.mu.Lock()
+			thread := b.threadForJIDLocked(evt.Info.Chat.ToNonAD())
+			msg, ok := b.setActorReactionLocked(thread, reaction.GetKey().GetID(), parseUser(evt.Info.Sender.User), reaction.GetText())
+			b.saveStoredMessengerDataLocked()
+			b.mu.Unlock()
+			if ok {
+				b.publishMessage(msg)
+			}
+			return
+		}
 		text, media := fbContent(evt)
 		if text == "" && media == nil {
 			text = unsupportedMessageText
@@ -623,11 +786,24 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		b.mu.Unlock()
 		b.publishMessage(msg)
 		b.publishSnapshots()
+	case *events.ChatPresence:
+		b.mu.Lock()
+		thread := b.threadForJIDLocked(evt.Chat.ToNonAD())
+		b.publishTypingLocked(thread, parseUser(evt.Sender.User), evt.State == waTypes.ChatPresenceComposing)
+		b.mu.Unlock()
 	case *events.Connected:
 		b.setState(wire.StateConnected, "")
 	case *events.Disconnected:
 		b.setState(wire.StateDisconnected, "Messenger encrypted transport disconnected")
 	}
+}
+
+func fbReaction(evt *events.FBMessage) *waConsumerApplication.ConsumerApplication_ReactionMessage {
+	consumer, ok := evt.Message.(*waConsumerApplication.ConsumerApplication)
+	if !ok || consumer.GetPayload() == nil {
+		return nil
+	}
+	return consumer.GetPayload().GetContent().GetReactionMessage()
 }
 func messengerTimestamp(milliseconds int64) int64 {
 	return milliseconds * int64(time.Millisecond/time.Microsecond)
@@ -814,6 +990,94 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, e
 	b.publishSnapshots()
 	return &msg, nil
 }
+
+func (b *Backend) React(ctx context.Context, p wire.ReactParams) error {
+	thread, err := strconv.ParseInt(p.ConversationID, 10, 64)
+	if err != nil || p.MessageID == "" {
+		return errors.New("invalid Messenger reaction target")
+	}
+	emoji := strings.TrimSpace(p.Emoji)
+	if len([]rune(emoji)) > 16 {
+		return errors.New("Messenger reaction is too long")
+	}
+	b.mu.RLock()
+	cli, e2ee, jid, self := b.client, b.e2eeClient, b.threadToJID[thread], b.selfID
+	key, index, found := b.messageIndexLocked(thread, p.MessageID)
+	var target wire.Message
+	if found {
+		target = b.messages[key][index]
+	}
+	b.mu.RUnlock()
+	if cli == nil {
+		return ErrNotConfigured
+	}
+	if !found {
+		return errors.New("Messenger message is not available for reaction")
+	}
+	if !jid.IsEmpty() {
+		if e2ee == nil {
+			return errors.New("Messenger encrypted transport is not connected")
+		}
+		messageKey := &waCommon.MessageKey{RemoteJID: proto.String(jid.String()), FromMe: proto.Bool(target.FromMe), ID: proto.String(target.ID)}
+		if jid.Server == waTypes.GroupServer && target.SenderID != "" {
+			messageKey.Participant = proto.String(waTypes.NewJID(target.SenderID, waTypes.MessengerServer).String())
+		}
+		reaction := &waConsumerApplication.ConsumerApplication_ReactionMessage{Key: messageKey, Text: proto.String(emoji), SenderTimestampMS: proto.Int64(time.Now().UnixMilli())}
+		payload := &waConsumerApplication.ConsumerApplication{Payload: &waConsumerApplication.ConsumerApplication_Payload{Payload: &waConsumerApplication.ConsumerApplication_Payload_Content{Content: &waConsumerApplication.ConsumerApplication_Content{Content: &waConsumerApplication.ConsumerApplication_Content_ReactionMessage{ReactionMessage: reaction}}}}}
+		if _, err = e2ee.SendFBMessage(ctx, jid, payload, nil, whatsmeow.SendRequestExtra{}); err != nil {
+			return err
+		}
+	} else {
+		resp, sendErr := cli.ExecuteTasks(ctx, &socket.SendReactionTask{ThreadKey: thread, MessageID: p.MessageID, ActorID: self, Reaction: emoji, SendAttribution: table.MESSENGER_INBOX})
+		if sendErr != nil {
+			return sendErr
+		}
+		b.handleTable(resp)
+	}
+	b.mu.Lock()
+	msg, changed := b.setActorReactionLocked(thread, p.MessageID, self, emoji)
+	b.saveStoredMessengerDataLocked()
+	b.mu.Unlock()
+	if changed {
+		b.publishMessage(msg)
+	}
+	return nil
+}
+
+func (b *Backend) SetTyping(ctx context.Context, p wire.SetTypingParams) error {
+	thread, err := strconv.ParseInt(p.ConversationID, 10, 64)
+	if err != nil {
+		return errors.New("invalid Messenger conversation ID")
+	}
+	b.mu.RLock()
+	cli, e2ee, jid := b.client, b.e2eeClient, b.threadToJID[thread]
+	typ := b.threadTypes[thread]
+	conv := b.convs[p.ConversationID]
+	b.mu.RUnlock()
+	if cli == nil {
+		return ErrNotConfigured
+	}
+	if !jid.IsEmpty() {
+		if e2ee == nil {
+			return errors.New("Messenger encrypted transport is not connected")
+		}
+		state := waTypes.ChatPresencePaused
+		if p.Typing {
+			state = waTypes.ChatPresenceComposing
+		}
+		return e2ee.SendChatPresence(ctx, jid, state, waTypes.ChatPresenceMediaText)
+	}
+	isGroup := int64(0)
+	if conv.IsGroup {
+		isGroup = 1
+	}
+	isTyping := int64(0)
+	if p.Typing {
+		isTyping = 1
+	}
+	return cli.ExecuteStatelessTask(ctx, &socket.UpdatePresenceTask{ThreadKey: thread, IsGroupThread: isGroup, IsTyping: isTyping, SyncGroup: 1, ThreadType: int64(typ)})
+}
+
 func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 	thread, err := strconv.ParseInt(p.ConversationID, 10, 64)
 	if err != nil {

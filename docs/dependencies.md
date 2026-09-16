@@ -51,12 +51,12 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 | Google browser pairing | Supported Chromium-family browser signed in at Messages for web; `sqlite3` and `secret-tool` (libsecret) for cookie access; unlocked desktop keyring |
 | WhatsApp pairing | WhatsApp phone app with Linked devices; `qrencode` |
 | Telegram setup | Personal `api_id` and `api_hash`; Python 3 for `scripts/configure-telegram.py`; Telegram phone app and `qrencode` |
-| Google/Telegram voice notes | `ffmpeg` to record and `ffplay` to play audio |
+| Google/Telegram/Messenger voice notes | `ffmpeg` to record and `ffplay` to play audio |
 | Webcam photo capture | `ffmpeg` and an accessible camera device |
 | File selection | Working desktop portal and its file-picker backend |
 | Copy message | `wl-copy` from wl-clipboard |
 | Open links or downloaded files | `xdg-open` and an appropriate installed browser/image/video application |
-| Google GIPHY search | Your own GIPHY API key entered in Settings |
+| Google/Messenger GIPHY search | Your own GIPHY API key entered in Settings |
 
 For example, if you want voice notes, you can run `omarchy pkg add ffmpeg`
 yourself. Text and photos do not need voice tools. WhatsApp voice notes remain

@@ -35,14 +35,15 @@ on the official site and pair again.
 - Outbound text messages.
 - Incoming images, GIFs, stickers, files, videos, and voice messages.
 - Outbound image and file attachments from the system file chooser.
+- Emoji reactions and incoming/outgoing typing indicators.
+- M4A voice recording and playback with optional ffmpeg/ffplay.
+- In-app GIF search with an optional personal GIPHY API key.
 - Contact and group avatars cached privately in the background.
 - Mark-as-read support.
 
-Calling, reactions, typing indicators, voice recording, and GIF search are not
-available. Unsupported actions fail with a service-specific message instead of
-being routed to another account. Attachment downloads and uploads are limited to
-25 MB each; avatars are limited to 5 MB. Media downloads remain lazy, so opening
-a conversation does not download its entire attachment history.
+Calling is not available. Attachment downloads and uploads are limited to 25 MB
+each; avatars are limited to 5 MB. Media downloads remain lazy, so opening a
+conversation does not download its entire attachment history.
 
 ## Protocol and account warning
 

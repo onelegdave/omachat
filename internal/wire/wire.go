@@ -86,21 +86,21 @@ const (
 	// MethodPairFromBrowser lets the widget pair on its own: the daemon finds
 	// the browser profile and reads the cookies itself, so pairing never
 	// requires dropping to a terminal.
-	MethodPairFromBrowser = "pairFromBrowser"
-	MethodSendMedia       = "sendMedia"
-	MethodPickImage       = "pickImage"
-	MethodListProfiles    = "listProfiles"
-	MethodSetProfile      = "setProfile"
-	MethodReact           = "react"
-	MethodDiscardCapture  = "discardCapture"
-	MethodGifSearch       = "gifSearch"
-	MethodGifFetch        = "gifFetch"
-	MethodSetGiphyKey     = "setGiphyKey"
-	MethodSetUiScale      = "setUiScale"
-	MethodConfig          = "config"
-	MethodUnpair          = "unpair"
-	MethodMedia           = "media"
-	MethodAvatar          = "avatar"
+	MethodPairFromBrowser        = "pairFromBrowser"
+	MethodSendMedia              = "sendMedia"
+	MethodPickImage              = "pickImage"
+	MethodListProfiles           = "listProfiles"
+	MethodSetProfile             = "setProfile"
+	MethodReact                  = "react"
+	MethodDiscardCapture         = "discardCapture"
+	MethodGifSearch              = "gifSearch"
+	MethodGifFetch               = "gifFetch"
+	MethodSetGiphyKey            = "setGiphyKey"
+	MethodSetUiScale             = "setUiScale"
+	MethodConfig                 = "config"
+	MethodUnpair                 = "unpair"
+	MethodMedia                  = "media"
+	MethodAvatar                 = "avatar"
 	MethodSetTyping              = "setTyping"
 	MethodRefresh                = "refresh"
 	MethodSetTelegramCredentials = "setTelegramCredentials"
@@ -233,6 +233,15 @@ type Reaction struct {
 	Emoji string `json:"emoji"`
 	Count int    `json:"count"`
 	Mine  bool   `json:"mine"`
+}
+
+// Typing is a transient conversation presence update. SenderName may be empty
+// when Messenger has not delivered the contact row yet.
+type Typing struct {
+	ConversationID string `json:"conversationID"`
+	SenderID       string `json:"senderID,omitempty"`
+	SenderName     string `json:"senderName,omitempty"`
+	Typing         bool   `json:"typing"`
 }
 
 // ReactParams toggles a reaction on a message. An empty Emoji removes whatever

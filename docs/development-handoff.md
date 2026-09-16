@@ -68,6 +68,9 @@ vendored `mautrix-meta` client. It currently includes:
 - lazy incoming images, GIFs, stickers, files, video, and voice-message media;
 - private conversation/message persistence across helper restarts;
 - microsecond timestamps for locally sent messages;
+- reactions and incoming/outgoing typing indicators;
+- outbound M4A voice notes with optional ffmpeg/ffplay;
+- optional GIPHY search using the shared personal API-key setting;
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
@@ -92,15 +95,11 @@ migrations can still make re-pairing necessary.
 
 ## Exact next work
 
-The planned Messenger live parity pass is complete. No next feature has been
-selected. Before changing behavior, agree with OneLegDave on one bounded next
-capability, trace the relevant protocol and UI path, and stop at the smallest
-implementation that can be verified synthetically and live.
-
-Calling, reactions, typing indicators, voice recording, and GIF search remain
-unsupported for Messenger. Treat them as future scope, not regressions. Never
-turn a live account observation into a fixture containing real names, message
-text, account IDs, avatars, or media.
+Reactions, typing indicators, voice recording, and GIF search are implemented
+with synthetic Go and QML coverage. The exact next work is a deliberate live
+Messenger pass for each feature, using only disposable content and recording no
+personal identifiers in fixtures or logs. Calling remains explicitly out of
+scope and unsupported.
 
 ## Runtime and data safety
 

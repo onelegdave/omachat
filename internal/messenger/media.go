@@ -327,6 +327,10 @@ func openMessengerUpload(path string) ([]byte, os.FileInfo, string, error) {
 	return data, info, mimeType, nil
 }
 
+func messengerOutboundAudio(path, mimeType string) bool {
+	return strings.HasPrefix(mimeType, "audio/") || strings.HasPrefix(strings.ToLower(filepath.Base(path)), "voice-")
+}
+
 func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.SendMediaResult, error) {
 	thread, err := strconv.ParseInt(p.ConversationID, 10, 64)
 	if err != nil {
@@ -353,8 +357,11 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 		}
 		mt := whatsmeow.MediaDocument
 		isImage := strings.HasPrefix(mimeType, "image/")
+		isAudio := messengerOutboundAudio(p.Path, mimeType)
 		if isImage {
 			mt = whatsmeow.MediaImage
+		} else if isAudio {
+			mt = whatsmeow.MediaAudio
 		}
 		upload, e := e2ee.Upload(ctx, data, mt)
 		if e != nil {
@@ -368,6 +375,13 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 				return wire.SendMediaResult{}, e
 			}
 			content = &waConsumerApplication.ConsumerApplication_Content_ImageMessage{ImageMessage: im}
+		} else if isAudio {
+			mainText = ""
+			am := &waConsumerApplication.ConsumerApplication_AudioMessage{PTT: proto.Bool(true)}
+			if e = am.Set(&waMediaTransport.AudioTransport{Integral: &waMediaTransport.AudioTransport_Integral{Transport: transport}}); e != nil {
+				return wire.SendMediaResult{}, e
+			}
+			content = &waConsumerApplication.ConsumerApplication_Content_AudioMessage{AudioMessage: am}
 		} else {
 			mainText = ""
 			dm := &waConsumerApplication.ConsumerApplication_DocumentMessage{FileName: proto.String(filepath.Base(p.Path))}
@@ -389,7 +403,8 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 			}
 		}
 	} else {
-		upload, e := cli.GetHTTP().SendMercuryUploadRequest(ctx, thread, &httpclient.MercuryUploadMedia{Filename: filepath.Base(p.Path), MimeType: mimeType, MediaData: data})
+		isAudio := messengerOutboundAudio(p.Path, mimeType)
+		upload, e := cli.GetHTTP().SendMercuryUploadRequest(ctx, thread, &httpclient.MercuryUploadMedia{Filename: filepath.Base(p.Path), MimeType: mimeType, MediaData: data, IsVoiceClip: isAudio})
 		if e != nil {
 			return wire.SendMediaResult{}, e
 		}
@@ -408,10 +423,11 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 		}
 	}
 	key := messengerMediaKey(id, "outgoing", 0)
-	att := wire.Attachment{Key: key, MediaID: key, Name: filepath.Base(p.Path), MimeType: mimeType, Size: info.Size(), IsImage: strings.HasPrefix(mimeType, "image/"), IsGif: strings.Contains(mimeType, "gif"), Path: p.Path}
+	isAudio := messengerOutboundAudio(p.Path, mimeType)
+	att := wire.Attachment{Key: key, MediaID: key, Name: filepath.Base(p.Path), MimeType: mimeType, Size: info.Size(), IsImage: strings.HasPrefix(mimeType, "image/"), IsGif: strings.Contains(mimeType, "gif"), IsAudio: isAudio, Path: p.Path}
 	msg := wire.Message{TmpID: p.TmpID, ID: id, ConversationID: p.ConversationID, Text: mainText, Timestamp: messengerTimeTimestamp(ts), FromMe: true, SenderID: strconv.FormatInt(self, 10), Delivery: wire.DeliverySent, Attachments: []wire.Attachment{att}}
 	b.mu.Lock()
-	b.media[key] = &messengerMedia{key: key, name: att.Name, mime: mimeType, size: info.Size(), isImage: att.IsImage, isGIF: att.IsGif, path: p.Path}
+	b.media[key] = &messengerMedia{key: key, name: att.Name, mime: mimeType, size: info.Size(), isImage: att.IsImage, isGIF: att.IsGif, isAudio: att.IsAudio, path: p.Path}
 	b.addMessageWithAttachmentsLocked(thread, id, mainText, ts.UnixMilli(), self, false, "", msg.Attachments)
 	if c, ok := b.convs[p.ConversationID]; ok {
 		c.Preview = mainText

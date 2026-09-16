@@ -119,6 +119,10 @@ Item {
   property string reactingTo: ""
   property bool copied: false
   property bool composerFocus: false
+  property bool typingSent: false
+  property string typingConversation: ""
+  property string incomingTypingText: ""
+  property bool suppressTyping: false
   property bool linkConfirmOpen: false
   property string pendingUrl: ""
   property var emojiList: []
@@ -162,6 +166,7 @@ Item {
   property var _selectedByNet: ({})
   property string _previousNetwork: network
   onNetworkChanged: {
+    root.stopTyping()
     var prev = _previousNetwork
     _previousNetwork = network
     if (prev === network) return
@@ -221,6 +226,8 @@ Item {
 
   function selectConversation(id) {
     if (id === selectedConvID || sendingMedia) return
+    root.stopTyping()
+    incomingTypingText = ""
     var saved = Object.assign({}, _draftsByNet)
     if (selectedConvID) {
       var netDrafts = Object.assign({}, saved[network] || {})
@@ -251,7 +258,9 @@ Item {
     pendingAttachment = ""
     selectedConvID = id
     var currentNetDrafts = _draftsByNet[network] || {}
+    suppressTyping = true
     composer.text = currentNetDrafts[id] || ""
+    suppressTyping = false
     attachCaption.text = ""
     pendingVoiceSeconds = 0
     messages = []
@@ -392,6 +401,7 @@ Item {
   function sendMessage(rawText) {
     var text = (rawText || "").trim()
     if (text === "" || root.selectedConvID === "" || !root.service) return
+    root.stopTyping()
     var convID = root.selectedConvID
     var tmpID = Model.transactionID()
     var targetNet = root.network
@@ -538,7 +548,7 @@ Item {
   }
 
   function openGifPicker() {
-    if (root.isWhatsApp || root.isMessenger) {
+    if (root.isWhatsApp || root.isTelegram) {
       threadError = "GIF search is not supported for " + root.networkLabel + " in this version."
       return
     }
@@ -674,7 +684,7 @@ Item {
   }
 
   function startRecording() {
-    if (root.isWhatsApp || root.isMessenger) {
+    if (root.isWhatsApp) {
       threadError = "Voice messages are not supported for " + root.networkLabel + " in this version."
       return
     }
@@ -801,7 +811,7 @@ Item {
 
   function react(messageID, emoji) {
     reactingTo = ""
-    if (root.isWhatsApp || root.isMessenger) {
+    if (root.isWhatsApp) {
       threadError = "Reactions are not supported for " + root.networkLabel + " in this version."
       return
     }
@@ -814,6 +824,27 @@ Item {
     }, function(ok, res) {
       if (!ok && generation === selectionGeneration) threadError = String(res)
     }, root.network)
+  }
+
+  function updateTyping(text) {
+    if (root.suppressTyping || !root.isMessenger || !root.service || root.selectedConvID === "") return
+    if (String(text || "").length === 0) {
+      root.stopTyping()
+      return
+    }
+    typingStop.restart()
+    if (typingSent && typingConversation === selectedConvID) return
+    typingSent = true
+    typingConversation = selectedConvID
+    root.service.call("setTyping", {conversationID: selectedConvID, typing: true}, null, root.network)
+  }
+
+  function stopTyping() {
+    typingStop.stop()
+    if (typingSent && typingConversation && root.service)
+      root.service.call("setTyping", {conversationID: typingConversation, typing: false}, null, "messenger")
+    typingSent = false
+    typingConversation = ""
   }
 
   function copyText(value) {
@@ -839,6 +870,7 @@ Item {
 
   Connections {
     target: root.service
+    ignoreUnknownSignals: true
     function onMessageReceived(msg, net) {
       root.mergeMessage(msg, net || root.network)
       if ((!net || net === root.network) && msg.conversationID === root.selectedConvID && root.panelOpen && !msg.fromMe) root.markThreadRead()
@@ -846,6 +878,28 @@ Item {
     function onPaired(net) {
       root.clearNetwork(net)
     }
+    function onTypingReceived(state, net) {
+      if (net !== "messenger" || root.network !== "messenger" || !state || state.conversationID !== root.selectedConvID) return
+      if (state.typing === true) {
+        root.incomingTypingText = state.senderName ? String(state.senderName) + " is typing..." : "Someone is typing..."
+        incomingTypingExpiry.restart()
+      } else {
+        root.incomingTypingText = ""
+        incomingTypingExpiry.stop()
+      }
+    }
+  }
+
+  Timer {
+    id: typingStop
+    interval: 3000
+    onTriggered: root.stopTyping()
+  }
+
+  Timer {
+    id: incomingTypingExpiry
+    interval: 6000
+    onTriggered: root.incomingTypingText = ""
   }
 
   function clearNetwork(net) {
@@ -1330,7 +1384,7 @@ Item {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: historyControls.bottom
-      anchors.bottom: attachmentBar.visible ? attachmentBar.top : composerRow.top
+      anchors.bottom: attachmentBar.visible ? attachmentBar.top : (typingIndicator.visible ? typingIndicator.top : composerRow.top)
       anchors.leftMargin: Style.space(4)
       anchors.rightMargin: Style.space(4)
       anchors.topMargin: Style.space(8)
@@ -1964,7 +2018,7 @@ Item {
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Microphone"
-        visible: !root.isWhatsApp && !root.isMessenger
+        visible: !root.isWhatsApp
         anchors.left: attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter
@@ -1984,7 +2038,7 @@ Item {
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Search GIFs"
-        visible: !root.isWhatsApp && !root.isTelegram && !root.isMessenger
+        visible: !root.isWhatsApp && !root.isTelegram
         anchors.left: micButton.visible ? micButton.right : attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter
@@ -2041,8 +2095,25 @@ Item {
           root.sendMessage(text)
           text = ""
         }
+        onTextChanged: root.updateTyping(text)
         onActiveFocusChanged: root.composerFocus = activeFocus
       }
+    }
+
+    Text {
+      id: typingIndicator
+      objectName: "typingIndicator"
+      visible: root.incomingTypingText !== "" && root.selectedConvID !== "" && !attachmentBar.visible
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(8)
+      anchors.right: parent.right
+      anchors.bottom: composerRow.top
+      text: root.incomingTypingText
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: fs(Style.font.caption)
+      font.italic: true
+      elide: Text.ElideRight
     }
 
     Rectangle {
