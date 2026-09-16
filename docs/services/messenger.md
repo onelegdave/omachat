@@ -33,11 +33,16 @@ on the official site and pair again.
 - Recent history fetched on demand when a conversation opens.
 - Live incoming messages and conversation updates.
 - Outbound text messages.
+- Incoming images, GIFs, stickers, files, videos, and voice messages.
+- Outbound image and file attachments from the system file chooser.
+- Contact and group avatars cached privately in the background.
 - Mark-as-read support.
 
-Calling, reactions, typing indicators, media sending, and GIF search are not
-available in the initial Messenger integration. Unsupported actions fail with a
-service-specific message instead of being routed to another account.
+Calling, reactions, typing indicators, voice recording, and GIF search are not
+available. Unsupported actions fail with a service-specific message instead of
+being routed to another account. Attachment downloads and uploads are limited to
+25 MB each; avatars are limited to 5 MB. Media downloads remain lazy, so opening
+a conversation does not download its entire attachment history.
 
 ## Protocol and account warning
 

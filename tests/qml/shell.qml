@@ -490,9 +490,9 @@ ShellRoot {
     panel.setActiveService("messenger")
     var fbInbox = inspect.findChild(panel, "inboxLoader").item
     root.check(fbInbox && fbInbox.isMessenger && fbInbox.network === "messenger", "Messenger tab opens an isolated native inbox")
-    root.check(!inspect.findChild(fbInbox, "attachButton").visible && !inspect.findChild(fbInbox, "micButton").visible && !inspect.findChild(fbInbox, "gifButton").visible,
-      "Messenger hides unsupported media, voice, and GIF actions")
     fbInbox.selectConversation("fb-1")
+    root.check(inspect.findChild(fbInbox, "attachButton").visible && !inspect.findChild(fbInbox, "micButton").visible && !inspect.findChild(fbInbox, "gifButton").visible,
+      "Messenger shows attachments while hiding unsupported voice and GIF search actions")
     fbInbox.sendMessage("Messenger pending")
     var fbPending = fake.delayed.pop()
     root.check(fbPending.method === "send" && fbPending.network === "messenger", "Messenger send is routed only to Messenger")

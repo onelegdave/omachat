@@ -119,12 +119,12 @@ start pairing again.
 | Feature | Google Messages | WhatsApp | Telegram | Messenger |
 | --- | --- | --- | --- | --- |
 | Conversation list, text, per-chat drafts | Yes | Yes | Yes | Yes |
-| Photos and captions | Yes | Yes | Yes | Incoming display only initially |
-| Send GIF files | Yes | Yes | No dedicated GIF sending support | Unavailable |
-| Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Unavailable |
+| Photos and captions | Yes | Yes | Yes | Yes |
+| Send GIF files | Yes | Yes | No dedicated GIF sending support | As a file attachment |
+| Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Incoming playback only |
 | GIPHY search | Optional personal API key | Unavailable | Unavailable | Unavailable |
 | Reactions | Yes | Unavailable | Unavailable | Unavailable initially |
-| Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | No dedicated support initially |
+| Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
 | Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable |
 
@@ -160,8 +160,9 @@ conversations across active services.
 
 Pick an attachment from the composer. Google Messages sends captions separately
 after the attachment; check the conversation before retrying a caption reported
-as unconfirmed. WhatsApp and Telegram include captions with media. Failed media
-downloads can be retried. Incoming GIFs play inline;
+as unconfirmed. WhatsApp, Telegram, and Messenger include captions with images;
+Messenger sends a document caption as a separate message. Failed media downloads
+can be retried. Incoming GIFs play inline;
 video opens in an external player.
 
 For Google Messages or Telegram voice notes, choose **Rec**, record, **Play**

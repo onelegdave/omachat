@@ -47,26 +47,31 @@ type sessionData struct {
 }
 
 type Backend struct {
-	log          zerolog.Logger
-	paths        *appStore.Paths
-	publish      func(wire.Event)
-	config       *appStore.ConfigStore
-	mu           sync.RWMutex
-	status       wire.Status
-	client       *messagix.Client
-	e2eeClient   *whatsmeow.Client
-	waStore      *sqlstore.Container
-	selfID       int64
-	convs        map[string]wire.Conversation
-	messages     map[string][]wire.Message
-	contactNames map[int64]string
-	threadNames  map[int64]string
-	participants map[int64][]int64
-	threadToJID  map[int64]waTypes.JID
-	jidToThread  map[string]int64
-	threadTypes  map[int64]table.ThreadType
-	runCtx       context.Context
-	cancel       context.CancelFunc
+	log            zerolog.Logger
+	paths          *appStore.Paths
+	publish        func(wire.Event)
+	config         *appStore.ConfigStore
+	mu             sync.RWMutex
+	status         wire.Status
+	client         *messagix.Client
+	e2eeClient     *whatsmeow.Client
+	waStore        *sqlstore.Container
+	selfID         int64
+	convs          map[string]wire.Conversation
+	messages       map[string][]wire.Message
+	contactNames   map[int64]string
+	threadNames    map[int64]string
+	participants   map[int64][]int64
+	threadToJID    map[int64]waTypes.JID
+	jidToThread    map[string]int64
+	threadTypes    map[int64]table.ThreadType
+	media          map[string]*messengerMedia
+	contactAvatars map[int64]string
+	threadAvatars  map[int64]string
+	avatarCache    map[string]string
+	avatarPending  map[string]bool
+	runCtx         context.Context
+	cancel         context.CancelFunc
 }
 
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *Backend {
@@ -76,7 +81,12 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *B
 		convs:  make(map[string]wire.Conversation), messages: make(map[string][]wire.Message), contactNames: make(map[int64]string),
 		threadNames: make(map[int64]string), participants: make(map[int64][]int64),
 		threadToJID: make(map[int64]waTypes.JID), jidToThread: make(map[string]int64),
-		threadTypes: make(map[int64]table.ThreadType),
+		threadTypes:    make(map[int64]table.ThreadType),
+		media:          make(map[string]*messengerMedia),
+		contactAvatars: make(map[int64]string),
+		threadAvatars:  make(map[int64]string),
+		avatarCache:    make(map[string]string),
+		avatarPending:  make(map[string]bool),
 	}
 }
 
@@ -347,11 +357,17 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	}
 	b.mu.Lock()
 	for _, contact := range tbl.LSVerifyContactRowExists {
+		if contact.ProfilePictureUrl != "" {
+			b.contactAvatars[contact.ContactId] = contact.ProfilePictureUrl
+		}
 		for _, msg := range b.setContactNameLocked(contact.ContactId, contact.Name) {
 			queue(msg)
 		}
 	}
 	for _, contact := range tbl.LSDeleteThenInsertContact {
+		if avatar := contact.GetAvatarURL(); avatar != "" {
+			b.contactAvatars[contact.Id] = avatar
+		}
 		for _, msg := range b.setContactNameLocked(contact.Id, contact.Name) {
 			queue(msg)
 		}
@@ -371,18 +387,38 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	for _, t := range tbl.LSUpdateOrInsertThread {
 		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, false, messengerGroupThread(t.ThreadType, 0), t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
 	}
+	attachments := b.tableAttachmentsLocked(tbl)
 	for _, m := range tbl.LSDeleteThenInsertMessage {
-		queue(b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId))
+		queue(b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId]))
 	}
 	for _, m := range tbl.LSUpsertMessage {
-		queue(b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId))
+		queue(b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId]))
 	}
 	for _, m := range tbl.LSInsertMessage {
-		queue(b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId))
+		queue(b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId]))
+	}
+	for messageID, media := range attachments {
+		for conversationID, list := range b.messages {
+			for i := range list {
+				if list[i].ID != messageID || len(media) == 0 || len(list[i].Attachments) != 0 {
+					continue
+				}
+				list[i].Attachments = media
+				if list[i].Text == unsupportedMessageText {
+					list[i].Text = ""
+				}
+				b.messages[conversationID] = list
+				queue(list[i])
+			}
+		}
 	}
 	b.refreshConversationNamesLocked()
+	avatarJobs := b.avatarJobsLocked()
 	b.recountUnreadLocked()
 	b.mu.Unlock()
+	if len(avatarJobs) > 0 {
+		go b.fetchAvatars(avatarJobs)
+	}
 	for _, msg := range publish {
 		b.publishMessage(msg)
 	}
@@ -419,9 +455,9 @@ func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS 
 	}
 	b.threadTypes[id] = typ
 	_ = readTS
-	// Messenger picture URLs are remote. Keep them out of AvatarPath, which is
-	// reserved for daemon-controlled local files.
-	_ = avatar
+	if avatar != "" {
+		b.threadAvatars[id] = avatar
+	}
 	name = b.conversationNameLocked(id, group)
 	b.convs[key] = wire.Conversation{ID: key, Name: name, Preview: preview, Timestamp: messengerTimestamp(ts), Unread: unread, IsGroup: group, ReadOnly: readOnly, AvatarColor: "#0084ff", Initials: initials(name)}
 }
@@ -505,17 +541,24 @@ func (b *Backend) setContactNameLocked(id int64, name string) []wire.Message {
 }
 
 func (b *Backend) addMessageLocked(thread int64, id, text string, ts, sender int64, deleted bool, reply string) wire.Message {
+	return b.addMessageWithAttachmentsLocked(thread, id, text, ts, sender, deleted, reply, nil)
+}
+
+func (b *Backend) addMessageWithAttachmentsLocked(thread int64, id, text string, ts, sender int64, deleted bool, reply string, attachments []wire.Attachment) wire.Message {
 	if id == "" {
 		return wire.Message{}
 	}
-	if !deleted && strings.TrimSpace(text) == "" {
+	if !deleted && strings.TrimSpace(text) == "" && len(attachments) == 0 {
 		text = unsupportedMessageText
 	}
 	key := strconv.FormatInt(thread, 10)
-	msg := wire.Message{ID: id, ConversationID: key, Text: text, Timestamp: messengerTimestamp(ts), FromMe: sender == b.selfID, SenderID: strconv.FormatInt(sender, 10), SenderName: b.contactNames[sender], Deleted: deleted, ReplyToID: reply}
+	msg := wire.Message{ID: id, ConversationID: key, Text: text, Timestamp: messengerTimestamp(ts), FromMe: sender == b.selfID, SenderID: strconv.FormatInt(sender, 10), SenderName: b.contactNames[sender], Deleted: deleted, ReplyToID: reply, Attachments: attachments}
 	list := b.messages[key]
 	for i := range list {
 		if list[i].ID == id {
+			if len(msg.Attachments) == 0 {
+				msg.Attachments = list[i].Attachments
+			}
 			list[i] = msg
 			b.messages[key] = list
 			return msg
@@ -529,8 +572,8 @@ func (b *Backend) addMessageLocked(thread int64, id, text string, ts, sender int
 func (b *Backend) handleE2EEEvent(raw any) {
 	switch evt := raw.(type) {
 	case *events.FBMessage:
-		text := fbText(evt)
-		if text == "" {
+		text, media := fbContent(evt)
+		if text == "" && media == nil {
 			text = unsupportedMessageText
 		}
 		jid := evt.Info.Chat.ToNonAD()
@@ -546,9 +589,22 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		if _, ok := b.convs[key]; !ok {
 			b.upsertThreadLocked(thread, "", text, evt.Info.Timestamp.UnixMilli(), 0, true, jid.Server == waTypes.GroupServer, false, "", table.ENCRYPTED_OVER_WA_ONE_TO_ONE)
 		}
-		msg := b.addMessageLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "")
+		var attachments []wire.Attachment
+		if media != nil {
+			media.key = messengerMediaKey(evt.Info.ID, "e2ee", 0)
+			b.media[media.key] = media
+			attachments = []wire.Attachment{media.attachment()}
+		}
+		msg := b.addMessageWithAttachmentsLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "", attachments)
 		conv := b.convs[key]
-		conv.Preview, conv.Timestamp, conv.Unread = text, messengerTimeTimestamp(evt.Info.Timestamp), !evt.Info.IsFromMe
+		preview := text
+		if preview == "" && media != nil {
+			preview = media.name
+			if preview == "" {
+				preview = "Attachment"
+			}
+		}
+		conv.Preview, conv.Timestamp, conv.Unread = preview, messengerTimeTimestamp(evt.Info.Timestamp), !evt.Info.IsFromMe
 		b.convs[key] = conv
 		b.recountUnreadLocked()
 		b.mu.Unlock()
@@ -565,18 +621,48 @@ func messengerTimestamp(milliseconds int64) int64 {
 }
 func messengerTimeTimestamp(timestamp time.Time) int64 { return timestamp.UnixMicro() }
 func fbText(evt *events.FBMessage) string {
+	text, _ := fbContent(evt)
+	return text
+}
+
+func fbContent(evt *events.FBMessage) (string, *messengerMedia) {
 	consumer, ok := evt.Message.(*waConsumerApplication.ConsumerApplication)
 	if !ok {
-		return ""
+		return "", nil
 	}
 	content := consumer.GetPayload().GetContent()
 	switch v := content.GetContent().(type) {
 	case *waConsumerApplication.ConsumerApplication_Content_MessageText:
-		return v.MessageText.GetText()
+		return v.MessageText.GetText(), nil
 	case *waConsumerApplication.ConsumerApplication_Content_ExtendedTextMessage:
-		return v.ExtendedTextMessage.GetText().GetText()
+		return v.ExtendedTextMessage.GetText().GetText(), nil
+	case *waConsumerApplication.ConsumerApplication_Content_ImageMessage:
+		decoded, err := v.ImageMessage.Decode()
+		if err == nil {
+			return v.ImageMessage.GetCaption().GetText(), mediaFromFB(decoded.GetIntegral().GetTransport(), whatsmeow.MediaImage, true, false, false, false, "")
+		}
+	case *waConsumerApplication.ConsumerApplication_Content_VideoMessage:
+		decoded, err := v.VideoMessage.Decode()
+		if err == nil {
+			return v.VideoMessage.GetCaption().GetText(), mediaFromFB(decoded.GetIntegral().GetTransport(), whatsmeow.MediaVideo, false, decoded.GetAncillary().GetGifPlayback(), false, true, "")
+		}
+	case *waConsumerApplication.ConsumerApplication_Content_AudioMessage:
+		decoded, err := v.AudioMessage.Decode()
+		if err == nil {
+			return "", mediaFromFB(decoded.GetIntegral().GetTransport(), whatsmeow.MediaAudio, false, false, true, false, "Voice message")
+		}
+	case *waConsumerApplication.ConsumerApplication_Content_DocumentMessage:
+		decoded, err := v.DocumentMessage.Decode()
+		if err == nil {
+			return "", mediaFromFB(decoded.GetIntegral().GetTransport(), whatsmeow.MediaDocument, false, false, false, false, v.DocumentMessage.GetFileName())
+		}
+	case *waConsumerApplication.ConsumerApplication_Content_StickerMessage:
+		decoded, err := v.StickerMessage.Decode()
+		if err == nil {
+			return "", mediaFromFB(decoded.GetIntegral().GetTransport(), whatsmeow.MediaImage, true, false, false, false, "Sticker")
+		}
 	}
-	return ""
+	return "", nil
 }
 func parseUser(v string) int64 { n, _ := strconv.ParseInt(v, 10, 64); return n }
 func initials(name string) string {

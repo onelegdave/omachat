@@ -295,6 +295,32 @@ func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(msg)
+	case wire.MethodSendMedia:
+		p, err := decodeParams[wire.SendMediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.fb.SendMedia(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodMedia:
+		p, err := decodeParams[wire.MediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.fb.Media(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodPickImage:
+		path, err := d.PickFile(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(wire.PickImageResult{Path: path})
 	case wire.MethodMarkRead:
 		p, err := decodeParams[wire.MarkReadParams](req.Params)
 		if err != nil {
@@ -341,7 +367,7 @@ func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(d.PluginConfig())
-	case wire.MethodPickImage, wire.MethodDiscardCapture, wire.MethodSendMedia, wire.MethodMedia, wire.MethodReact, wire.MethodSetTyping, wire.MethodGifSearch, wire.MethodGifFetch:
+	case wire.MethodDiscardCapture, wire.MethodReact, wire.MethodSetTyping, wire.MethodGifSearch, wire.MethodGifFetch:
 		return fail(errors.New("this feature is not supported on Messenger yet"))
 	case wire.MethodStartPairing, wire.MethodGaiaPairing:
 		return fail(errors.New("use browser pairing for Messenger"))

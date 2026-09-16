@@ -1919,15 +1919,15 @@ Item {
         objectName: "attachButton"
         focusable: true
         Accessible.role: Accessible.Button
-        Accessible.name: "Attach photo or GIF"
+        Accessible.name: root.isMessenger ? "Attach image or file" : "Attach photo or GIF"
         anchors.left: parent.left
         anchors.leftMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
         size: visible ? fs(Style.space(28)) : 0
         fontSize: fs(Style.space(16))
         iconText: "󰁦"
-        tooltipText: "Attach a photo or GIF"
-        visible: !root.isMessenger
+        tooltipText: root.isMessenger ? "Attach an image or file" : "Attach a photo or GIF"
+        visible: true
         foreground: root.foreground
         fontFamily: root.fontFamily
         enabled: composer.enabled && !root.sendingMedia

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,8 +14,12 @@ import (
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-meta/pkg/messagix"
 	"go.mau.fi/mautrix-meta/pkg/messagix/table"
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waConsumerApplication"
+	"go.mau.fi/whatsmeow/proto/waMediaTransport"
 	waStore "go.mau.fi/whatsmeow/store"
 	waTypes "go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 func TestBackendRequiresConnection(t *testing.T) {
@@ -281,6 +286,104 @@ func TestHandleTableLabelsUnsupportedHistory(t *testing.T) {
 	got := b.messages["8"]
 	if len(got) != 1 || got[0].Text != unsupportedMessageText {
 		t.Fatalf("unsupported historical message = %#v", got)
+	}
+}
+
+func TestHandleTableMapsMessengerAttachments(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.handleTable(&table.LSTable{
+		LSUpsertMessage: []*table.LSUpsertMessage{{ThreadKey: 8, MessageId: "photo-1", TimestampMs: 1_700_000_000_123, SenderId: 9}},
+		LSInsertAttachment: []*table.LSInsertAttachment{{
+			MessageId: "photo-1", AttachmentFbid: "77", AttachmentIndex: 0,
+			AttachmentType: table.AttachmentTypeImage, AttachmentMimeType: "image/jpeg",
+			ImageUrl: "https://example.com/photo.jpg", Filename: "photo.jpg", Filesize: 1234,
+		}},
+	})
+
+	got := b.messages["8"]
+	if len(got) != 1 || len(got[0].Attachments) != 1 {
+		t.Fatalf("mapped message = %#v", got)
+	}
+	att := got[0].Attachments[0]
+	if got[0].Text != "" || !att.IsImage || att.MimeType != "image/jpeg" || att.Key == "" {
+		t.Fatalf("mapped attachment = %#v in %#v", att, got[0])
+	}
+	if b.media[att.Key] == nil || b.media[att.Key].remoteURL != "https://example.com/photo.jpg" {
+		t.Fatalf("media key did not resolve to its private record")
+	}
+}
+
+func TestLateMessengerAttachmentUpdatesExistingMessage(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.handleTable(&table.LSTable{LSUpsertMessage: []*table.LSUpsertMessage{{ThreadKey: 8, MessageId: "late-1", TimestampMs: 1, SenderId: 9}}})
+	b.handleTable(&table.LSTable{LSInsertBlobAttachment: []*table.LSInsertBlobAttachment{{
+		MessageId: "late-1", AttachmentFbid: "88", AttachmentType: table.AttachmentTypeAudio,
+		PlayableUrl: "https://example.com/voice.mp4", PlayableUrlMimeType: "audio/mp4",
+	}}})
+	got := b.messages["8"][0]
+	if got.Text != "" || len(got.Attachments) != 1 || !got.Attachments[0].IsAudio {
+		t.Fatalf("late attachment message = %#v", got)
+	}
+}
+
+func TestMessengerAvatarJobsPreferGroupThenContact(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.contactAvatars[2] = "https://example.com/contact.jpg"
+	b.threadAvatars[70] = "https://example.com/group.jpg"
+	b.convs["2"] = wire.Conversation{ID: "2"}
+	b.convs["70"] = wire.Conversation{ID: "70", IsGroup: true}
+	b.mu.Lock()
+	jobs := b.avatarJobsLocked()
+	b.mu.Unlock()
+	if len(jobs) != 2 {
+		t.Fatalf("avatar jobs = %#v", jobs)
+	}
+	urls := map[string]string{}
+	for _, job := range jobs {
+		urls[job.conversationID] = job.rawURL
+	}
+	if urls["2"] != "https://example.com/contact.jpg" || urls["70"] != "https://example.com/group.jpg" {
+		t.Fatalf("avatar sources = %#v", urls)
+	}
+}
+
+func TestMessengerUploadRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.txt")
+	if err := os.WriteFile(target, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := openMessengerUpload(link); err == nil {
+		t.Fatal("expected symlink upload to be rejected")
+	}
+}
+
+func TestEncryptedMessengerImageMapsToAttachment(t *testing.T) {
+	directPath := "/mms/image"
+	mimeType := "image/jpeg"
+	length := uint64(42)
+	encoded := &waConsumerApplication.ConsumerApplication_ImageMessage{}
+	err := encoded.Set(&waMediaTransport.ImageTransport{Integral: &waMediaTransport.ImageTransport_Integral{Transport: &waMediaTransport.WAMediaTransport{
+		Integral:  &waMediaTransport.WAMediaTransport_Integral{DirectPath: &directPath, FileSHA256: []byte{1}, FileEncSHA256: []byte{2}, MediaKey: []byte{3}},
+		Ancillary: &waMediaTransport.WAMediaTransport_Ancillary{Mimetype: &mimeType, FileLength: &length},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evt := &events.FBMessage{Message: &waConsumerApplication.ConsumerApplication{Payload: &waConsumerApplication.ConsumerApplication_Payload{Payload: &waConsumerApplication.ConsumerApplication_Payload_Content{Content: &waConsumerApplication.ConsumerApplication_Content{Content: &waConsumerApplication.ConsumerApplication_Content_ImageMessage{ImageMessage: encoded}}}}}}
+	text, media := fbContent(evt)
+	if text != "" || media == nil || !media.isImage || media.mime != mimeType || media.size != 42 || media.fbType != whatsmeow.MediaImage {
+		t.Fatalf("encrypted image mapping = text %q media %#v", text, media)
+	}
+}
+
+func TestMessengerMediaURLRejectsLocalTargets(t *testing.T) {
+	if err := downloadMessengerURL(context.Background(), "https://127.0.0.1/private", &strings.Builder{}, 1024); err == nil {
+		t.Fatal("expected local media URL to be rejected")
 	}
 }
 
