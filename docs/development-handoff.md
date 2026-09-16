@@ -40,14 +40,16 @@ evidence, but neither is the source of truth for branch state.
 | Remote and branch | Purpose | Current handoff baseline |
 | --- | --- | --- |
 | `origin/main` | Public stable releases only | `c4dcafa`, release `v0.3.13` |
-| `private-dev/dev` | Private integration branch and source of truth for active development | Messenger work through `6d28851`; the current branch tip contains this handoff after it is pushed |
-| `public-beta/beta` | Public, opt-in builds for invited testers | `98216fd`, stable code plus beta onboarding |
+| `private-dev/dev` | Private integration branch and source of truth for active development | Messenger implementation and the completed live parity pass; the current branch tip contains this handoff after it is pushed |
+| `public-beta/beta` | Public, opt-in builds for invited testers | `371826f`, tagged `v0.4.0`, with current `dev` ancestry plus beta onboarding |
 
-Develop on `dev` and push it only to `private-dev/dev`. The public beta does
-not yet contain the Messenger development series. Promote selected, verified
-development work to `public-beta/beta` only when OneLegDave chooses it for beta
-testing. Stable promotion to `origin/main`, version changes, tags, releases,
-and marketplace updates are separate, explicit release work.
+Develop on `dev` and push it only to `private-dev/dev`. The public beta now
+contains the verified Messenger development series through `ce16264`, merged as
+`371826f` while preserving its beta-only branding, onboarding, and reporting
+links. Promote later development work to `public-beta/beta` only when
+OneLegDave chooses it for beta testing. Stable promotion to `origin/main`,
+version changes, tags, releases, and marketplace updates are separate,
+explicit release work.
 
 The old `codex/messenger-backend` worktree branch is not the continuation
 point. Its single patch is patch-equivalent to work already integrated and
@@ -69,10 +71,18 @@ vendored `mautrix-meta` client. It currently includes:
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
-The active installed checkout was at `4affe76` when this handoff was written,
-with a running helper built from that source. The next `dev` commit, `6d28851`,
-only removes a private chat name from a test-fixture note, so there is no known
-runtime difference. Recheck this live instead of assuming it remains true.
+The active installed checkout remained at `4affe76` during the 2026-09-16 live
+parity pass, with a running shell-owned helper built from that source. The next
+`dev` commit, `6d28851`, only removes a private chat name from a test-fixture
+note, so there is no known runtime difference. Recheck this live instead of
+assuming it remains true.
+
+The 2026-09-16 live parity pass confirmed that a video-backed Messenger GIF
+stays inline and loops, a new incoming reply appears without sending or
+manually refreshing, and small PNG and plain-text attachments send
+successfully. OneLegDave confirmed each visible result. No defect was
+reproduced, so no new regression code was added. Temporary screenshots,
+recording output, and attachment fixtures were removed after verification.
 
 Older encrypted Messenger history may be unavailable even when recent messages
 and the conversation list work. That is a protocol/data-availability limit,
@@ -82,28 +92,15 @@ migrations can still make re-pairing necessary.
 
 ## Exact next work
 
-Do not reimplement features already listed above. Resume with bounded live
-verification, using non-sensitive test content and OneLegDave's deliberate
-actions:
-
-1. Confirm a video-backed animated Messenger GIF stays inside its message,
-   starts when requested, loops, and does not open briefly and close. The QML
-   regression test covers the intended inline path, but this specific live fix
-   still needs owner confirmation.
-2. Confirm new incoming Messenger replies appear without sending a reply or
-   manually refreshing. If updates remain slow, trace whether the transport
-   event, helper publication, socket event, or QML merge is delayed before
-   changing polling behavior.
-3. Exercise the already implemented outbound image and file paths with a small,
-   non-sensitive test file. Record the exact unsupported type or failure before
-   expanding attachment behavior.
-4. Add the smallest synthetic regression for any confirmed defect, then rerun
-   the full checks below. Never turn a live account observation into a fixture
-   containing real names, message text, account IDs, avatars, or media.
+The planned Messenger live parity pass is complete. No next feature has been
+selected. Before changing behavior, agree with OneLegDave on one bounded next
+capability, trace the relevant protocol and UI path, and stop at the smallest
+implementation that can be verified synthetically and live.
 
 Calling, reactions, typing indicators, voice recording, and GIF search remain
-unsupported for Messenger. Treat them as future scope, not regressions in the
-current parity pass.
+unsupported for Messenger. Treat them as future scope, not regressions. Never
+turn a live account observation into a fixture containing real names, message
+text, account IDs, avatars, or media.
 
 ## Runtime and data safety
 
