@@ -20,6 +20,7 @@ Item {
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
   readonly property bool isMessenger: network === "messenger"
+  readonly property bool reactionsSupported: !isWhatsApp
   property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : "Google Messages"))
 
   readonly property color dim: Model.readableInk(panelBg, Color.muted)
@@ -684,7 +685,7 @@ Item {
   }
 
   function startRecording() {
-    if (root.isWhatsApp) {
+    if (!root.reactionsSupported) {
       threadError = "Voice messages are not supported for " + root.networkLabel + " in this version."
       return
     }
@@ -1725,7 +1726,7 @@ Item {
                 }
                 Item { width: Style.space(4); height: 1 }
                 Text {
-                  visible: !root.isWhatsApp && !root.isMessenger && row.msg && !row.msg.deleted
+                  visible: root.reactionsSupported && row.msg && !row.msg.deleted
                   text: (row.msg && root.reactingTo === row.msg.id) ? "Close" : "React"
                   color: row.mine ? root.mineMeta : root.theirsMeta
                   font.family: root.fontFamily

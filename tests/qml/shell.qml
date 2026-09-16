@@ -494,6 +494,7 @@ ShellRoot {
     fbInbox.selectConversation("fb-1")
     root.check(inspect.findChild(fbInbox, "attachButton").visible && inspect.findChild(fbInbox, "micButton").visible && inspect.findChild(fbInbox, "gifButton").visible,
       "Messenger shows attachment, voice, and GIF actions")
+    root.check(fbInbox.reactionsSupported, "Messenger message bubbles enable the reaction action")
     fbInbox.react("fb-msg", "👍")
     var fbReaction = fake.delayed.pop()
     root.check(fbReaction.method === "react" && fbReaction.network === "messenger", "Messenger reaction is routed only to Messenger")

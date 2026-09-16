@@ -95,17 +95,19 @@ migrations can still make re-pairing necessary.
 
 ## Exact next work
 
-Reactions, typing indicators, voice recording, and GIF search are implemented
-with synthetic Go and QML coverage. The exact next work is a deliberate live
-Messenger pass for each feature, using only disposable content and recording no
-personal identifiers in fixtures or logs. Calling remains explicitly out of
-scope and unsupported.
+Voice recording and GIF search are implemented and live-confirmed by
+OneLegDave. Reaction transport is implemented; the first live pass exposed a
+Messenger-only UI gate that hid the existing reaction action, which is now
+covered by a focused QML regression check and needs one visible recheck after
+installation. Typing transport remains implemented and synthetically covered,
+but its live preview was not observed and is deliberately deprioritized at
+OneLegDave's request. Calling remains explicitly out of scope and unsupported.
 
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and
-`git diff --check`. Live verification is pending for reaction add/remove,
-incoming and outgoing typing presence, recorded voice-note delivery, and a GIF
-chosen through search.
+`git diff --check`. Recorded voice-note delivery and a GIF chosen through search
+passed live. Reaction add/remove needs a visible recheck after the UI correction;
+typing remains live-unconfirmed and is not current follow-up work.
 
 ## Runtime and data safety
 
