@@ -211,6 +211,11 @@ func (b *Backend) Start(parent context.Context) error {
 }
 
 func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
+	if b.paths != nil {
+		b.mu.Lock()
+		b.mergeStoredMessengerDataLocked(loadStoredMessengerData(b.paths.MessengerStoreFile()))
+		b.mu.Unlock()
+	}
 	if b.waStore == nil {
 		if err := ensureMessengerSQLiteFile(b.paths.MessengerDBFile()); err != nil {
 			return fmt.Errorf("secure E2EE store: %w", err)
@@ -415,6 +420,7 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	b.refreshConversationNamesLocked()
 	avatarJobs := b.avatarJobsLocked()
 	b.recountUnreadLocked()
+	b.saveStoredMessengerDataLocked()
 	b.mu.Unlock()
 	if len(avatarJobs) > 0 {
 		go b.fetchAvatars(avatarJobs)
@@ -453,7 +459,13 @@ func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS 
 	if current, ok := b.convs[key]; ok {
 		group = group || current.IsGroup
 	}
-	b.threadTypes[id] = typ
+	// A later, non-hybrid-aware thread row (e.g. a plain inbox refresh) can
+	// report a generic type for a thread already known to be an encrypted
+	// WhatsApp bridge. Losing that classification would hide historyNotice
+	// and make the thread look like ordinary Messenger, so never downgrade.
+	if current, ok := b.threadTypes[id]; !ok || !current.IsWhatsApp() || typ.IsWhatsApp() {
+		b.threadTypes[id] = typ
+	}
 	_ = readTS
 	if avatar != "" {
 		b.threadAvatars[id] = avatar
@@ -607,6 +619,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		conv.Preview, conv.Timestamp, conv.Unread = preview, messengerTimeTimestamp(evt.Info.Timestamp), !evt.Info.IsFromMe
 		b.convs[key] = conv
 		b.recountUnreadLocked()
+		b.saveStoredMessengerDataLocked()
 		b.mu.Unlock()
 		b.publishMessage(msg)
 		b.publishSnapshots()
@@ -796,6 +809,7 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, e
 		c.Timestamp = msg.Timestamp
 		b.convs[p.ConversationID] = c
 	}
+	b.saveStoredMessengerDataLocked()
 	b.mu.Unlock()
 	b.publishSnapshots()
 	return &msg, nil
@@ -818,6 +832,7 @@ func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 		c.Unread = false
 		b.convs[p.ConversationID] = c
 		b.recountUnreadLocked()
+		b.saveStoredMessengerDataLocked()
 		b.mu.Unlock()
 		b.publishSnapshots()
 	}

@@ -9,7 +9,10 @@ ShellRoot {
   property var originalRow: null
   property var originalThumb: null
   property var pending: null
+  property int mediaCalls: 0
+  property int callsAfterCorruptLoad: 0
   property var photo: ({id:"photo",conversationID:"a",timestamp:1000000,fromMe:false,attachments:[{key:"photo-key",isImage:true,mimeType:"image/svg+xml"}]})
+  property var corruptPhoto: ({id:"corrupt",conversationID:"a",timestamp:3000000,fromMe:false,attachments:[{key:"corrupt-key",isImage:true,mimeType:"image/png"}]})
   function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
   function thumb(item) {
     if (item && item.ready !== undefined && item.maxEdge !== undefined) return item
@@ -28,7 +31,7 @@ ShellRoot {
     signal conversationUpdated(var conversation)
     signal paired()
     function call(method, params, callback) {
-      if (method === "media") { root.pending=callback; return }
+      if (method === "media") { root.mediaCalls++; root.pending=callback; return }
       if (callback) callback(true, method === "messages" ? {messages:[]} : {})
     }
   }
@@ -69,6 +72,16 @@ ShellRoot {
         }
         if(root.step===5) {
           root.check(list.itemAtIndex(1)===root.originalRow && root.thumb(root.originalRow)===root.originalThumb,"new message does not rebuild existing photo")
+          inbox.mergeMessage(root.corruptPhoto)
+        }
+        if(root.step===6) {
+          root.check(!!root.pending,"corrupt photo requests media once")
+          root.pending(true,{path:"/dev/null"})
+          root.callsAfterCorruptLoad=root.mediaCalls
+        }
+        if(root.step===7) {
+          root.check(inbox.mediaRequests["corrupt-key"]==="failed","decode failure becomes a stable failed state")
+          root.check(root.mediaCalls===root.callsAfterCorruptLoad,"decode failure does not redownload in a loop")
           console.log("OMACHAT_MEDIA_PASS"); Qt.quit()
         }
         root.step++

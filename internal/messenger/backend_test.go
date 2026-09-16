@@ -387,6 +387,20 @@ func TestMessengerMediaURLRejectsLocalTargets(t *testing.T) {
 	}
 }
 
+func TestMessengerAnimatedVideoContainerIsNotClassifiedAsImage(t *testing.T) {
+	media := &messengerMedia{name: "animation.f4v", mime: "application/octet-stream"}
+	classifyMessengerMedia(media, table.AttachmentTypeAnimatedImage)
+	if !media.isVideo || media.isImage || media.isGIF {
+		t.Fatalf("animated video classification = image:%v gif:%v video:%v", media.isImage, media.isGIF, media.isVideo)
+	}
+
+	gif := &messengerMedia{name: "animation.gif", mime: "image/gif"}
+	classifyMessengerMedia(gif, table.AttachmentTypeAnimatedImage)
+	if !gif.isImage || !gif.isGIF || gif.isVideo {
+		t.Fatalf("GIF classification = image:%v gif:%v video:%v", gif.isImage, gif.isGIF, gif.isVideo)
+	}
+}
+
 func TestEncryptedHistoryReturnsAnHonestNotice(t *testing.T) {
 	b := New(zerolog.Nop(), nil, nil)
 	b.threadTypes[9] = table.ENCRYPTED_OVER_WA_ONE_TO_ONE

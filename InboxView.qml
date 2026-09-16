@@ -1543,7 +1543,7 @@ Item {
                   MediaThumb {
                     id: thumb
                     visible: parent.isImage && parent.mediaPath !== ""
-                    path: parent.mediaPath
+                    path: parent.isImage ? parent.mediaPath : ""
                     mimeType: modelData ? (modelData.mimeType || "") : ""
                     fileName: modelData ? (modelData.name || "") : ""
                     playing: root.panelOpen
@@ -1552,7 +1552,7 @@ Item {
                     onLoadFailed: {
                       if (parent.mediaKey) {
                         root._evictMedia(parent.mediaKey)
-                        root.requestMedia(parent.mediaKey, 0)
+                        root.setMediaRequest(parent.mediaKey, "failed")
                       }
                     }
                   }

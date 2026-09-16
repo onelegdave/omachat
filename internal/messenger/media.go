@@ -56,10 +56,28 @@ func messengerMediaKey(messageID, attachmentID string, index int64) string {
 
 func classifyMessengerMedia(m *messengerMedia, typ table.AttachmentType) {
 	lower := strings.ToLower(m.mime)
-	m.isGIF = typ == table.AttachmentTypeAnimatedImage || strings.Contains(lower, "gif")
+	ext := messengerMediaExtension(m)
+	videoContainer := strings.HasPrefix(lower, "video/") || ext == ".f4v" || ext == ".mp4" || ext == ".m4v" || ext == ".mov" || ext == ".webm" || ext == ".mkv" || ext == ".3gp"
+	m.isGIF = !videoContainer && (typ == table.AttachmentTypeAnimatedImage || strings.Contains(lower, "gif") || ext == ".gif")
 	m.isImage = typ == table.AttachmentTypeImage || typ == table.AttachmentTypeSticker || typ == table.AttachmentTypeSelfieSticker || typ == table.AttachmentTypeThirdPartySticker || m.isGIF || strings.HasPrefix(lower, "image/")
 	m.isAudio = typ == table.AttachmentTypeAudio || typ == table.AttachmentTypeSoundBite || strings.HasPrefix(lower, "audio/")
-	m.isVideo = typ == table.AttachmentTypeVideo || strings.HasPrefix(lower, "video/")
+	m.isVideo = typ == table.AttachmentTypeVideo || videoContainer
+	if m.isVideo {
+		m.isImage = false
+		m.isGIF = false
+	}
+}
+
+func messengerMediaExtension(m *messengerMedia) string {
+	for _, value := range []string{m.name, m.path, m.remoteURL} {
+		if parsed, err := url.Parse(value); err == nil && parsed.Path != "" {
+			value = parsed.Path
+		}
+		if ext := strings.ToLower(filepath.Ext(value)); ext != "" {
+			return ext
+		}
+	}
+	return ""
 }
 
 func firstNonEmpty(values ...string) string {
@@ -409,6 +427,7 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 		}
 		b.convs[p.ConversationID] = c
 	}
+	b.saveStoredMessengerDataLocked()
 	b.mu.Unlock()
 	b.publishSnapshots()
 	result := wire.SendMediaResult{Message: &msg, CaptionMessage: captionMessage}
