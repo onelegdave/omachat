@@ -53,7 +53,7 @@ BarWidget {
     target: "onelegdave.omachat"
     function showSettings(): void { root.openSettings() }
     function showService(network: string): void {
-      if (["gmessages", "whatsapp", "telegram"].indexOf(network) < 0 || !panelLoader.item) return
+      if (["gmessages", "whatsapp", "telegram", "messenger"].indexOf(network) < 0 || !panelLoader.item) return
       panelLoader.item.setActiveService(network)
       root.open()
     }

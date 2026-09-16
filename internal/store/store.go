@@ -52,7 +52,7 @@ func NewPaths() (*Paths, error) {
 		runtime = filepath.Join(v, appDir)
 	}
 	p := &Paths{Data: data, Cache: cache, Runtime: runtime}
-	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir(), p.TelegramMediaDir()} {
+	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir(), p.TelegramMediaDir(), p.MessengerMediaDir()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
 		}
@@ -239,3 +239,37 @@ func WritePrivateFile(path string, data []byte) error {
 	}
 	return os.Rename(tmp, path)
 }
+
+// MessengerDBFile is where the SQLite database for Messenger session is stored (if mautrix-meta uses one).
+func (p *Paths) MessengerDBFile() string { return filepath.Join(p.Data, "messenger.db") }
+
+// MessengerMediaDir caches downloaded attachments and avatars for Messenger.
+func (p *Paths) MessengerMediaDir() string { return filepath.Join(p.Cache, "media_messenger") }
+
+// MessengerStoreFile holds the local cache of Messenger conversations and messages.
+func (p *Paths) MessengerStoreFile() string { return filepath.Join(p.Data, "messenger_store.json") }
+
+// ClearMessengerSession removes stored Messenger credentials/database, conversation cache, and media caches.
+func (p *Paths) ClearMessengerSession() error {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+	if err := os.Remove(p.MessengerSessionFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, ext := range []string{"", "-wal", "-shm", "-journal"} {
+		f := p.MessengerDBFile() + ext
+		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if err := os.Remove(p.MessengerStoreFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.RemoveAll(p.MessengerMediaDir()); err != nil {
+		return err
+	}
+	return os.MkdirAll(p.MessengerMediaDir(), 0o700)
+}
+
+// MessengerSessionFile holds the Messenger browser cookies.
+func (p *Paths) MessengerSessionFile() string { return filepath.Join(p.Data, "messenger_session.json") }

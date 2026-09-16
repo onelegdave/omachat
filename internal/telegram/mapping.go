@@ -32,6 +32,7 @@ type Message struct {
 	MediaMime      string
 	MediaAudio     bool
 	MediaSticker   bool
+	Reactions      []wire.Reaction
 }
 
 // ReadClient is the future read-only synchronization seam. Implementations may
@@ -71,6 +72,12 @@ type MediaClient interface {
 	DownloadMedia(ctx context.Context, key, dir string) (string, error)
 }
 
+// ReactionClient is the optional capability used to add or remove a standard
+// emoji reaction. An empty emoji removes the current user's reaction.
+type ReactionClient interface {
+	React(ctx context.Context, conversationID, messageID int64, emoji string) error
+}
+
 func mapDialog(d Dialog) wire.Conversation {
 	name := d.Name
 	if name == "" {
@@ -90,6 +97,7 @@ func mapMessage(m Message) wire.Message {
 		ID: fmt.Sprintf("tg:%d", m.ID), ConversationID: fmt.Sprintf("tg:%d", m.ConversationID),
 		Text: m.Text, Timestamp: m.Timestamp, FromMe: m.FromMe,
 		SenderID: fmt.Sprintf("tg:%d", m.SenderID), SenderName: m.SenderName,
+		Reactions: append([]wire.Reaction(nil), m.Reactions...),
 	}
 	if m.MediaKey != "" {
 		mimeType := m.MediaMime

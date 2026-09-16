@@ -20,9 +20,10 @@ const (
 
 // StoredChatData represents the on-disk state of WhatsApp conversations and messages.
 type StoredChatData struct {
-	Conversations map[string]wire.Conversation `json:"conversations"`
-	Order         []string                     `json:"order"`
-	Messages      map[string][]wire.Message    `json:"messages"`
+	Conversations  map[string]wire.Conversation `json:"conversations"`
+	Order          []string                     `json:"order"`
+	Messages       map[string][]wire.Message    `json:"messages"`
+	ReactionActors map[string]map[string]string `json:"reactionActors,omitempty"`
 	// RawMedia holds protobuf payloads needed to download attachments after
 	// restart. View-once messages are never stored here.
 	RawMedia map[string][]byte `json:"rawMedia,omitempty"`
@@ -30,10 +31,11 @@ type StoredChatData struct {
 
 func newStoredChatData() *StoredChatData {
 	return &StoredChatData{
-		Conversations: make(map[string]wire.Conversation),
-		Order:         make([]string, 0),
-		Messages:      make(map[string][]wire.Message),
-		RawMedia:      make(map[string][]byte),
+		Conversations:  make(map[string]wire.Conversation),
+		Order:          make([]string, 0),
+		Messages:       make(map[string][]wire.Message),
+		ReactionActors: make(map[string]map[string]string),
+		RawMedia:       make(map[string][]byte),
 	}
 }
 
@@ -61,6 +63,9 @@ func loadChatStore(path string) (*StoredChatData, error) {
 	}
 	if stored.RawMedia == nil {
 		stored.RawMedia = make(map[string][]byte)
+	}
+	if stored.ReactionActors == nil {
+		stored.ReactionActors = make(map[string]map[string]string)
 	}
 
 	boundStoredChat(&stored)
@@ -96,6 +101,9 @@ func boundStoredChat(stored *StoredChatData) {
 	}
 	if stored.RawMedia == nil {
 		stored.RawMedia = make(map[string][]byte)
+	}
+	if stored.ReactionActors == nil {
+		stored.ReactionActors = make(map[string]map[string]string)
 	}
 
 	type entry struct {
@@ -161,6 +169,11 @@ func boundStoredChat(stored *StoredChatData) {
 	stored.Conversations = convs
 	stored.Messages = msgs
 	stored.RawMedia = raw
+	for key := range stored.ReactionActors {
+		if _, ok := keepIDs[key]; !ok {
+			delete(stored.ReactionActors, key)
+		}
+	}
 }
 
 func snapshotRawMedia(raw map[string]*waE2E.Message) map[string][]byte {

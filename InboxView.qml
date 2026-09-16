@@ -19,7 +19,9 @@ Item {
   property string network: "gmessages"
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
-  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : "Google Messages")
+  readonly property bool isMessenger: network === "messenger"
+  readonly property bool reactionsSupported: true
+  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : "Google Messages"))
 
   readonly property color dim: Model.readableInk(panelBg, Color.muted)
   readonly property color errorInk: Model.readableInk(panelBg, Color.urgent)
@@ -94,6 +96,7 @@ Item {
   property string historyCursorID: ""
   property double historyCursorTime: 0
   property string historyError: ""
+  property string historyNotice: ""
   property var historyCursors: ({})
   property int historyRequest: 0
   property int viewportRevision: 0
@@ -238,6 +241,7 @@ Item {
     historyCursorID = ""
     historyCursorTime = 0
     historyError = ""
+    historyNotice = ""
     historyCursors = ({})
     stopPlayback()
     if (recording) stopRecording(false)
@@ -316,7 +320,7 @@ Item {
       historyCursorStalled = true
       historyError = root.isWhatsApp
         ? "WhatsApp repeated the cached history cursor. Refresh the conversation to try again."
-        : (root.isTelegram ? "Telegram repeated the history cursor. Refresh the conversation to try again." : "Google repeated the history cursor. Refresh the conversation to try again.")
+        : (root.isTelegram ? "Telegram repeated the history cursor. Refresh the conversation to try again." : (root.isMessenger ? "Messenger repeated the history cursor. Refresh the conversation to try again." : "Google repeated the history cursor. Refresh the conversation to try again."))
     }
     historyCursorID = id
     historyCursorTime = time
@@ -349,6 +353,7 @@ Item {
       root.storeLocalSends(root.network, target, remaining)
       displayMessages(Model.mergePage(messages, combined, false), initial || messageList.atYEnd)
       historyError = ""
+      historyNotice = String(res.historyNotice || "")
       if (!historyExpanded || historyCursorStalled) {
         readHistoryCursor(res, false)
       }
@@ -534,8 +539,8 @@ Item {
   }
 
   function openGifPicker() {
-    if (root.isWhatsApp) {
-      threadError = "GIF search is not supported for WhatsApp in this version."
+    if (root.isTelegram) {
+      threadError = "GIF search is not supported for " + root.networkLabel + " in this version."
       return
     }
     if (!service) return
@@ -630,7 +635,13 @@ Item {
     var token = ++root.mediaSendToken
     var tmpID = Model.transactionID()
     root.sendingMedia = true
-    root.service.call("sendMedia", { conversationID: convID, path: path, caption: caption || "", tmpID: tmpID },
+    root.service.call("sendMedia", {
+      conversationID: convID,
+      path: path,
+      caption: caption || "",
+      tmpID: tmpID,
+      durationSeconds: root.pendingIsVoice ? Math.max(1, root.pendingVoiceSeconds) : 0
+    },
       function(ok, res) {
         if (token !== root.mediaSendToken || generation !== root.selectionGeneration || targetNet !== root.network) return
         root.sendingMedia = false
@@ -644,7 +655,11 @@ Item {
         if (res.message && res.message.attachments) {
           for (var ai = 0; ai < res.message.attachments.length; ai++) {
             var sentAttachment = res.message.attachments[ai]
-            if (sentAttachment && sentAttachment.key) root._withMedia(sentAttachment.key, path)
+            // WhatsApp converts GIF inputs to MP4 before upload. Let the media
+            // request fetch that sent MP4 instead of mapping its key to the
+            // original GIF and handing it to the video player.
+            if (sentAttachment && sentAttachment.key && !(sentAttachment.isGif && sentAttachment.isVideo))
+              root._withMedia(sentAttachment.key, path)
           }
         }
         root.mergeMessage(res.message, targetNet, true)
@@ -670,10 +685,6 @@ Item {
   }
 
   function startRecording() {
-    if (root.isWhatsApp) {
-      threadError = "Voice messages are not supported for WhatsApp in this version."
-      return
-    }
     if (recording || selectedConvID === "") return
     emojiPickerOpen = false
     gifPickerOpen = false
@@ -797,10 +808,6 @@ Item {
 
   function react(messageID, emoji) {
     reactingTo = ""
-    if (root.isWhatsApp) {
-      threadError = "Reactions are not supported for WhatsApp in this version."
-      return
-    }
     if (!service || selectedConvID === "" || !messageID) return
     var generation = selectionGeneration
     service.call("react", {
@@ -828,11 +835,14 @@ Item {
   onStatusWAChanged: if (statusWA && statusWA.state === "unpaired") root.clearNetwork("whatsapp")
   readonly property var statusTG: service && typeof service.statusFor === "function" ? service.statusFor("telegram") : (service ? service.statusTG : null)
   onStatusTGChanged: if (statusTG && statusTG.state === "unpaired") root.clearNetwork("telegram")
+  readonly property var statusFB: service && typeof service.statusFor === "function" ? service.statusFor("messenger") : (service ? service.statusFB : null)
+  onStatusFBChanged: if (statusFB && statusFB.state === "unpaired") root.clearNetwork("messenger")
   readonly property var statusGM: service && typeof service.statusFor === "function" ? service.statusFor("gmessages") : (service ? service.status : null)
   onStatusGMChanged: if (statusGM && statusGM.state === "unpaired") root.clearNetwork("gmessages")
 
   Connections {
     target: root.service
+    ignoreUnknownSignals: true
     function onMessageReceived(msg, net) {
       root.mergeMessage(msg, net || root.network)
       if ((!net || net === root.network) && msg.conversationID === root.selectedConvID && root.panelOpen && !msg.fromMe) root.markThreadRead()
@@ -1289,7 +1299,7 @@ Item {
       anchors.top: threadSep.bottom
       height: root.selectedConvID !== "" ? Math.max(Style.space(40), historyStatus.implicitHeight + Style.space(12), children[0].implicitHeight) : 0
       spacing: Style.space(8)
-      visible: root.selectedConvID !== "" && (root.messages.length > 0 || root.hasOlder)
+      visible: root.selectedConvID !== "" && (root.messages.length > 0 || root.hasOlder || root.historyNotice !== "")
 
       Button {
         focusable: true
@@ -1309,7 +1319,7 @@ Item {
         objectName: "historyStatus"
         anchors.verticalCenter: parent.verticalCenter
         width: Math.max(0, parent.width - (parent.children[0].visible ? parent.children[0].width + parent.spacing : 0))
-        text: root.historyError || (!root.hasOlder && !root.loadingMessages ? (root.isWhatsApp ? "Showing cached WhatsApp history. On-demand phone history is not requested in this version." : "All available history loaded") : "")
+        text: root.historyError || root.historyNotice || (!root.hasOlder && !root.loadingMessages ? (root.isWhatsApp ? "Showing cached WhatsApp history. On-demand phone history is not requested in this version." : "All available history loaded") : "")
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
         color: root.historyError ? root.errorInk : root.dim
@@ -1419,26 +1429,31 @@ Item {
                   readonly property bool isImage: !!(modelData && (modelData.isImage || modelData.isGif) && !modelData.isAudio && !modelData.isVideo)
                   readonly property bool isVoice: !!(modelData && modelData.isAudio)
                   readonly property bool isVideo: !!(modelData && modelData.isVideo)
+                  readonly property bool isVideoGif: !!(isVideo && modelData && modelData.isGif)
+                  readonly property bool loadsInline: isImage || isVideoGif
                   readonly property string mediaKey: modelData && modelData.key ? modelData.key : ""
                   readonly property string mediaPath: mediaKey && root.mediaPaths[mediaKey]
                     ? root.mediaPaths[mediaKey] : (modelData && modelData.path ? modelData.path : "")
                   readonly property string mediaState: mediaKey && root.mediaRequests[mediaKey] ? root.mediaRequests[mediaKey] : ""
-                  readonly property bool mediaFailed: isImage && mediaPath === "" && mediaState === "failed"
-                  readonly property bool mediaLoading: isImage && !mediaFailed && !thumb.ready && !thumb.hasError
+                  readonly property bool mediaFailed: loadsInline && mediaPath === "" && mediaState === "failed"
+                  readonly property bool mediaLoading: loadsInline && !mediaFailed
+                    && !(isImage ? thumb.ready : (videoGifLoader.item && videoGifLoader.item.ready))
+                    && !(isImage ? thumb.hasError : (videoGifLoader.item && videoGifLoader.item.hasError))
                   readonly property bool playingThis: isVoice && root.playingKey === mediaKey
                   readonly property bool loadingThis: isVoice && root.audioWaitingKey === mediaKey
                   width: parent.width
                   height: {
-                    if (isVoice || isVideo) return Style.space(36)
-                    if (isImage) {
-                      if (mediaPath !== "" && thumb.visible) return thumb.height || Style.space(96)
+                    if (isVoice || (isVideo && !isVideoGif)) return Style.space(36)
+                    if (loadsInline) {
+                      if (mediaPath !== "") return isImage ? (thumb.height || Style.space(96))
+                        : ((videoGifLoader.item && videoGifLoader.item.height) || Style.space(96))
                       return Style.space(96)
                     }
                     return 0
                   }
                   visible: isImage || isVoice || isVideo
-                  onMediaKeyChanged: if (isImage && mediaKey && !mediaPath) root.requestMedia(mediaKey)
-                  Component.onCompleted: if (isImage && mediaKey && !mediaPath) root.requestMedia(mediaKey)
+                  onMediaKeyChanged: if (loadsInline && mediaKey && !mediaPath) root.requestMedia(mediaKey)
+                  Component.onCompleted: if (loadsInline && mediaKey && !mediaPath) root.requestMedia(mediaKey)
 
                   Rectangle {
                     visible: parent.isVoice
@@ -1467,7 +1482,7 @@ Item {
                   }
 
                   Rectangle {
-                    visible: parent.isVideo
+                    visible: parent.isVideo && !parent.isVideoGif
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
@@ -1537,7 +1552,7 @@ Item {
                   MediaThumb {
                     id: thumb
                     visible: parent.isImage && parent.mediaPath !== ""
-                    path: parent.mediaPath
+                    path: parent.isImage ? parent.mediaPath : ""
                     mimeType: modelData ? (modelData.mimeType || "") : ""
                     fileName: modelData ? (modelData.name || "") : ""
                     playing: root.panelOpen
@@ -1546,7 +1561,26 @@ Item {
                     onLoadFailed: {
                       if (parent.mediaKey) {
                         root._evictMedia(parent.mediaKey)
-                        root.requestMedia(parent.mediaKey, 0)
+                        root.setMediaRequest(parent.mediaKey, "failed")
+                      }
+                    }
+                  }
+
+                  Loader {
+                    id: videoGifLoader
+                    active: parent.isVideoGif
+                    visible: active && parent.mediaPath !== ""
+                    sourceComponent: Component {
+                      LoopingVideoThumb {
+                        path: attachItem.isVideoGif ? attachItem.mediaPath : ""
+                        playing: root.panelOpen && videoGifLoader.visible
+                        maxEdge: Math.min(attachItem.width, Style.space(280))
+                        onLoadFailed: {
+                          if (attachItem.mediaKey) {
+                            root._evictMedia(attachItem.mediaKey)
+                            root.setMediaRequest(attachItem.mediaKey, "failed")
+                          }
+                        }
                       }
                     }
                   }
@@ -1641,7 +1675,7 @@ Item {
                 }
                 Item { width: Style.space(4); height: 1 }
                 Text {
-                  visible: !root.isWhatsApp && row.msg && !row.msg.deleted
+                  visible: root.reactionsSupported && row.msg && !row.msg.deleted
                   text: (row.msg && root.reactingTo === row.msg.id) ? "Close" : "React"
                   color: row.mine ? root.mineMeta : root.theirsMeta
                   font.family: root.fontFamily
@@ -1913,14 +1947,15 @@ Item {
         objectName: "attachButton"
         focusable: true
         Accessible.role: Accessible.Button
-        Accessible.name: "Attach photo or GIF"
+        Accessible.name: root.isMessenger ? "Attach image or file" : "Attach photo or GIF"
         anchors.left: parent.left
         anchors.leftMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
-        size: fs(Style.space(28))
+        size: visible ? fs(Style.space(28)) : 0
         fontSize: fs(Style.space(16))
         iconText: "󰁦"
-        tooltipText: "Attach a photo or GIF"
+        tooltipText: root.isMessenger ? "Attach an image or file" : "Attach a photo or GIF"
+        visible: true
         foreground: root.foreground
         fontFamily: root.fontFamily
         enabled: composer.enabled && !root.sendingMedia
@@ -1933,7 +1968,7 @@ Item {
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Microphone"
-        visible: !root.isWhatsApp
+        visible: true
         anchors.left: attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter
@@ -1953,7 +1988,7 @@ Item {
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Search GIFs"
-        visible: !root.isWhatsApp && !root.isTelegram
+        visible: !root.isTelegram
         anchors.left: micButton.visible ? micButton.right : attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter

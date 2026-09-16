@@ -15,15 +15,19 @@ dependencies does not add missing protocol support.
   without requiring a shell restart. The API hash is never exposed in logs or status.
 - Existing text, photo, history, and supported voice features remain available
   according to the [service guides](README.md).
+- Messenger reactions, voice notes, and optional GIPHY search.
+- WhatsApp reactions, voice notes, saved contact-name resolution, and optional
+  GIPHY search.
+- Telegram standard emoji reactions with live count updates and persisted
+  history state.
+- Animated helper build and connection states; Retry is unavailable while the
+  helper is actively starting or connecting.
 
 ## Next priorities
 
-1. **More service capabilities:** assess WhatsApp/Telegram reactions and typing,
-   then WhatsApp voice notes. The current helper explicitly rejects unsupported
-   operations; add backend behavior and isolated tests before enabling controls.
-2. **Device readiness:** distinguish missing tools from unavailable cameras,
-   microphone permissions, file portals, and locked keyrings. Never open a camera
-   or record audio just because Settings was opened.
+1. **Device readiness:** distinguish missing tools from microphone permissions,
+   file portals, and locked keyrings. Never record audio just because Settings
+   was opened.
 
 Verify service-specific errors, reconnect behavior, network isolation, and
 cancellation using synthetic fixtures before any live send/pairing tests. Live

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "onelegdave.omachat",
   "name": "OmaChat",
-  "version": "0.3.13",
+  "version": "0.4.3",
   "author": "OneLegDave",
-  "license": "MIT",
-  "description": "Native Omarchy Plugin for Google Messages, WhatsApp, and Telegram. The shell owns the protocol helper; no systemd unit.",
+  "license": "AGPL-3.0-or-later",
+  "description": "Native Omarchy Plugin for Google Messages, WhatsApp, Telegram, and Messenger. The shell owns the protocol helper; no systemd unit.",
   "kinds": ["service", "bar-widget"],
   "keepLoaded": true,
   "entryPoints": {
@@ -14,21 +14,15 @@
   },
   "barWidget": {
     "displayName": "OmaChat",
-    "description": "Native Omarchy Plugin panel for Google Messages, WhatsApp, and Telegram threads, history, images, stickers, voice notes, and replies",
+    "description": "Native Omarchy Plugin panel for Google Messages, WhatsApp, Telegram, and Messenger threads, history, images, stickers, voice notes, and replies",
     "category": "Info",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "cameraDevice": "/dev/video0",
       "audioDevice": "default",
       "normalizeVoice": true
     },
     "schema": [
-      {
-        "key": "cameraDevice",
-        "type": "string",
-        "label": "Webcam device for photo capture"
-      },
       {
         "key": "audioDevice",
         "type": "string",

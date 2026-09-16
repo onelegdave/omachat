@@ -80,6 +80,9 @@ remaining session. API application credentials remain in the shared config.
 - On-demand inbound photo and audio downloads.
 - Static WebP sticker downloads through the normal image renderer.
 - Mark-as-read support through Telegram history acknowledgements.
+- Standard emoji reactions, including add, switch, remove, live count updates,
+  and reaction state restored with message history. Telegram may reject a
+  reaction that a particular chat or channel does not allow.
 
 Animated TGS stickers and video stickers remain unsupported. Telegram media
 references are live-only and are repopulated by refresh; downloaded files may

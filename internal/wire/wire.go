@@ -18,6 +18,7 @@ const (
 	NetworkGMessages = "gmessages"
 	NetworkWhatsApp  = "whatsapp"
 	NetworkTelegram  = "telegram"
+	NetworkMessenger = "messenger"
 )
 
 // KnownNetworks lists all supported network identifiers.
@@ -25,12 +26,13 @@ var KnownNetworks = []string{
 	NetworkGMessages,
 	NetworkWhatsApp,
 	NetworkTelegram,
+	NetworkMessenger,
 }
 
 // IsKnownNetwork reports whether net is recognized by the daemon.
 func IsKnownNetwork(net string) bool {
 	switch net {
-	case NetworkGMessages, NetworkWhatsApp, NetworkTelegram:
+	case NetworkGMessages, NetworkWhatsApp, NetworkTelegram, NetworkMessenger:
 		return true
 	default:
 		return false
@@ -68,7 +70,6 @@ const (
 	EventQR           = "qr"
 	EventEmoji        = "emoji"
 	EventPaired       = "paired"
-	EventTyping       = "typing"
 )
 
 // Method names.
@@ -84,22 +85,21 @@ const (
 	// MethodPairFromBrowser lets the widget pair on its own: the daemon finds
 	// the browser profile and reads the cookies itself, so pairing never
 	// requires dropping to a terminal.
-	MethodPairFromBrowser = "pairFromBrowser"
-	MethodSendMedia       = "sendMedia"
-	MethodPickImage       = "pickImage"
-	MethodListProfiles    = "listProfiles"
-	MethodSetProfile      = "setProfile"
-	MethodReact           = "react"
-	MethodDiscardCapture  = "discardCapture"
-	MethodGifSearch       = "gifSearch"
-	MethodGifFetch        = "gifFetch"
-	MethodSetGiphyKey     = "setGiphyKey"
-	MethodSetUiScale      = "setUiScale"
-	MethodConfig          = "config"
-	MethodUnpair          = "unpair"
-	MethodMedia           = "media"
-	MethodAvatar          = "avatar"
-	MethodSetTyping              = "setTyping"
+	MethodPairFromBrowser        = "pairFromBrowser"
+	MethodSendMedia              = "sendMedia"
+	MethodPickImage              = "pickImage"
+	MethodListProfiles           = "listProfiles"
+	MethodSetProfile             = "setProfile"
+	MethodReact                  = "react"
+	MethodDiscardCapture         = "discardCapture"
+	MethodGifSearch              = "gifSearch"
+	MethodGifFetch               = "gifFetch"
+	MethodSetGiphyKey            = "setGiphyKey"
+	MethodSetUiScale             = "setUiScale"
+	MethodConfig                 = "config"
+	MethodUnpair                 = "unpair"
+	MethodMedia                  = "media"
+	MethodAvatar                 = "avatar"
 	MethodRefresh                = "refresh"
 	MethodSetTelegramCredentials = "setTelegramCredentials"
 )
@@ -273,6 +273,7 @@ type MessagesResult struct {
 	CursorID       string    `json:"cursorID,omitempty"`
 	CursorTime     int64     `json:"cursorTime,omitempty"`
 	HasMore        bool      `json:"hasMore"`
+	HistoryNotice  string    `json:"historyNotice,omitempty"`
 }
 
 type SendParams struct {
@@ -295,10 +296,11 @@ var RequiredGaiaCookies = []string{"SID", "HSID", "OSID", "SSID", "APISID", "SAP
 
 // SendMediaParams sends a local file to a conversation.
 type SendMediaParams struct {
-	TmpID          string `json:"tmpID,omitempty"`
-	ConversationID string `json:"conversationID"`
-	Path           string `json:"path"`
-	Caption        string `json:"caption,omitempty"`
+	TmpID           string `json:"tmpID,omitempty"`
+	ConversationID  string `json:"conversationID"`
+	Path            string `json:"path"`
+	Caption         string `json:"caption,omitempty"`
+	DurationSeconds uint32 `json:"durationSeconds,omitempty"`
 }
 
 // SendMediaResult reports the independently submitted attachment and caption.
@@ -463,9 +465,4 @@ type MediaResult struct {
 	Pending bool `json:"pending,omitempty"`
 	// Thumbnail means Path is a low-resolution stand-in.
 	Thumbnail bool `json:"thumbnail,omitempty"`
-}
-
-type SetTypingParams struct {
-	ConversationID string `json:"conversationID"`
-	Typing         bool   `json:"typing"`
 }

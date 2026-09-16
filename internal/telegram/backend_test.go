@@ -549,6 +549,9 @@ func TestTelegramIncomingMessageUpdatesCacheAndPublishes(t *testing.T) {
 	if len(convs) != 1 || convs[0].ID != "tg:7" || convs[0].Preview != "live" || !convs[0].Unread {
 		t.Fatalf("unexpected incoming conversation: %+v", convs)
 	}
+	if got := b.Status().Unread; got != 1 {
+		t.Fatalf("Telegram unread status = %d, want 1", got)
+	}
 	result, err := b.Messages(context.Background(), wire.MessagesParams{ConversationID: "tg:7"})
 	if err != nil || len(result.Messages) != 1 || result.Messages[0].ID != "tg:9" {
 		t.Fatalf("unexpected incoming message cache: %+v err=%v", result.Messages, err)
@@ -560,6 +563,22 @@ func TestTelegramIncomingMessageUpdatesCacheAndPublishes(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("incoming message event was not published")
+	}
+	seenConversation, seenStatus := false, false
+	for i := 0; i < 2; i++ {
+		select {
+		case event := <-events:
+			seenConversation = seenConversation || event.Event == wire.EventConversation
+			if event.Event == wire.EventStatus {
+				status, ok := event.Data.(wire.Status)
+				seenStatus = ok && status.Unread == 1
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for Telegram unread snapshots")
+		}
+	}
+	if !seenConversation || !seenStatus {
+		t.Fatalf("missing Telegram unread events: conversation=%v status=%v", seenConversation, seenStatus)
 	}
 	if _, err := os.Stat(paths.TelegramStoreFile()); err != nil {
 		t.Fatalf("incoming message was not persisted: %v", err)
@@ -585,6 +604,54 @@ func TestTelegramSendTextRoutesAndCaches(t *testing.T) {
 	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: "tg:7"})
 	if len(result.Messages) != 1 || result.Messages[0].ID != "tg:12" {
 		t.Fatalf("sent message was not cached: %+v", result.Messages)
+	}
+}
+
+func TestTelegramReactionRoutesTogglesAndCaches(t *testing.T) {
+	b, _, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	b.SetTestMessages("tg:7", []wire.Message{{
+		ID: "tg:12", ConversationID: "tg:7", Text: "hello",
+		Reactions: []wire.Reaction{{Emoji: "👍", Count: 2}},
+	}})
+	var calls []string
+	mock.ReactFunc = func(_ context.Context, conversationID, messageID int64, emoji string) error {
+		if conversationID != 7 || messageID != 12 {
+			t.Fatalf("unexpected reaction target %d/%d", conversationID, messageID)
+		}
+		calls = append(calls, emoji)
+		return nil
+	}
+
+	params := wire.ReactParams{ConversationID: "tg:7", MessageID: "tg:12", Emoji: "👍"}
+	if err := b.React(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.React(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || calls[0] != "👍" || calls[1] != "" {
+		t.Fatalf("reaction transport calls = %#v", calls)
+	}
+	result, err := b.Messages(context.Background(), wire.MessagesParams{ConversationID: "tg:7"})
+	if err != nil || len(result.Messages) != 1 || len(result.Messages[0].Reactions) != 1 || result.Messages[0].Reactions[0].Count != 2 || result.Messages[0].Reactions[0].Mine {
+		t.Fatalf("reaction toggle cache = %+v, err=%v", result.Messages, err)
+	}
+}
+
+func TestTelegramReactionRejectsMalformedIDs(t *testing.T) {
+	b, _, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	called := false
+	mock.ReactFunc = func(context.Context, int64, int64, string) error { called = true; return nil }
+	if err := b.React(context.Background(), wire.ReactParams{ConversationID: "bad", MessageID: "tg:12", Emoji: "👍"}); err == nil {
+		t.Fatal("malformed conversation ID was accepted")
+	}
+	if err := b.React(context.Background(), wire.ReactParams{ConversationID: "tg:7", MessageID: "bad", Emoji: "👍"}); err == nil {
+		t.Fatal("malformed message ID was accepted")
+	}
+	if called {
+		t.Fatal("transport called for malformed reaction")
 	}
 }
 

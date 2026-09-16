@@ -26,14 +26,21 @@ CGO and a standard C compiler such as gcc or clang.
 - Conversation and message synchronization with live incoming updates.
 - Send text, images, GIF files, and captions. Incoming stickers render as
   WebP image attachments; there is no dedicated outgoing sticker picker.
+- Saved contact names are resolved from WhatsApp's synced contact data, and
+  emoji reactions can be added, switched, removed, and received live.
+- Record and send cross-platform M4A audio clips with optional ffmpeg/ffplay.
+  Standard audio clips are used instead of native PTT because linked-device
+  OGG/Opus notes fail to play on iPhone.
 - On-demand media downloads with bounded files and retry behavior.
 - View-once and ephemeral media are intentionally not cached or reopened.
 
 WhatsApp history is based on the initial phone sync and cached live messages.
-OmaChat does not currently request additional on-demand phone history. Calling,
-voice notes, GIF search, and reactions remain explicitly unavailable in the
-WhatsApp panel. The shared composer keeps those actions isolated from the
-Google Messages and Telegram services.
+OmaChat does not currently request additional on-demand phone history. GIPHY
+search uses the optional personal API key in Settings and sends the selected
+result through the local attachment path. WhatsApp requires GIFs to be MP4
+playback messages, so outbound local and searched GIFs require ffmpeg. Incoming
+GIF-playback videos render inline and loop. Calling remains explicitly
+unavailable in the WhatsApp panel.
 
 ## Storage and isolation
 

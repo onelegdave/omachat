@@ -5,20 +5,22 @@ It builds on the work of the following projects and their contributors.
 
 | Project | Contribution to OmaChat | License or source notice |
 | --- | --- | --- |
-| [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin) | Original protocol-helper adaptation | MIT; Marc Ford's copyright is retained in [LICENSE](LICENSE) |
+| [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin) | Original protocol-helper adaptation | MIT; Marc Ford's copyright is retained in [LICENSE-MIT](LICENSE-MIT) |
 | [mautrix-gmessages / libgm](https://github.com/mautrix/gmessages) | Google Messages protocol client | [GNU AGPL v3](vendor/go.mau.fi/mautrix-gmessages/LICENSE) and [upstream exceptions](vendor/go.mau.fi/mautrix-gmessages/LICENSE.exceptions) |
 | [whatsmeow](https://github.com/tulir/whatsmeow) | WhatsApp protocol and linked-device client | [MPL-2.0](vendor/go.mau.fi/whatsmeow/LICENSE) |
 | [gotd/td](https://github.com/gotd/td) | Telegram MTProto client | [MIT](vendor/github.com/gotd/td/LICENSE), copyright Aleksandr Razumov |
+| [mautrix-meta](https://github.com/mautrix/meta) | Facebook Messenger client, including encrypted conversations | [GNU AGPL v3](vendor/go.mau.fi/mautrix-meta/LICENSE) and [upstream exceptions](vendor/go.mau.fi/mautrix-meta/LICENSE.exceptions) |
 | [go-sqlite3](https://github.com/mattn/go-sqlite3) | WhatsApp device database adapter | [MIT](vendor/github.com/mattn/go-sqlite3/LICENSE), copyright Yasuhiro Matsumoto; bundled SQLite notices retained upstream |
 | [Omarchy](https://github.com/basecamp/omarchy) | Shell lifecycle, native UI components, and theme system | Supplied by the user's Omarchy installation |
 | [Quickshell](https://quickshell.org/) and [Qt](https://www.qt.io/) | QML rendering and desktop integration | Supplied by the user's desktop installation |
 | [FFmpeg](https://ffmpeg.org/) | Optional external recording and playback | Supplied and installed separately by the user |
 | [GIPHY](https://developers.giphy.com/) | Optional GIF search | User-provided API key; search displays GIPHY attribution |
 
-The original OmaChat code is offered under [MIT](LICENSE). Third-party source
-retains its own license; the root license does not relicense vendored code.
-In particular, the Google Messages dependency includes AGPL terms, and the
-WhatsApp dependency includes MPL terms. See the actual license files and
+OmaChat v0.4.3 and later is offered under [AGPL-3.0-or-later](LICENSE) so the
+combined helper follows the copyleft terms of its Google Messages and Messenger
+dependencies. OmaChat releases published before v0.4.3 retain their original
+[MIT grant](LICENSE-MIT), as does Marc Ford's adapted code. Third-party source
+retains its own license; the WhatsApp dependency includes MPL terms. See the actual license files and
 [NOTICE](NOTICE) for local upstream modifications.
 
 Other vendored contributors include the Go authors, Google, Uber, the
@@ -73,6 +75,8 @@ Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
 - [go.mau.fi/libsignal/LICENSE](vendor/go.mau.fi/libsignal/LICENSE)
 - [go.mau.fi/mautrix-gmessages/LICENSE](vendor/go.mau.fi/mautrix-gmessages/LICENSE)
 - [go.mau.fi/mautrix-gmessages/LICENSE.exceptions](vendor/go.mau.fi/mautrix-gmessages/LICENSE.exceptions)
+- [go.mau.fi/mautrix-meta/LICENSE](vendor/go.mau.fi/mautrix-meta/LICENSE)
+- [go.mau.fi/mautrix-meta/LICENSE.exceptions](vendor/go.mau.fi/mautrix-meta/LICENSE.exceptions)
 - [go.mau.fi/util/LICENSE](vendor/go.mau.fi/util/LICENSE)
 - [go.mau.fi/whatsmeow/LICENSE](vendor/go.mau.fi/whatsmeow/LICENSE)
 - [go.opentelemetry.io/otel/LICENSE](vendor/go.opentelemetry.io/otel/LICENSE)

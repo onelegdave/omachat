@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -346,6 +347,223 @@ func TestWhatsAppSendMediaImage(t *testing.T) {
 	}
 }
 
+func TestWhatsAppSendMediaGIFAsPlaybackVideo(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	backend.setState(wire.StateConnected, "")
+
+	gifPath := filepath.Join(t.TempDir(), "test.gif")
+	gifBytes := []byte{
+		0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00,
+		0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0x21,
+		0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00,
+		0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44,
+		0x01, 0x00, 0x3b,
+	}
+	if err := os.WriteFile(gifPath, gifBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mp4Bytes := []byte("synthetic-mp4")
+	backend.convertGIF = func(context.Context, string) ([]byte, error) {
+		return mp4Bytes, nil
+	}
+
+	var uploadedType whatsmeow.MediaType
+	mock.UploadFunc = func(ctx context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
+		uploadedType = appInfo
+		if string(plaintext) != string(mp4Bytes) {
+			t.Errorf("uploaded original GIF instead of converted MP4: %q", plaintext)
+		}
+		return whatsmeow.UploadResponse{URL: "https://mock.whatsapp.net/gif", DirectPath: "/direct/gif"}, nil
+	}
+	var sent *waE2E.Message
+	mock.SendMessageFunc = func(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+		sent = message
+		return whatsmeow.SendResponse{ID: "server-gif-id", Timestamp: time.Now()}, nil
+	}
+
+	chatJID, _ := types.ParseJID("15559876543@s.whatsapp.net")
+	res, err := backend.SendMedia(ctx, wire.SendMediaParams{
+		TmpID: "tmp-gif-1", ConversationID: chatJID.String(), Path: gifPath,
+	})
+	if err != nil {
+		t.Fatalf("SendMedia GIF: %v", err)
+	}
+	if uploadedType != whatsmeow.MediaVideo {
+		t.Errorf("uploaded type = %v, want MediaVideo", uploadedType)
+	}
+	if sent == nil || sent.GetImageMessage() != nil || sent.GetVideoMessage() == nil {
+		t.Fatalf("expected a video message, got %+v", sent)
+	}
+	if !sent.GetVideoMessage().GetGifPlayback() || sent.GetVideoMessage().GetMimetype() != "video/mp4" {
+		t.Errorf("expected GIF-playback MP4, got %+v", sent.GetVideoMessage())
+	}
+	if res.Message == nil || len(res.Message.Attachments) != 1 {
+		t.Fatalf("unexpected GIF result: %+v", res)
+	}
+	att := res.Message.Attachments[0]
+	if !att.IsGif || !att.IsVideo || att.IsImage || att.MimeType != "video/mp4" {
+		t.Errorf("unexpected GIF attachment flags: %+v", att)
+	}
+}
+
+func TestWhatsAppSendMediaVoiceAsPTTOpus(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	backend.setState(wire.StateConnected, "")
+
+	voicePath := filepath.Join(t.TempDir(), "voice-123.ogg")
+	voiceBytes := testOggOpusVoice(2, 1)
+	if err := os.WriteFile(voicePath, voiceBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var uploadedType whatsmeow.MediaType
+	var sent *waE2E.Message
+	mock.UploadFunc = func(_ context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
+		uploadedType = appInfo
+		if string(plaintext) != string(voiceBytes) {
+			t.Fatalf("uploaded voice bytes = %q", plaintext)
+		}
+		return whatsmeow.UploadResponse{
+			URL: "https://mock.whatsapp.net/voice", DirectPath: "/direct/voice",
+			MediaKey: []byte("media-key"), FileEncSHA256: []byte("encrypted-hash"),
+			FileSHA256: []byte("plain-hash"), FileLength: uint64(len(plaintext)),
+		}, nil
+	}
+	mock.SendMessageFunc = func(_ context.Context, _ types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+		sent = message
+		return whatsmeow.SendResponse{ID: "server-voice-id", Timestamp: time.Now()}, nil
+	}
+
+	res, err := backend.SendMedia(ctx, wire.SendMediaParams{TmpID: "tmp-voice-1", ConversationID: "15559876543@s.whatsapp.net", Path: voicePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploadedType != whatsmeow.MediaAudio || sent.GetAudioMessage() == nil {
+		t.Fatalf("voice transport type=%v message=%+v", uploadedType, sent)
+	}
+	audio := sent.GetAudioMessage()
+	if !audio.GetPTT() || audio.GetMimetype() != "audio/ogg; codecs=opus" {
+		t.Fatalf("WhatsApp voice payload = %+v", audio)
+	}
+	if audio.GetSeconds() != 2 || audio.GetMediaKeyTimestamp() <= 0 || audio.GetFileLength() != uint64(len(voiceBytes)) {
+		t.Fatalf("WhatsApp voice metadata = %+v", audio)
+	}
+	if string(audio.GetMediaKey()) != "media-key" || string(audio.GetFileEncSHA256()) != "encrypted-hash" || string(audio.GetFileSHA256()) != "plain-hash" {
+		t.Fatalf("WhatsApp voice upload metadata = %+v", audio)
+	}
+	if res.Message == nil || res.Message.Text != "" || len(res.Message.Attachments) != 1 || !res.Message.Attachments[0].IsAudio {
+		t.Fatalf("voice result = %+v", res)
+	}
+}
+
+func TestWhatsAppSendMediaM4AAsCompatibleAudioClip(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	backend.setState(wire.StateConnected, "")
+
+	voicePath := filepath.Join(t.TempDir(), "voice-123.m4a")
+	voiceBytes := []byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'M', '4', 'A', ' ', 0, 0, 0, 0, 'm', 'p', '4', 'a'}
+	if err := os.WriteFile(voicePath, voiceBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var uploadedType whatsmeow.MediaType
+	var sent *waE2E.Message
+	mock.UploadFunc = func(_ context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
+		uploadedType = appInfo
+		return whatsmeow.UploadResponse{URL: "https://mock.whatsapp.net/audio", DirectPath: "/direct/audio", FileLength: uint64(len(plaintext))}, nil
+	}
+	mock.SendMessageFunc = func(_ context.Context, _ types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+		sent = message
+		return whatsmeow.SendResponse{ID: "server-audio-id", Timestamp: time.Now()}, nil
+	}
+
+	res, err := backend.SendMedia(ctx, wire.SendMediaParams{
+		TmpID: "tmp-audio-1", ConversationID: "15559876543@s.whatsapp.net",
+		Path: voicePath, DurationSeconds: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploadedType != whatsmeow.MediaAudio || sent.GetAudioMessage() == nil {
+		t.Fatalf("audio transport type=%v message=%+v", uploadedType, sent)
+	}
+	audio := sent.GetAudioMessage()
+	if audio.GetPTT() || audio.GetMimetype() != "audio/mp4" || audio.GetSeconds() != 3 {
+		t.Fatalf("WhatsApp compatible audio payload = %+v", audio)
+	}
+	if res.Message == nil || len(res.Message.Attachments) != 1 || !res.Message.Attachments[0].IsAudio {
+		t.Fatalf("audio result = %+v", res)
+	}
+}
+
+func TestOggOpusVoiceDurationRejectsIncompatibleAudio(t *testing.T) {
+	for name, data := range map[string][]byte{
+		"not ogg":   []byte("not audio"),
+		"stereo":    testOggOpusVoice(1, 2),
+		"truncated": testOggOpusVoice(1, 1)[:30],
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := oggOpusVoiceDuration(data); err == nil {
+				t.Fatal("expected incompatible voice data to be rejected")
+			}
+		})
+	}
+}
+
+func testOggOpusVoice(seconds uint32, channels byte) []byte {
+	head := make([]byte, 19)
+	copy(head, "OpusHead")
+	head[8] = 1
+	head[9] = channels
+	binary.LittleEndian.PutUint16(head[10:12], 312)
+	data := appendTestOggPage(nil, 0, head)
+	return appendTestOggPage(data, 312+uint64(seconds)*48000, []byte{0xf8, 0xff, 0xfe})
+}
+
+func appendTestOggPage(dst []byte, granule uint64, payload []byte) []byte {
+	page := make([]byte, 28+len(payload))
+	copy(page, "OggS")
+	binary.LittleEndian.PutUint64(page[6:14], granule)
+	page[26] = 1
+	page[27] = byte(len(payload))
+	copy(page[28:], payload)
+	return append(dst, page...)
+}
+
+func TestWhatsAppIncomingGIFPlaybackStaysInline(t *testing.T) {
+	msg := &waE2E.Message{VideoMessage: &waE2E.VideoMessage{
+		Mimetype: proto.String("video/mp4"), GifPlayback: proto.Bool(true),
+		Width: proto.Uint32(320), Height: proto.Uint32(180), FileLength: proto.Uint64(1234),
+	}}
+	atts := extractAttachments(msg, "chat", "gif-message")
+	if len(atts) != 1 {
+		t.Fatalf("expected one attachment, got %+v", atts)
+	}
+	if !atts[0].IsGif || !atts[0].IsVideo || atts[0].IsImage {
+		t.Errorf("incoming GIF playback lost its flags: %+v", atts[0])
+	}
+	if atts[0].Width != 320 || atts[0].Height != 180 {
+		t.Errorf("incoming GIF dimensions lost: %+v", atts[0])
+	}
+}
+
 func TestWhatsAppMediaDownload(t *testing.T) {
 	backend, mock, _ := setupTestBackend(t)
 	backend.SetClient(mock, true)
@@ -442,6 +660,135 @@ func TestWhatsAppHistorySync(t *testing.T) {
 	}
 	if len(res.Messages) != 1 || res.Messages[0].Text != "Synced historical text" {
 		t.Errorf("unexpected messages: %+v", res.Messages)
+	}
+}
+
+func TestWhatsAppHistorySyncAppliesReactionBeforeTarget(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	chatID := "15557778888@s.whatsapp.net"
+	mock.TriggerEvent(&events.HistorySync{Data: &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{{
+		ID: proto.String(chatID),
+		Messages: []*waHistorySync.HistorySyncMsg{
+			{Message: &waWeb.WebMessageInfo{
+				Key:     &waCommon.MessageKey{ID: proto.String("reaction-first")},
+				Message: &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: &waCommon.MessageKey{ID: proto.String("target-later")}, Text: proto.String("👍")}},
+			}},
+			{Message: &waWeb.WebMessageInfo{
+				Key:              &waCommon.MessageKey{ID: proto.String("target-later")},
+				MessageTimestamp: proto.Uint64(1700000000),
+				Message:          &waE2E.Message{Conversation: proto.String("hello")},
+			}},
+		},
+	}}}})
+
+	res, err := backend.Messages(ctx, wire.MessagesParams{ConversationID: chatID, Count: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Messages) != 1 || len(res.Messages[0].Reactions) != 1 || res.Messages[0].Reactions[0].Emoji != "👍" || res.Messages[0].Reactions[0].Count != 1 {
+		t.Fatalf("history reaction before target was lost: %+v", res.Messages)
+	}
+}
+
+func TestWhatsAppHistorySyncUpgradesFallbackConversationName(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	chatID := "192148934783072@lid"
+	mock.TriggerEvent(&events.HistorySync{Data: &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{{
+		ID: proto.String(chatID),
+		Messages: []*waHistorySync.HistorySyncMsg{{Message: &waWeb.WebMessageInfo{
+			Key:              &waCommon.MessageKey{ID: proto.String("hist-name-1")},
+			MessageTimestamp: proto.Uint64(1700000000),
+			Message:          &waE2E.Message{Conversation: proto.String("hello")},
+		}}},
+	}}}})
+	if got := backend.Conversations(1)[0].Name; got != "WhatsApp User (192148934783072)" {
+		t.Fatalf("initial fallback name = %q", got)
+	}
+
+	mock.TriggerEvent(&events.HistorySync{Data: &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{{
+		ID:   proto.String(chatID),
+		Name: proto.String("Saved Contact"),
+	}}}})
+	conv := backend.Conversations(1)[0]
+	if conv.Name != "Saved Contact" || conv.Initials != "SC" {
+		t.Fatalf("upgraded conversation = %+v", conv)
+	}
+}
+
+func TestWhatsAppReactionSendReceiveAndToggle(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mock.TriggerEvent(&events.Connected{})
+
+	chat, _ := types.ParseJID("15551112222@s.whatsapp.net")
+	mock.TriggerEvent(&events.Message{Info: types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+		ID:            "target-1", Timestamp: time.Now(), PushName: "Alice",
+	}, Message: &waE2E.Message{Conversation: proto.String("hello")}})
+
+	var sent []*waE2E.Message
+	mock.SendMessageFunc = func(_ context.Context, to types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+		if to != chat {
+			t.Fatalf("reaction recipient = %s", to)
+		}
+		sent = append(sent, message)
+		return whatsmeow.SendResponse{ID: "reaction-send", Timestamp: time.Now()}, nil
+	}
+
+	params := wire.ReactParams{ConversationID: chat.String(), MessageID: "target-1", Emoji: "❤️"}
+	if err := backend.React(ctx, params); err != nil {
+		t.Fatal(err)
+	}
+	reaction := sent[0].GetReactionMessage()
+	if reaction.GetText() != "❤️" || reaction.GetKey().GetID() != "target-1" || reaction.GetKey().GetFromMe() {
+		t.Fatalf("sent reaction = %+v", reaction)
+	}
+	msgs, _ := backend.Messages(ctx, wire.MessagesParams{ConversationID: chat.String(), Count: 10})
+	if got := msgs.Messages[0].Reactions; len(got) != 1 || got[0].Count != 1 || !got[0].Mine {
+		t.Fatalf("own reaction state = %+v", got)
+	}
+
+	other, _ := types.ParseJID("15553334444@s.whatsapp.net")
+	mock.TriggerEvent(&events.Message{Info: types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: chat, Sender: other},
+		ID:            "reaction-event", Timestamp: time.Now(),
+	}, Message: &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
+		Key:  &waCommon.MessageKey{ID: proto.String("target-1")},
+		Text: proto.String("❤️"),
+	}}})
+	msgs, _ = backend.Messages(ctx, wire.MessagesParams{ConversationID: chat.String(), Count: 10})
+	if got := msgs.Messages[0].Reactions; len(got) != 1 || got[0].Count != 2 || !got[0].Mine {
+		t.Fatalf("aggregate reaction state = %+v", got)
+	}
+
+	if err := backend.React(ctx, params); err != nil {
+		t.Fatal(err)
+	}
+	if got := sent[1].GetReactionMessage().GetText(); got != "" {
+		t.Fatalf("second tap sent %q, want removal", got)
+	}
+	msgs, _ = backend.Messages(ctx, wire.MessagesParams{ConversationID: chat.String(), Count: 10})
+	if got := msgs.Messages[0].Reactions; len(got) != 1 || got[0].Count != 1 || got[0].Mine {
+		t.Fatalf("reaction state after own removal = %+v", got)
 	}
 }
 

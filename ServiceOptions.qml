@@ -27,7 +27,7 @@ Column {
     if (!ready || saving) return
     var next=selected.filter(function(n) { return n !== net })
     if(enabled) next.push(net)
-    selected=["gmessages","whatsapp","telegram"].filter(function(n) { return next.indexOf(n)>=0 })
+    selected=["gmessages","whatsapp","telegram","messenger"].filter(function(n) { return next.indexOf(n)>=0 })
     dirty=true
     resultText=""
   }
@@ -67,7 +67,8 @@ Column {
     model: [
       {id:"gmessages",name:"Google Messages",hint:"Browser pairing needs SQLite, libsecret, and an unlocked keyring."},
       {id:"whatsapp",name:"WhatsApp",hint:"QR pairing needs qrencode and your phone's Linked devices screen."},
-      {id:"telegram",name:"Telegram",hint:"Needs your API credentials, qrencode, and your phone's Devices screen."}
+      {id:"telegram",name:"Telegram",hint:"Needs your API credentials, qrencode, and your phone's Devices screen."},
+      {id:"messenger",name:"Messenger",hint:"Browser pairing needs SQLite, libsecret, an unlocked keyring, and an active Facebook or Messenger login."}
     ]
     Column {
       required property var modelData

@@ -102,6 +102,8 @@ ShellRoot {
      break
     case 9:
      check(list.atYEnd,"intentional send scrolls to newest message")
+     inbox.selectConversation("b");take().callback(true,{messages:[],hasMore:false,historyNotice:"Encrypted history is not available yet."})
+     check(inbox.historyNotice!=="" && inspect.findChild(inbox,"historyStatus").text===inbox.historyNotice,"encrypted history notice explains an empty thread")
      var shot=Quickshell.env("OMACHAT_PAGINATION_SCREENSHOT")
      if(shot) inbox.grabToImage(function(result){result.saveToFile(shot);console.log("OMACHAT_PAGINATION_PASS");Qt.quit()})
      else {console.log("OMACHAT_PAGINATION_PASS");Qt.quit()}

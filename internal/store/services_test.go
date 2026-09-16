@@ -9,10 +9,10 @@ import (
 )
 
 func TestServiceSelectionMigration(t *testing.T) {
-	for _, evidence := range []string{"fresh", "config", "google", "whatsapp", "telegram"} {
+	for _, evidence := range []string{"fresh", "config", "google", "whatsapp", "telegram", "messenger"} {
 		t.Run(evidence, func(t *testing.T) {
 			p := &Paths{Data: t.TempDir()}
-			file := map[string]string{"config": p.ConfigFile(), "google": p.SessionFile(), "whatsapp": p.WhatsAppDBFile(), "telegram": p.TelegramSessionFile()}[evidence]
+			file := map[string]string{"config": p.ConfigFile(), "google": p.SessionFile(), "whatsapp": p.WhatsAppDBFile(), "telegram": p.TelegramSessionFile(), "messenger": p.MessengerSessionFile()}[evidence]
 			if file != "" {
 				if err := os.WriteFile(file, []byte("{}"), 0600); err != nil {
 					t.Fatal(err)
@@ -70,6 +70,13 @@ func TestServiceSelectionPersistenceAndValidation(t *testing.T) {
 	}
 	services, _ = c.EnabledServices(p)
 	if !reflect.DeepEqual(services, []string{"gmessages", "telegram"}) {
+		t.Fatal(services)
+	}
+	if err := c.SetEnabledServices([]string{"messenger", "whatsapp"}); err != nil {
+		t.Fatal(err)
+	}
+	services, _ = c.EnabledServices(p)
+	if !reflect.DeepEqual(services, []string{"whatsapp", "messenger"}) {
 		t.Fatal(services)
 	}
 	// A failed atomic write must not change the running snapshot.

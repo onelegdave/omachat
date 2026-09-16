@@ -18,6 +18,15 @@ import (
 // Wayland: it runs out of process, honours the user's real file manager, and
 // needs no extra package beyond what a desktop already has.
 func (d *Daemon) PickImage(ctx context.Context) (string, error) {
+	return d.pickFile(ctx, true)
+}
+
+// PickFile lets services that support documents choose any regular file.
+func (d *Daemon) PickFile(ctx context.Context) (string, error) {
+	return d.pickFile(ctx, false)
+}
+
+func (d *Daemon) pickFile(ctx context.Context, imagesOnly bool) (string, error) {
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
 		return "", fmt.Errorf("connect session bus: %w", err)
@@ -43,8 +52,10 @@ func (d *Daemon) PickImage(ctx context.Context) (string, error) {
 		"multiple":     dbus.MakeVariant(false),
 		"handle_token": dbus.MakeVariant(fmt.Sprintf("gmessages%d", time.Now().UnixNano())),
 		"accept_label": dbus.MakeVariant("Attach"),
+	}
+	if imagesOnly {
 		// filters: [(name, [(type, pattern)])] where type 1 is a MIME type.
-		"filters": dbus.MakeVariant([]struct {
+		options["filters"] = dbus.MakeVariant([]struct {
 			Name    string
 			Filters []struct {
 				Type uint32
@@ -60,12 +71,12 @@ func (d *Daemon) PickImage(ctx context.Context) (string, error) {
 					{1, "image/png"}, {1, "image/jpeg"}, {1, "image/gif"}, {1, "image/webp"},
 				},
 			},
-		}),
+		})
 	}
 
 	var handle dbus.ObjectPath
 	err = obj.CallWithContext(ctx, "org.freedesktop.portal.FileChooser.OpenFile", 0,
-		"", "Attach an image", options).Store(&handle)
+		"", "Attach a file", options).Store(&handle)
 	if err != nil {
 		return "", fmt.Errorf("open file chooser: %w", err)
 	}

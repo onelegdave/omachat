@@ -20,6 +20,11 @@ ShellRoot {
  QtObject {
   id: fake
   property bool connected: true
+  property bool building: false
+  property bool goPresent: true
+  property bool helperPresent: true
+  property string helperState: "ready"
+  property string helperError: ""
   property string currentNetwork: "gmessages"
   property var enabledServices: ["gmessages","whatsapp","telegram"]
   property bool servicesConfigLoaded: true
@@ -34,6 +39,8 @@ ShellRoot {
   property string state: "connected"
   property var status: ({phoneOK:true, state:"connected"})
   property var statusWA: ({phoneOK:true, state:"connected"})
+  property var statusTG: ({phoneOK:true, state:"unpaired"})
+  property var statusFB: ({phoneOK:true, state:"unpaired"})
   property int unread: 0
   property string refreshError: ""
   property var browserProfiles: []
@@ -44,16 +51,22 @@ ShellRoot {
   property var conversationsWA: [
    {id:"wa-1@s.whatsapp.net",name:"Demo WA",preview:"WA test",timestamp:3000000}
   ]
+  property var conversationsFB: [
+   {id:"fb-1",name:"Demo Messenger",preview:"Messenger test",timestamp:4000000}
+  ]
   property var calls: []
   property var delayed: []
   property bool failMedia: true
   signal messageReceived(var message, var net)
   signal conversationUpdated(var conversation, var net)
   signal paired(var net)
-  function statusFor(net) { return net === "whatsapp" ? statusWA : status }
+  function statusFor(net) { return net === "whatsapp" ? statusWA : (net === "messenger" ? statusFB : status) }
   function stateFor(net) { var s = statusFor(net); return s && s.state ? s.state : state }
-  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : conversations }
-  function unreadFor(net) { return 0 }
+  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : (net === "messenger" ? conversationsFB : conversations) }
+  function unreadFor(net) {
+    var s = net === "telegram" ? statusTG : statusFor(net)
+    return s && s.unread ? s.unread : 0
+  }
   function loadConversations(net) {}
   function loadProfiles() {}
   function refreshConversations(net) { calls.push({method:"refresh", network:net || "gmessages"}) }
@@ -294,9 +307,15 @@ ShellRoot {
     panel.settingsOpen=false
     root.check(loader.item === original && inspect.findChild(original,"composer").text === "Keep across settings", "Settings preserves selection and draft")
     fake.restartingServices=true
+    fake.helperState="starting"
     fake.connected=false
     root.check(loader.item === original && !loader.visible,"expected helper disconnect retains hidden draft storage")
+    var connectingActivity=inspect.findChild(panel,"buildActivityIndicator")
+    var helperRetry=inspect.findChild(panel,"helperRetryButton")
+    root.check(connectingActivity && connectingActivity.visible,"helper connecting screen shows animated activity")
+    root.check(helperRetry && !helperRetry.visible && !helperRetry.enabled,"helper connecting screen suppresses Retry")
     fake.connected=true
+    fake.helperState="ready"
     fake.restartingServices=false
     root.check(inspect.findChild(original,"composer").text === "Keep across settings","expected helper reconnect retains text draft")
     fake.enabledServices=[]
@@ -312,6 +331,7 @@ ShellRoot {
     root.check(inspect.findChild(original,"threadErrorLabel").text === "Refresh failed", "thread success does not erase inbox refresh failure")
     fake.refreshError=""
     root.check(inspect.findChild(original,"threadErrorLabel").text === "", "next refresh clears the previous failure")
+    panel.activeService="gmessages"
     var unpairButton=inspect.findChild(panel,"unpairButton")
     panel.settingsOpen=true
     unpairButton.clicked()
@@ -366,17 +386,22 @@ ShellRoot {
     var waInbox = inspect.findChild(panel, "inboxLoader").item
     root.check(waInbox && waInbox.isWhatsApp === true, "switching to whatsapp activates WhatsApp inbox view")
     root.check(waInbox.network === "whatsapp", "inbox network property is whatsapp")
+    waInbox.selectConversation("wa-1@s.whatsapp.net")
     var waMic = inspect.findChild(waInbox, "micButton")
     var waGif = inspect.findChild(waInbox, "gifButton")
-    root.check(waMic && !waMic.visible && waMic.width === 0, "voice recording button is hidden on WhatsApp")
-    root.check(waGif && !waGif.visible && waGif.width === 0, "GIF search button is hidden on WhatsApp")
+    root.check(waMic && waMic.visible && waMic.width > 0, "voice recording button is visible on WhatsApp")
+    root.check(waGif && waGif.visible && waGif.width > 0, "GIF search button is visible on WhatsApp")
+    root.check(waInbox.reactionsSupported, "WhatsApp message bubbles enable the reaction action")
 
     waInbox.react("wa-msg", "❤️")
-    root.check(waInbox.threadError === "Reactions are not supported for WhatsApp in this version.", "reacting on WhatsApp displays unsupported error")
+    var waReaction = fake.delayed.pop()
+    root.check(waReaction.method === "react" && waReaction.network === "whatsapp", "WhatsApp reaction is routed only to WhatsApp")
     waInbox.openGifPicker()
-    root.check(waInbox.threadError === "GIF search is not supported for WhatsApp in this version.", "GIF search on WhatsApp displays unsupported error")
-    waInbox.startRecording()
-    root.check(waInbox.threadError === "Voice messages are not supported for WhatsApp in this version.", "voice recording on WhatsApp displays unsupported error")
+    root.check(fake.calls.some(function(c){ return c.method === "gifSearch" && c.network === "whatsapp" }), "WhatsApp GIF search uses the WhatsApp route")
+    fake.statusTG = {phoneOK:true, state:"connected", unread:2}
+    root.check(panel.serviceTabs.some(function(tab){ return tab.value === "telegram" && tab.unread === 2 }), "Telegram unread count reaches the service tab model")
+    var serviceTabs = inspect.findChild(panel, "serviceTabs")
+    root.check(serviceTabs && serviceTabs.options.some(function(tab){ return tab.value === "telegram" && tab.unread === 2 }), "inactive Telegram service tab receives its unread badge")
 
     // Test WhatsApp unpair phone advice
     panel.unpair()
@@ -477,9 +502,35 @@ ShellRoot {
     panel.setActiveService("telegram")
     root.check(inspect.findChild(panel, "inboxLoader").visible, "connected Telegram shows the live inbox")
     root.check(fake.calls.length === beforeTelegram, "telegram tab does not issue chat RPCs")
+    var tgInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(tgInbox && tgInbox.reactionsSupported, "Telegram message bubbles enable the reaction action")
+    tgInbox.selectConversation("tg:7")
+    tgInbox.react("tg:12", "👍")
+    var tgReaction = fake.delayed.pop()
+    root.check(tgReaction.method === "react" && tgReaction.network === "telegram", "Telegram reaction is routed only to Telegram")
     fake.call("status", null, function() {}, "telegram")
     var tel = fake.calls[fake.calls.length-1]
     root.check(tel.network === "telegram", "explicit unknown network is not rewritten to google")
+    fake.enabledServices = ["gmessages","whatsapp","telegram","messenger"]
+    fake.statusFB = {phoneOK:true, state:"connected", unread:1}
+    panel.syncActiveService()
+	serviceTabs = inspect.findChild(panel, "serviceTabs")
+	root.check(serviceTabs && serviceTabs.options.some(function(tab){ return tab.value === "messenger" && tab.unread === 1 }), "inactive Messenger service tab receives its unread badge")
+    panel.setActiveService("messenger")
+    var fbInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(fbInbox && fbInbox.isMessenger && fbInbox.network === "messenger", "Messenger tab opens an isolated native inbox")
+    fbInbox.selectConversation("fb-1")
+    root.check(inspect.findChild(fbInbox, "attachButton").visible && inspect.findChild(fbInbox, "micButton").visible && inspect.findChild(fbInbox, "gifButton").visible,
+      "Messenger shows attachment, voice, and GIF actions")
+    root.check(fbInbox.reactionsSupported, "Messenger message bubbles enable the reaction action")
+    fbInbox.react("fb-msg", "👍")
+    var fbReaction = fake.delayed.pop()
+    root.check(fbReaction.method === "react" && fbReaction.network === "messenger", "Messenger reaction is routed only to Messenger")
+    fbInbox.openGifPicker()
+    root.check(fake.calls.some(function(c){ return c.method === "gifSearch" && c.network === "messenger" }), "Messenger GIF search uses the Messenger route")
+    fbInbox.sendMessage("Messenger pending")
+    var fbPending = fake.delayed.pop()
+    root.check(fbPending.method === "send" && fbPending.network === "messenger", "Messenger send is routed only to Messenger")
     panel.setActiveService("gmessages")
     var screenshot=Quickshell.env("OMACHAT_TEST_SCREENSHOT")
     if (screenshot) {

@@ -10,6 +10,9 @@ func (p *Paths) HasAccountEvidence() bool {
 		p.TelegramSessionFile(),
 		p.WhatsAppStoreFile(),
 		p.TelegramStoreFile(),
+		p.MessengerSessionFile(),
+		p.MessengerDBFile(),
+		p.MessengerStoreFile(),
 	}
 	for _, f := range files {
 		if _, err := os.Stat(f); !os.IsNotExist(err) {

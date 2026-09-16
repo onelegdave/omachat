@@ -1,15 +1,16 @@
 # OmaChat
 
-A **Native Omarchy Plugin** for Google Messages, WhatsApp, and Telegram.
+A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messenger.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current release: **0.3.13**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.13).
+Current stable release: **0.4.3**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.4.3).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
 The preview shows the current QML panel with fictional contacts and messages,
-using the Tokyo Night base palette. Connection and delivery states are simulated.
+all four service tabs, unread badges, and reactions using the Tokyo Night base
+palette. Connection and delivery states are simulated.
 Never include private conversations or account details in public screenshots.
 
 <details>
@@ -108,6 +109,7 @@ Each service is optional and pairs only when you request it.
 | Google Messages | Sign in to Messages for web in a supported Chromium-family browser, then select **Pair with Google** and confirm the matching emoji on the phone. | [Google Messages](docs/services/google-messages.md) |
 | WhatsApp | Select **Use a QR code** in the WhatsApp tab and scan it using the phone's **Linked devices** screen. | [WhatsApp](docs/services/whatsapp.md) |
 | Telegram | Configure your own Telegram API credentials, select **Pair with Telegram**, and scan the QR code from Telegram's **Devices** screen. | [Telegram](docs/services/telegram.md) |
+| Messenger | Sign in to Facebook or Messenger in a supported Chromium-family browser, then select **Pair from browser**. | [Messenger](docs/services/messenger.md) |
 
 The guides include requirements, pairing, supported features, limitations,
 storage, and recovery. A service losing authentication does not automatically
@@ -115,17 +117,17 @@ start pairing again.
 
 ## Features and limits
 
-| Feature | Google Messages | WhatsApp | Telegram |
-| --- | --- | --- | --- |
-| Conversation list, text, per-chat drafts | Yes | Yes | Yes |
-| Photos and captions | Yes | Yes | Yes |
-| Send GIF files | Yes | Yes | No dedicated GIF sending support |
-| Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay |
-| GIPHY search | Optional personal API key | Unavailable | Unavailable |
-| Reactions | Yes | Unavailable | Unavailable |
-| Incoming static WebP stickers | No dedicated sticker support | Yes | Yes |
-| Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages |
-| Calling | Unavailable | Unavailable | Unavailable |
+| Feature | Google Messages | WhatsApp | Telegram | Messenger |
+| --- | --- | --- | --- | --- |
+| Conversation list, text, per-chat drafts | Yes | Yes | Yes | Yes |
+| Photos and captions | Yes | Yes | Yes | Yes |
+| Send GIF files | Yes | Yes (ffmpeg) | No dedicated GIF sending support | Yes |
+| Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
+| GIPHY search | Optional personal API key | Optional personal API key + ffmpeg | Unavailable | Optional personal API key |
+| Reactions | Yes | Yes | Yes (chat-dependent) | Yes |
+| Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
+| Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
+| Calling | Unavailable | Unavailable | Unavailable | Unavailable |
 
 Threads open with the latest 60 messages; **Load older messages** pages back
 while preserving the reading position. WhatsApp cannot currently request
@@ -154,19 +156,29 @@ background for readable contrast.
 
 Switch services with the header tabs, choose a conversation, and press Enter
 to send. Drafts stay with their service and conversation. Right-click a bubble
-to copy it. Middle-click the bar icon to refresh; the badge counts unread
-conversations across active services.
+to copy it. Middle-click the bar icon to refresh; its badge counts unread
+conversations across active services, and each service tab shows its own unread
+badge while the app is open.
 
 Pick an attachment from the composer. Google Messages sends captions separately
 after the attachment; check the conversation before retrying a caption reported
-as unconfirmed. WhatsApp and Telegram include captions with media. Failed media
-downloads can be retried. Incoming GIFs play inline;
+as unconfirmed. WhatsApp, Telegram, and Messenger include captions with images;
+Messenger sends a document caption as a separate message. Failed media downloads
+can be retried. Incoming GIFs play inline;
 video opens in an external player.
 
-For Google Messages or Telegram voice notes, choose **Rec**, record, **Play**
+For voice notes, choose **Rec**, record, **Play**
 to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google
-records M4A and Telegram records OGG/Opus. Google GIF search requires your own
-GIPHY API key in Settings; sending a local GIF does not require a key.
+Messages, WhatsApp, and Messenger record M4A; Telegram records OGG/Opus.
+WhatsApp uses a standard audio clip instead of native PTT because linked-device
+OGG/Opus notes fail to play on iPhone. Google, WhatsApp, and Messenger GIF
+search require your own GIPHY API key in Settings; sending a local GIF does not
+require a key. WhatsApp uses ffmpeg to convert GIF files to the MP4 playback
+format required by its protocol.
+
+Message reactions are available on Google Messages, WhatsApp, Telegram, and
+Messenger. Telegram supports the standard emoji choices shown by OmaChat;
+individual chats or channels may restrict which reactions Telegram accepts.
 
 Use Tab to move between controls, arrow keys and Enter to open a conversation,
 and Space or Enter to activate focused buttons. Pending and failed text sends
@@ -174,7 +186,7 @@ remain visible when you return to their conversation during the current shell se
 
 ## Privacy, storage, and removal
 
-Sessions, chat caches, media, and drafts are separated by service. All three
+Sessions, chat caches, media, and drafts are separated by service. All four
 services share the helper process and configuration file. Private files are
 kept locally; see [Security](SECURITY.md) for protections and limitations.
 Each service limits its downloaded attachment cache to 256 MiB and evicts older
@@ -186,8 +198,9 @@ files as new downloads complete.
 | `~/.local/share/omachat/session.json` | Google Messages credentials |
 | `~/.local/share/omachat/whatsapp.db` and `whatsapp_store.json` | WhatsApp credentials and chat cache |
 | `~/.local/share/omachat/telegram.session` and `telegram_store.json` | Telegram credentials and chat cache |
+| `~/.local/share/omachat/messenger_session.json` and `messenger.db` | Messenger session cookies and encrypted-device state |
 | `~/.local/share/omachat/config.json` | Service choices, text size, browser selection, GIPHY key, Telegram API credentials |
-| `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/` | Service-specific media caches |
+| `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, `media_messenger/` | Service-specific media caches |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Private plugin/helper control socket |
 
 Before uninstalling, select **Unpair this desktop** on each connected service
@@ -201,7 +214,7 @@ omarchy plugin remove onelegdave.omachat
 
 Uninstalling does not erase account data. If you want to remove all remaining
 OmaChat data, including API keys, delete `~/.local/share/omachat/` and
-`~/.cache/omachat/` yourself after unpairing. This affects all three services.
+`~/.cache/omachat/` yourself after unpairing. This affects all four services.
 
 ## Development and documentation
 
@@ -235,11 +248,14 @@ Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
 
 The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin).
 Google Messages uses [mautrix libgm](https://github.com/mautrix/gmessages),
-WhatsApp uses [whatsmeow](https://github.com/tulir/whatsmeow), and Telegram uses
-[gotd/td](https://github.com/gotd/td).
+WhatsApp uses [whatsmeow](https://github.com/tulir/whatsmeow), Telegram uses
+[gotd/td](https://github.com/gotd/td), and Messenger uses
+[mautrix-meta](https://github.com/mautrix/meta).
 
-MIT for original OmaChat code. Vendored dependencies retain their own terms,
-including libgm's AGPL license and whatsmeow's MPL-2.0 license. See
+OmaChat v0.4.3 and later is licensed under AGPL-3.0-or-later. Earlier OmaChat
+releases retain their original MIT grant. Vendored dependencies retain their
+own terms, including the AGPL terms for libgm and mautrix-meta and the MPL-2.0
+license for whatsmeow. See
 [Credits and third-party notices](CREDITS.md), [LICENSE](LICENSE), and [NOTICE](NOTICE).
 
 Other plugins: [OmaDroid](https://github.com/onelegdave/omadroid) and

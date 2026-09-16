@@ -1,6 +1,10 @@
 # Working on OmaChat
 
-Created and maintained by OneLegDave. Report issues with your Omarchy version, whether `omachatd` was running, and the action that failed. Strip phone numbers, message bodies, cookies, and GIPHY keys from public diagnostics.
+Created and maintained by OneLegDave. Report issues with your Omarchy version,
+whether `omachatd` was running, and the action that failed. Never put real
+names, message text, phone numbers, account IDs, cookies, tokens, API keys,
+session files, databases, or screenshots of real conversations in public
+diagnostics. Reproduce visual problems with invented content when possible.
 
 ## Verify a change
 

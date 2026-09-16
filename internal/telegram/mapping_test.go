@@ -1,6 +1,10 @@
 package telegram
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/onelegdave/omachat/internal/wire"
+)
 
 func TestMapDialogsOrdersAndLimits(t *testing.T) {
 	got := mapDialogs([]Dialog{{ID: 1, Name: "Older", Timestamp: 10}, {ID: 2, Timestamp: 20}, {ID: 3, Name: "Newest", Timestamp: 30}}, 2)
@@ -49,5 +53,12 @@ func TestMapImageAttachmentDefaultsMime(t *testing.T) {
 	msg := mapMessage(Message{ID: 5, ConversationID: 2, MediaKey: "tg:5"})
 	if len(msg.Attachments) != 1 || !msg.Attachments[0].IsImage || msg.Attachments[0].IsAudio || msg.Attachments[0].MimeType != "image/jpeg" {
 		t.Fatalf("unexpected image attachment: %+v", msg.Attachments)
+	}
+}
+
+func TestMapMessagePreservesReactions(t *testing.T) {
+	msg := mapMessage(Message{ID: 6, ConversationID: 2, Reactions: []wire.Reaction{{Emoji: "❤️", Count: 3, Mine: true}}})
+	if len(msg.Reactions) != 1 || msg.Reactions[0].Emoji != "❤️" || msg.Reactions[0].Count != 3 || !msg.Reactions[0].Mine {
+		t.Fatalf("unexpected mapped reactions: %+v", msg.Reactions)
 	}
 }

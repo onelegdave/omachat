@@ -14,6 +14,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/events"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
+	"github.com/onelegdave/omachat/internal/messenger"
 	"github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/telegram"
 	"github.com/onelegdave/omachat/internal/whatsapp"
@@ -92,6 +93,7 @@ type Daemon struct {
 
 	wa *whatsapp.Backend
 	tg *telegram.Backend
+	fb *messenger.Backend
 }
 
 // New builds a daemon around already-resolved paths.
@@ -116,6 +118,8 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 	}
 	d.wa = whatsapp.New(log, paths, d.PublishEvent)
 	d.tg = telegram.New(log, paths, d.PublishEvent, d.config)
+	d.fb = messenger.New(log, paths, d.PublishEvent)
+	d.fb.SetConfig(d.config)
 	services, _ := d.config.EnabledServices(paths)
 	d.activeServices = make(map[string]bool)
 	for _, service := range services {
@@ -144,6 +148,9 @@ func (d *Daemon) Telegram() *telegram.Backend {
 	return d.tg
 }
 
+func (d *Daemon) SetMessenger(fb *messenger.Backend) { d.fb = fb }
+func (d *Daemon) Messenger() *messenger.Backend      { return d.fb }
+
 // Start loads any stored session and connects, or parks in the unpaired state
 // waiting for the plugin to ask for a QR code.
 func (d *Daemon) Start(ctx context.Context) error {
@@ -168,6 +175,14 @@ func (d *Daemon) Start(ctx context.Context) error {
 		}
 	} else if d.tg != nil {
 		d.tg.SetState(wire.StateDisabled, "")
+	}
+	if d.fb != nil && d.serviceEnabled(wire.NetworkMessenger) {
+		if err := d.fb.Start(ctx); err != nil {
+			d.log.Error().Err(err).Msg("Messenger backend initialization failed")
+			d.fb.SetState(wire.StateDisconnected, "Messenger initialization error: "+err.Error())
+		}
+	} else if d.fb != nil {
+		d.fb.SetState(wire.StateDisabled, "")
 	}
 	if !d.serviceEnabled(wire.NetworkGMessages) {
 		d.setState(wire.StateDisabled, "")
@@ -298,6 +313,9 @@ func (d *Daemon) Stop() {
 	}
 	if d.tg != nil {
 		d.tg.Stop()
+	}
+	if d.fb != nil {
+		d.fb.Stop()
 	}
 }
 

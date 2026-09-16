@@ -79,7 +79,7 @@ func TestNetworkRoutingIsolation(t *testing.T) {
 	}
 
 	// 3. WhatsApp unsupported methods are explicitly rejected
-	for _, method := range []string{wire.MethodGaiaPairing, wire.MethodPairFromBrowser, wire.MethodListProfiles, wire.MethodReact, wire.MethodSetTyping, wire.MethodGifSearch} {
+	for _, method := range []string{wire.MethodGaiaPairing, wire.MethodPairFromBrowser, wire.MethodListProfiles} {
 		req := wire.Request{
 			ID:      "req-unsupported",
 			Network: wire.NetworkWhatsApp,
@@ -94,7 +94,22 @@ func TestNetworkRoutingIsolation(t *testing.T) {
 		}
 	}
 
-	// 4. WhatsApp send routing
+	// 4. WhatsApp GIF search uses the shared, key-protected GIPHY service.
+	respWAGif := d.dispatch(ctx, wire.Request{
+		ID:      "req-wa-gif",
+		Network: wire.NetworkWhatsApp,
+		Method:  wire.MethodGifSearch,
+		Params:  map[string]any{"query": "cat", "limit": float64(24)},
+	})
+	if !respWAGif.OK {
+		t.Fatalf("WhatsApp GIF search failed: %s", respWAGif.Error)
+	}
+	gifResult, ok := respWAGif.Result.(*wire.GifSearchResult)
+	if !ok || !gifResult.NeedsKey {
+		t.Fatalf("expected WhatsApp GIF search to request a key, got %+v", respWAGif.Result)
+	}
+
+	// 5. WhatsApp send routing
 	chatJID, _ := types.ParseJID("15550001111@s.whatsapp.net")
 	mockWA.SendMessageFunc = func(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
 		return whatsmeow.SendResponse{
@@ -362,7 +377,6 @@ func TestTelegramRouting(t *testing.T) {
 		wire.MethodListProfiles,
 		wire.MethodSetProfile,
 		wire.MethodReact,
-		wire.MethodSetTyping,
 		wire.MethodGifSearch,
 	} {
 		req := wire.Request{

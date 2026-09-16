@@ -146,6 +146,19 @@ func TestGotdClientImplementsHistoryClient(t *testing.T) {
 	}
 }
 
+func TestTelegramReactionsMapsEmojiCountsAndMine(t *testing.T) {
+	mine := tg.ReactionCount{Reaction: &tg.ReactionEmoji{Emoticon: "👍"}, Count: 2}
+	mine.SetChosenOrder(0)
+	got := telegramReactions(tg.MessageReactions{Results: []tg.ReactionCount{
+		mine,
+		{Reaction: &tg.ReactionCustomEmoji{DocumentID: 7}, Count: 1},
+		{Reaction: &tg.ReactionEmoji{Emoticon: "❤️"}, Count: 3},
+	}})
+	if len(got) != 2 || got[0].Emoji != "👍" || got[0].Count != 2 || !got[0].Mine || got[1].Emoji != "❤️" || got[1].Mine {
+		t.Fatalf("unexpected reactions: %+v", got)
+	}
+}
+
 func TestChannelHistoryKeepsCursorThroughServiceEvents(t *testing.T) {
 	g := NewGotdClient(1, "hash", t.TempDir()+"/session", zerolog.Nop())
 	page := g.historyPage(&tg.MessagesChannelMessages{Messages: []tg.MessageClass{

@@ -28,6 +28,7 @@ Item {
 
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
+  readonly property bool isMessenger: network === "messenger"
   readonly property var status: service ? (typeof service.statusFor === "function" ? service.statusFor(network) : service.status) : ({})
   readonly property string connState: service ? (typeof service.stateFor === "function" ? service.stateFor(network) : (service.state || "")) : ""
   readonly property bool isGaia: !isWhatsApp && connState === "gaiaPairing"
@@ -72,6 +73,9 @@ Item {
       root.syncQR()
     }
     function onStatusTGChanged() {
+      root.syncQR()
+    }
+    function onStatusFBChanged() {
       root.syncQR()
     }
   }
@@ -119,6 +123,11 @@ Item {
         width: parent.width
         uiScale: root.uiScale
         title: {
+          if (root.isMessenger) {
+            if (root.isError) return root.status && root.status.error ? root.status.error : "Pairing failed"
+            if (root.status && root.status.state === "connected") return "Messenger connected"
+            return "Pair with Messenger"
+          }
           if (root.isTelegram) {
             if (root.isQR) return "Scan QR code with Telegram"
             if (root.isError) return root.status && root.status.error ? root.status.error : "Pairing failed"
@@ -138,6 +147,11 @@ Item {
           return "Pair with Google Messages"
         }
         meta: {
+          if (root.isMessenger) {
+            if (root.isError) return root.status && root.status.hint ? root.status.hint : "Check your browser login and desktop keyring, then try again."
+            if (root.status && root.status.state === "connected") return "Messenger is connected and encrypted conversations are available."
+            return "Sign in to facebook.com or messenger.com in a Chromium-family browser, unlock your desktop keyring, then pair this desktop. Messenger support uses Meta's unofficial client protocol and may require re-pairing after provider changes."
+          }
           if (root.isTelegram) {
             if (root.isQR) return "Open Telegram on your phone, go to Settings > Devices > Link Desktop Device, then scan this QR code."
             if (root.isError) return root.status && root.status.hint ? root.status.hint : "Check your connection and credentials, then try again."
@@ -167,7 +181,7 @@ Item {
           OpticalGlyph {
             implicitWidth: root.fs(Style.font.display)
             implicitHeight: root.fs(Style.font.display)
-            text: root.isTelegram ? "\uf2c6" : (root.isWhatsApp ? "󰖣" : "󰭹")
+            text: root.isTelegram ? "\uf2c6" : (root.isWhatsApp ? "󰖣" : (root.isMessenger ? "󰈎" : "󰭹"))
             color: root.accentInk
             fontFamily: root.fontFamily
             fontSize: root.fs(Style.font.display)
@@ -242,7 +256,7 @@ Item {
       Row {
         anchors.horizontalCenter: parent.horizontalCenter
         spacing: Style.space(8)
-        visible: !root.isGaia && !root.isWhatsApp && !root.isTelegram
+        visible: !root.isGaia && !root.isWhatsApp && !root.isTelegram && !root.isMessenger
 
         Button {
           focusable: true
@@ -313,10 +327,28 @@ Item {
         }
       }
 
+      Row {
+        anchors.horizontalCenter: parent.horizontalCenter
+        spacing: Style.space(8)
+        visible: root.isMessenger && root.status && root.status.state !== "connected"
+
+        Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          text: root.connState === "connecting" ? "Connecting..." : (root.isError ? "Try again" : "Pair from browser")
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          bordered: true
+          enabled: root.connState !== "connecting"
+          onClicked: if (root.service) root.service.call("pairFromBrowser", null, null, "messenger")
+        }
+      }
+
       Column {
         width: parent.width
         spacing: Style.space(6)
-        visible: !root.isGaia && !root.isWhatsApp && !root.isTelegram
+        visible: (!root.isGaia && !root.isWhatsApp && !root.isTelegram && !root.isMessenger) || root.isMessenger
 
         Row {
           anchors.horizontalCenter: parent.horizontalCenter
@@ -373,7 +405,7 @@ Item {
               onClicked: if (root.service) root.service.call("setProfile", { name: modelData.name }, function(ok, res) {
                 if (ok && res) root.service.browserProfiles = res
                 root.profilePickerOpen = false
-              }, "gmessages")
+              }, root.network)
             }
 
             Text {

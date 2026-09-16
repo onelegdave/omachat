@@ -6,8 +6,8 @@ gmessages-omarchy-plugin (MIT):
 The Google Messages web protocol implementation is from the mautrix
 project's libgm (go.mau.fi/mautrix-gmessages). That work remains theirs.
 Its vendored LICENSE contains GNU AGPL version 3, with upstream exceptions
-in LICENSE.exceptions. These notices are retained; OmaChat's root MIT
-license does not relicense this dependency.
+in LICENSE.exceptions. OmaChat v0.4.3 and later is distributed under
+AGPL-3.0-or-later so the combined helper follows those terms.
 
 The Omarchy shell plugin (manifest, service lifecycle, and QML panel)
 is OneLegDave's work.
@@ -29,5 +29,16 @@ through CGO for the WhatsApp session database.
 Telegram support vendors github.com/gotd/td and its transitive dependencies
 under permissive licenses (MIT, Apache-2.0, and BSD-3-Clause). Upstream
 authorship and licenses remain intact.
+
+Facebook Messenger support vendors go.mau.fi/mautrix-meta. That work remains
+copyright its upstream authors and is licensed under GNU AGPL version 3, with
+the exceptions retained in vendor/go.mau.fi/mautrix-meta/LICENSE.exceptions.
+OmaChat uses its unofficial Messenger and encrypted-chat protocol code; the
+root AGPL license is consistent with the dependency's copyleft terms.
+
+OmaChat releases published before v0.4.3 retain the original MIT grant in
+LICENSE-MIT. That prior permission is not withdrawn. Marc Ford's adapted code
+also retains its MIT terms. Other third-party files retain the licenses shipped
+beside them in vendor/.
 
 See CREDITS.md for project credits and links to retained third-party notices.

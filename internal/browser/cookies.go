@@ -37,7 +37,7 @@ type Profile struct {
 // wantedHosts maps each required cookie to the host that issues it. OSID is
 // per-service: the one that matters is issued by messages.google.com itself,
 // and is only set once you have actually loaded the Messages web app.
-var wantedHosts = map[string]string{
+var googleWantedHosts = map[string]string{
 	"SID":              ".google.com",
 	"HSID":             ".google.com",
 	"SSID":             ".google.com",
@@ -241,7 +241,7 @@ func ExtractGoogleCookiesContext(ctx context.Context, p Profile) (map[string]str
 		}
 		name, host, hexVal := parts[0], parts[1], parts[2]
 
-		wantHost, ok := wantedHosts[name]
+		wantHost, ok := googleWantedHosts[name]
 		if !ok || host != wantHost {
 			continue
 		}
@@ -258,6 +258,87 @@ func ExtractGoogleCookiesContext(ctx context.Context, p Profile) (map[string]str
 
 	if len(cookies) == 0 {
 		return nil, errors.New("no Google cookies could be read (is the login keyring unlocked, and are you signed in?)")
+	}
+	return cookies, nil
+}
+
+var messengerWantedHosts = map[string]string{
+	"c_user": ".facebook.com",
+	"xs":     ".facebook.com",
+	"datr":   ".facebook.com",
+}
+
+// ExtractMessengerCookies reads and decrypts Facebook Messenger cookies from a profile.
+func ExtractMessengerCookies(p Profile) (map[string]string, error) {
+	return ExtractMessengerCookiesContext(context.Background(), p)
+}
+
+func ExtractMessengerCookiesContext(ctx context.Context, p Profile) (map[string]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		return nil, fmt.Errorf("sqlite3 is required to read the browser cookie database: %w", err)
+	}
+
+	tmp, err := os.CreateTemp("", "gm-cookies-*.sqlite")
+	if err != nil {
+		return nil, err
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
+	data, err := os.ReadFile(p.CookieDB)
+	if err != nil {
+		return nil, fmt.Errorf("read cookie database: %w", err)
+	}
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+		return nil, err
+	}
+
+	const query = `SELECT name || '|' || host_key || '|' || hex(encrypted_value) FROM cookies WHERE host_key LIKE '%facebook.com' OR host_key LIKE '%messenger.com';`
+	out, err := exec.CommandContext(ctx, "sqlite3", "-readonly", tmpPath, query).Output()
+	if err != nil {
+		return nil, fmt.Errorf("query cookie database: %w", err)
+	}
+
+	keyV11, keyV10 := decryptionKey(ctx, p)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	cookies := make(map[string]string)
+
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		name, host, hexVal := parts[0], parts[1], parts[2]
+
+		wantHost, ok := messengerWantedHosts[name]
+		if !ok || host != wantHost {
+			continue
+		}
+		blob, err := hex.DecodeString(hexVal)
+		if err != nil {
+			continue
+		}
+		value, err := decryptValue(blob, keyV11, keyV10)
+		if err != nil || value == "" {
+			continue
+		}
+		cookies[name] = value
+	}
+
+	for name := range messengerWantedHosts {
+		if cookies[name] == "" {
+			return nil, fmt.Errorf("required Messenger cookie %q could not be read (is the login keyring unlocked, and are you signed in?)", name)
+		}
 	}
 	return cookies, nil
 }

@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -20,8 +23,10 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
+	waStore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -38,6 +43,7 @@ const (
 	maxConversations       = 50
 	maxInboundMediaBytes   = 25 * 1024 * 1024 // 25 MB
 	maxOutboundMediaBytes  = 16 * 1024 * 1024 // 16 MB
+	maxOutboundVoiceSecs   = 60
 	maxImageDimensionPixel = 8192
 )
 
@@ -56,39 +62,85 @@ type Backend struct {
 	pairCancel context.CancelFunc
 
 	container *sqlstore.Container
+	device    *waStore.Device
 	client    Client
 	paired    bool
 	status    wire.Status
 	gen       uint64
 	handlerID uint32
 
-	convs    map[string]wire.Conversation
-	order    []string
-	messages map[string][]wire.Message
-	rawMsgs  map[string]*waE2E.Message
+	convs          map[string]wire.Conversation
+	order          []string
+	messages       map[string][]wire.Message
+	rawMsgs        map[string]*waE2E.Message
+	reactionActors map[string]map[string]string
 
 	pairBlocked bool
 
 	// mediaCommitStall is a test hook invoked after a download and before the
 	// generation-checked cache commit.
 	mediaCommitStall func()
+	convertGIF       func(context.Context, string) ([]byte, error)
 }
 
 // New creates an unstarted WhatsApp backend.
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *Backend {
 	return &Backend{
-		log:      log.With().Str("network", wire.NetworkWhatsApp).Logger(),
-		paths:    paths,
-		publish:  publish,
-		convs:    make(map[string]wire.Conversation),
-		messages: make(map[string][]wire.Message),
-		rawMsgs:  make(map[string]*waE2E.Message),
+		log:            log.With().Str("network", wire.NetworkWhatsApp).Logger(),
+		paths:          paths,
+		publish:        publish,
+		convs:          make(map[string]wire.Conversation),
+		messages:       make(map[string][]wire.Message),
+		rawMsgs:        make(map[string]*waE2E.Message),
+		reactionActors: make(map[string]map[string]string),
+		convertGIF:     convertGIFToMP4,
 		status: wire.Status{
 			Network: wire.NetworkWhatsApp,
 			State:   wire.StateUnpaired,
 			PhoneOK: true,
 		},
 	}
+}
+
+func convertGIFToMP4(ctx context.Context, input string) ([]byte, error) {
+	out, err := os.CreateTemp("", "omachat-whatsapp-gif-*.mp4")
+	if err != nil {
+		return nil, fmt.Errorf("create GIF conversion file: %w", err)
+	}
+	outPath := out.Name()
+	if err := out.Close(); err != nil {
+		_ = os.Remove(outPath)
+		return nil, fmt.Errorf("prepare GIF conversion file: %w", err)
+	}
+	defer os.Remove(outPath)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+		"-i", input, "-an", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+		"-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+		"-movflags", "+faststart", outPath)
+	if err := cmd.Run(); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, errors.New("WhatsApp GIF sending requires ffmpeg; install it from Settings > Tools")
+		}
+		return nil, fmt.Errorf("convert GIF for WhatsApp: %w", err)
+	}
+
+	f, err := os.Open(outPath)
+	if err != nil {
+		return nil, fmt.Errorf("read converted GIF: %w", err)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxOutboundMediaBytes+1))
+	_ = f.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read converted GIF: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, errors.New("ffmpeg produced an empty WhatsApp GIF")
+	}
+	if len(data) > maxOutboundMediaBytes {
+		return nil, errors.New("converted GIF exceeds 16MB limit")
+	}
+	return data, nil
 }
 
 // ensureSQLiteFile guarantees the sqlite file exists with private 0600 permissions before opening.
@@ -156,6 +208,7 @@ func (b *Backend) Start(ctx context.Context) error {
 		b.order = loaded.Order
 		b.messages = loaded.Messages
 		b.rawMsgs = raw
+		b.reactionActors = loaded.ReactionActors
 		b.mu.Unlock()
 	}
 
@@ -207,9 +260,11 @@ func (b *Backend) Start(ctx context.Context) error {
 	b.mu.Lock()
 	b.gen++
 	b.container = container
+	b.device = deviceStore
 	b.bindClientLocked(live, isPaired)
 	gen = b.gen
 	b.mu.Unlock()
+	b.refreshConversationNames(deviceStore)
 
 	if !isPaired {
 		b.setState(wire.StateUnpaired, "")
@@ -221,6 +276,55 @@ func (b *Backend) Start(ctx context.Context) error {
 	go b.connectGeneration(live, gen)
 
 	return nil
+}
+
+func contactDisplayName(info types.ContactInfo) string {
+	for _, name := range []string{info.FullName, info.FirstName, info.BusinessName, info.PushName} {
+		if name = strings.TrimSpace(name); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func lookupContactName(ctx context.Context, device *waStore.Device, jid types.JID) string {
+	if device == nil || device.Contacts == nil {
+		return ""
+	}
+	if info, err := device.Contacts.GetContact(ctx, jid); err == nil {
+		if name := contactDisplayName(info); name != "" {
+			return name
+		}
+	}
+	alt, err := device.GetAltJID(ctx, jid)
+	if err != nil || alt.IsEmpty() {
+		return ""
+	}
+	info, err := device.Contacts.GetContact(ctx, alt)
+	if err != nil {
+		return ""
+	}
+	return contactDisplayName(info)
+}
+
+func (b *Backend) refreshConversationNames(device *waStore.Device) {
+	b.mu.RLock()
+	gen := b.gen
+	ids := append([]string(nil), b.order...)
+	ctx := b.ctx
+	b.mu.RUnlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for _, id := range ids {
+		jid, err := types.ParseJID(id)
+		if err != nil {
+			continue
+		}
+		if name := lookupContactName(ctx, device, jid); name != "" {
+			b.updateConversationNames(gen, name, jid)
+		}
+	}
 }
 
 func (b *Backend) connectGeneration(c Client, gen uint64) {
@@ -589,10 +693,12 @@ func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, conta
 	b.client = nil
 	b.handlerID = 0
 	b.container = nil
+	b.device = nil
 	b.convs = make(map[string]wire.Conversation)
 	b.order = nil
 	b.messages = make(map[string][]wire.Message)
 	b.rawMsgs = make(map[string]*waE2E.Message)
+	b.reactionActors = make(map[string]map[string]string)
 	b.mu.Unlock()
 	ok = true
 	return
@@ -779,7 +885,6 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (wire.Message, er
 	if timestamp == 0 {
 		timestamp = time.Now().UnixMicro()
 	}
-
 	out := wire.Message{
 		ID:             resp.ID,
 		TmpID:          p.TmpID,
@@ -797,7 +902,126 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (wire.Message, er
 	return out, nil
 }
 
-// SendMedia uploads an image file and sends it to a WhatsApp chat.
+const ownReactionActor = "__me__"
+
+// React adds, switches, or removes the current user's reaction on a WhatsApp message.
+func (b *Backend) React(ctx context.Context, p wire.ReactParams) error {
+	b.mu.RLock()
+	cli := b.client
+	connected := b.status.State == wire.StateConnected
+	var target wire.Message
+	found := false
+	for _, msg := range b.messages[p.ConversationID] {
+		if msg.ID == p.MessageID {
+			target, found = msg, true
+			break
+		}
+	}
+	emoji := strings.TrimSpace(p.Emoji)
+	if b.reactionActors[rawMediaKey(p.ConversationID, p.MessageID)][ownReactionActor] == emoji {
+		emoji = ""
+	}
+	b.mu.RUnlock()
+	if !connected || cli == nil {
+		return errors.New("not connected to WhatsApp")
+	}
+	if !found || p.MessageID == "" {
+		return errors.New("WhatsApp message is not available for reaction")
+	}
+	if len([]rune(emoji)) > 16 {
+		return errors.New("WhatsApp reaction is too long")
+	}
+	chat, err := types.ParseJID(p.ConversationID)
+	if err != nil {
+		return fmt.Errorf("invalid WhatsApp conversation ID: %w", err)
+	}
+	key := &waCommon.MessageKey{
+		RemoteJID: proto.String(chat.String()),
+		FromMe:    proto.Bool(target.FromMe),
+		ID:        proto.String(target.ID),
+	}
+	if chat.Server == types.GroupServer && !target.FromMe && target.SenderID != "" {
+		participant, parseErr := types.ParseJID(target.SenderID)
+		if parseErr != nil {
+			return fmt.Errorf("invalid WhatsApp reaction sender: %w", parseErr)
+		}
+		key.Participant = proto.String(participant.ToNonAD().String())
+	}
+	message := &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
+		Key:               key,
+		Text:              proto.String(emoji),
+		SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
+	}}
+	if _, err = cli.SendMessage(ctx, chat, message); err != nil {
+		return fmt.Errorf("send WhatsApp reaction: %w", err)
+	}
+
+	b.mu.Lock()
+	updated, changed := b.setReactionLocked(p.ConversationID, p.MessageID, ownReactionActor, emoji)
+	b.saveStoreLocked()
+	if changed {
+		b.emitLocked(wire.EventMessage, updated)
+	}
+	b.mu.Unlock()
+	return nil
+}
+
+func (b *Backend) setReactionLocked(conversationID, messageID, actor, emoji string) (wire.Message, bool) {
+	if conversationID == "" || messageID == "" || actor == "" {
+		return wire.Message{}, false
+	}
+	key := rawMediaKey(conversationID, messageID)
+	actors := b.reactionActors[key]
+	if actors == nil {
+		actors = make(map[string]string)
+		b.reactionActors[key] = actors
+	}
+	if emoji == "" {
+		delete(actors, actor)
+	} else {
+		actors[actor] = emoji
+	}
+	if len(actors) == 0 {
+		delete(b.reactionActors, key)
+	}
+
+	list := b.messages[conversationID]
+	for i := range list {
+		if list[i].ID != messageID {
+			continue
+		}
+		list[i].Reactions = reactionsFromActors(actors)
+		b.messages[conversationID] = list
+		return list[i], true
+	}
+	return wire.Message{}, false
+}
+
+func reactionsFromActors(actors map[string]string) []wire.Reaction {
+	counts := make(map[string]int)
+	mine := make(map[string]bool)
+	for actor, emoji := range actors {
+		if emoji == "" {
+			continue
+		}
+		counts[emoji]++
+		if actor == ownReactionActor {
+			mine[emoji] = true
+		}
+	}
+	emojis := make([]string, 0, len(counts))
+	for emoji := range counts {
+		emojis = append(emojis, emoji)
+	}
+	sort.Strings(emojis)
+	out := make([]wire.Reaction, 0, len(emojis))
+	for _, emoji := range emojis {
+		out = append(out, wire.Reaction{Emoji: emoji, Count: counts[emoji], Mine: mine[emoji]})
+	}
+	return out
+}
+
+// SendMedia uploads an image, GIF, or Opus voice note to a WhatsApp chat.
 func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.SendMediaResult, error) {
 	b.mu.RLock()
 	cli := b.client
@@ -826,24 +1050,63 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 		return wire.SendMediaResult{}, fmt.Errorf("read media file: %w", err)
 	}
 
-	// Validate exact supported image types and dimensions
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		// Allow webp magic detection if standard decoder lacks it
-		if bytes.HasPrefix(data, []byte("RIFF")) && len(data) >= 12 && string(data[8:12]) == "WEBP" {
-			format = "webp"
-		} else {
-			return wire.SendMediaResult{}, fmt.Errorf("unsupported image format: %w", err)
+	ext := strings.ToLower(filepath.Ext(cleanPath))
+	isPTTVoice := ext == ".ogg" || ext == ".opus"
+	isAudioClip := ext == ".m4a"
+	isVoice := isPTTVoice || isAudioClip
+	var cfg image.Config
+	format := ""
+	var voiceSeconds uint32
+	if isPTTVoice {
+		voiceSeconds, err = oggOpusVoiceDuration(data)
+		if err != nil {
+			return wire.SendMediaResult{}, err
 		}
+	} else if isAudioClip {
+		if len(data) < 12 || string(data[4:8]) != "ftyp" || !bytes.Contains(data, []byte("mp4a")) {
+			return wire.SendMediaResult{}, errors.New("WhatsApp audio clip must be an AAC M4A file")
+		}
+		if p.DurationSeconds == 0 || p.DurationSeconds > maxOutboundVoiceSecs {
+			return wire.SendMediaResult{}, errors.New("WhatsApp audio clip duration is invalid")
+		}
+		voiceSeconds = p.DurationSeconds
 	} else {
-		if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxImageDimensionPixel || cfg.Height > maxImageDimensionPixel {
-			return wire.SendMediaResult{}, fmt.Errorf("invalid image dimensions: %dx%d", cfg.Width, cfg.Height)
+		// Validate exact supported image types and dimensions.
+		cfg, format, err = image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			// Allow webp magic detection if standard decoder lacks it.
+			if bytes.HasPrefix(data, []byte("RIFF")) && len(data) >= 12 && string(data[8:12]) == "WEBP" {
+				format = "webp"
+			} else {
+				return wire.SendMediaResult{}, fmt.Errorf("unsupported image format: %w", err)
+			}
+		} else {
+			if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxImageDimensionPixel || cfg.Height > maxImageDimensionPixel {
+				return wire.SendMediaResult{}, fmt.Errorf("invalid image dimensions: %dx%d", cfg.Width, cfg.Height)
+			}
 		}
 	}
 
-	mimeType := "image/" + format
-	if format == "jpg" {
+	mimeType := "audio/ogg; codecs=opus"
+	mediaType := whatsmeow.MediaAudio
+	if isAudioClip {
+		mimeType = "audio/mp4"
+	}
+	if !isVoice {
+		mimeType = "image/" + format
+		mediaType = whatsmeow.MediaImage
+	}
+	if !isVoice && format == "jpg" {
 		mimeType = "image/jpeg"
+	}
+	isGIF := format == "gif"
+	if isGIF {
+		data, err = b.convertGIF(ctx, cleanPath)
+		if err != nil {
+			return wire.SendMediaResult{}, err
+		}
+		mimeType = "video/mp4"
+		mediaType = whatsmeow.MediaVideo
 	}
 
 	toJID, err := types.ParseJID(p.ConversationID)
@@ -854,13 +1117,42 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 		return wire.SendMediaResult{}, fmt.Errorf("unsupported recipient server: %s", toJID.Server)
 	}
 
-	uploadResp, err := cli.Upload(ctx, data, whatsmeow.MediaImage)
+	uploadResp, err := cli.Upload(ctx, data, mediaType)
 	if err != nil {
-		return wire.SendMediaResult{}, fmt.Errorf("upload image: %w", err)
+		return wire.SendMediaResult{}, fmt.Errorf("upload media: %w", err)
 	}
 
-	waMsg := &waE2E.Message{
-		ImageMessage: &waE2E.ImageMessage{
+	waMsg := &waE2E.Message{}
+	if isVoice {
+		mediaKeyTimestamp := time.Now().Unix()
+		waMsg.AudioMessage = &waE2E.AudioMessage{
+			Mimetype:          proto.String(mimeType),
+			PTT:               proto.Bool(isPTTVoice),
+			Seconds:           proto.Uint32(voiceSeconds),
+			URL:               &uploadResp.URL,
+			DirectPath:        &uploadResp.DirectPath,
+			MediaKey:          uploadResp.MediaKey,
+			MediaKeyTimestamp: proto.Int64(mediaKeyTimestamp),
+			FileEncSHA256:     uploadResp.FileEncSHA256,
+			FileSHA256:        uploadResp.FileSHA256,
+			FileLength:        proto.Uint64(uploadResp.FileLength),
+		}
+	} else if isGIF {
+		waMsg.VideoMessage = &waE2E.VideoMessage{
+			Caption:       proto.String(p.Caption),
+			Mimetype:      proto.String(mimeType),
+			GifPlayback:   proto.Bool(true),
+			Width:         proto.Uint32(uint32(cfg.Width)),
+			Height:        proto.Uint32(uint32(cfg.Height)),
+			URL:           &uploadResp.URL,
+			DirectPath:    &uploadResp.DirectPath,
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		}
+	} else {
+		waMsg.ImageMessage = &waE2E.ImageMessage{
 			Caption:       proto.String(p.Caption),
 			Mimetype:      proto.String(mimeType),
 			URL:           &uploadResp.URL,
@@ -869,7 +1161,7 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 			FileEncSHA256: uploadResp.FileEncSHA256,
 			FileSHA256:    uploadResp.FileSHA256,
 			FileLength:    proto.Uint64(uint64(len(data))),
-		},
+		}
 	}
 
 	resp, err := cli.SendMessage(ctx, toJID, waMsg)
@@ -881,12 +1173,16 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 	if timestamp == 0 {
 		timestamp = time.Now().UnixMicro()
 	}
+	outText := p.Caption
+	if isVoice {
+		outText = ""
+	}
 
 	out := wire.Message{
 		ID:             resp.ID,
 		TmpID:          p.TmpID,
 		ConversationID: p.ConversationID,
-		Text:           p.Caption,
+		Text:           outText,
 		Timestamp:      timestamp,
 		FromMe:         true,
 		Delivery:       wire.DeliverySent,
@@ -896,7 +1192,12 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 				MediaID:  resp.ID,
 				MimeType: mimeType,
 				Size:     int64(len(data)),
-				IsImage:  true,
+				Width:    int64(cfg.Width),
+				Height:   int64(cfg.Height),
+				IsImage:  !isGIF && !isVoice,
+				IsGif:    isGIF,
+				IsVideo:  isGIF,
+				IsAudio:  isVoice,
 			},
 		},
 	}
@@ -908,6 +1209,67 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 	return wire.SendMediaResult{
 		Message: &out,
 	}, nil
+}
+
+// oggOpusVoiceDuration validates the WhatsApp-compatible recording shape and
+// derives its duration from the final Ogg granule position. Opus granules are
+// always measured at 48 kHz, regardless of the input capture rate.
+func oggOpusVoiceDuration(data []byte) (uint32, error) {
+	const opusSampleRate = uint64(48000)
+	var (
+		offset       int
+		preSkip      uint64
+		lastGranule  uint64
+		foundHead    bool
+		foundGranule bool
+	)
+	for offset < len(data) {
+		if len(data)-offset < 27 || string(data[offset:offset+4]) != "OggS" || data[offset+4] != 0 {
+			return 0, errors.New("WhatsApp voice note must be a valid Ogg Opus file")
+		}
+		segmentCount := int(data[offset+26])
+		headerEnd := offset + 27 + segmentCount
+		if headerEnd > len(data) {
+			return 0, errors.New("WhatsApp voice note has a truncated Ogg page")
+		}
+		payloadSize := 0
+		for _, size := range data[offset+27 : headerEnd] {
+			payloadSize += int(size)
+		}
+		pageEnd := headerEnd + payloadSize
+		if pageEnd > len(data) {
+			return 0, errors.New("WhatsApp voice note has a truncated Ogg payload")
+		}
+		if !foundHead {
+			payload := data[headerEnd:pageEnd]
+			if headAt := bytes.Index(payload, []byte("OpusHead")); headAt >= 0 {
+				headAt += headerEnd
+				if headAt+19 > pageEnd || data[headAt+8] != 1 || data[headAt+9] != 1 {
+					return 0, errors.New("WhatsApp voice note must be mono Ogg Opus")
+				}
+				preSkip = uint64(binary.LittleEndian.Uint16(data[headAt+10 : headAt+12]))
+				foundHead = true
+			}
+		}
+		granule := binary.LittleEndian.Uint64(data[offset+6 : offset+14])
+		if granule != ^uint64(0) {
+			lastGranule = granule
+			foundGranule = true
+		}
+		offset = pageEnd
+	}
+	if !foundHead || !foundGranule || lastGranule <= preSkip {
+		return 0, errors.New("WhatsApp voice note must contain playable Ogg Opus audio")
+	}
+	samples := lastGranule - preSkip
+	if samples > uint64(^uint32(0))*opusSampleRate {
+		return 0, errors.New("WhatsApp voice note duration is invalid")
+	}
+	seconds := (samples + opusSampleRate - 1) / opusSampleRate
+	if seconds == 0 {
+		return 0, errors.New("WhatsApp voice note duration is invalid")
+	}
+	return uint32(seconds), nil
 }
 
 // Media retrieves or downloads an attachment file into the local WhatsApp cache.
@@ -924,7 +1286,7 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	opaque := mediaKeyToOpaque(key)
 
 	// Check for existing cached file safely without globbing user input
-	for _, ext := range []string{".jpg", ".png", ".webp", ".gif", ".bin"} {
+	for _, ext := range []string{".jpg", ".png", ".webp", ".gif", ".mp4", ".bin"} {
 		candidate := filepath.Join(cacheDir, opaque+ext)
 		fi, err := os.Lstat(candidate)
 		if err != nil || fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
@@ -990,6 +1352,8 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 		ext = ".webp"
 	case strings.Contains(mimeType, "gif"):
 		ext = ".gif"
+	case strings.Contains(mimeType, "mp4"):
+		ext = ".mp4"
 	}
 	if ext == ".bin" {
 		inner, _ := unwrapMessage(rawMsg)
@@ -1124,6 +1488,25 @@ func (b *Backend) handleEventFor(gen uint64, evt any) {
 		go b.applyRemoteLogout(gen, e.Reason.String())
 
 	case *events.Message:
+		unwrapped, _ := unwrapMessage(e.Message)
+		if reaction := unwrapped.GetReactionMessage(); reaction != nil {
+			actor := e.Info.Sender.ToNonAD().String()
+			if e.Info.IsFromMe {
+				actor = ownReactionActor
+			}
+			b.mu.Lock()
+			if b.gen != gen {
+				b.mu.Unlock()
+				return
+			}
+			msg, changed := b.setReactionLocked(e.Info.Chat.String(), reaction.GetKey().GetID(), actor, reaction.GetText())
+			b.saveStoreLocked()
+			if changed {
+				b.emitLocked(wire.EventMessage, msg)
+			}
+			b.mu.Unlock()
+			return
+		}
 		msg, displayable := convertEventMessage(e)
 		if !displayable {
 			return
@@ -1139,7 +1522,62 @@ func (b *Backend) handleEventFor(gen uint64, evt any) {
 
 	case *events.HistorySync:
 		b.ingestHistorySync(gen, e.Data)
+
+	case *events.Contact:
+		name := strings.TrimSpace(e.Action.GetFullName())
+		if name == "" {
+			name = strings.TrimSpace(e.Action.GetFirstName())
+		}
+		b.updateConversationNames(gen, name, e.JID)
+
+	case *events.PushName:
+		b.updateConversationNames(gen, e.NewPushName, e.JID, e.JIDAlt)
+
+	case *events.BusinessName:
+		b.updateConversationNames(gen, e.NewBusinessName, e.JID)
 	}
+}
+
+func (b *Backend) updateConversationNames(gen uint64, name string, jids ...types.JID) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	b.mu.RLock()
+	device := b.device
+	ctx := b.ctx
+	b.mu.RUnlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	allJIDs := append([]types.JID(nil), jids...)
+	if device != nil {
+		for _, jid := range jids {
+			if alt, err := device.GetAltJID(ctx, jid); err == nil && !alt.IsEmpty() {
+				allJIDs = append(allJIDs, alt)
+			}
+		}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.gen != gen {
+		return
+	}
+	for _, jid := range allJIDs {
+		if jid.IsEmpty() {
+			continue
+		}
+		id := jid.ToNonAD().String()
+		conv, ok := b.convs[id]
+		if !ok || (!isFallbackConversationName(jid, conv.Name) && conv.Name != "") {
+			continue
+		}
+		conv.Name = name
+		conv.Initials = initials(name)
+		b.convs[id] = conv
+		b.emitLocked(wire.EventConversation, conv)
+	}
+	b.saveStoreLocked()
 }
 
 func (b *Backend) appendMessage(msg wire.Message, raw *waE2E.Message) {
@@ -1163,6 +1601,9 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 	found := false
 	for i, m := range list {
 		if m.ID == msg.ID || (msg.TmpID != "" && m.TmpID == msg.TmpID) {
+			if len(msg.Reactions) == 0 {
+				msg.Reactions = m.Reactions
+			}
 			list[i] = msg
 			found = true
 			break
@@ -1186,13 +1627,30 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 	conv, ok := b.convs[msg.ConversationID]
 	if !ok {
 		jid, _ := types.ParseJID(msg.ConversationID)
-		name := formatConversationName(jid, msg.SenderName)
+		nameHint := strings.TrimSpace(msg.SenderName)
+		if sender, err := types.ParseJID(msg.SenderID); jid.Server == types.GroupServer || (err == nil && nameHint == sender.User) {
+			nameHint = ""
+		}
+		name := formatConversationName(jid, nameHint)
 		conv = wire.Conversation{
 			ID:          msg.ConversationID,
 			Name:        name,
 			AvatarColor: avatarColor(msg.ConversationID),
 			Initials:    initials(name),
 			IsGroup:     jid.Server == types.GroupServer,
+		}
+	} else if !msg.FromMe && strings.TrimSpace(msg.SenderName) != "" {
+		jid, _ := types.ParseJID(msg.ConversationID)
+		if isFallbackConversationName(jid, conv.Name) {
+			conv.Name = strings.TrimSpace(msg.SenderName)
+			conv.Initials = initials(conv.Name)
+		}
+	}
+	msg.Reactions = reactionsFromActors(b.reactionActors[rawMediaKey(msg.ConversationID, msg.ID)])
+	for i := range list {
+		if list[i].ID == msg.ID || (msg.TmpID != "" && list[i].TmpID == msg.TmpID) {
+			list[i].Reactions = msg.Reactions
+			break
 		}
 	}
 
@@ -1227,6 +1685,26 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 	if data == nil {
 		return
 	}
+	b.mu.RLock()
+	device := b.device
+	ctx := b.ctx
+	b.mu.RUnlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	resolvedNames := make(map[string]string)
+	for _, c := range data.GetConversations() {
+		chatID := c.GetID()
+		jid, err := types.ParseJID(chatID)
+		if err != nil {
+			continue
+		}
+		name := strings.TrimSpace(c.GetName())
+		if name == "" {
+			name = lookupContactName(ctx, device, jid)
+		}
+		resolvedNames[chatID] = name
+	}
 
 	b.mu.Lock()
 	if b.gen != gen {
@@ -1240,7 +1718,7 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 			continue
 		}
 		jid, _ := types.ParseJID(chatID)
-		name := formatConversationName(jid, c.GetName())
+		name := formatConversationName(jid, resolvedNames[chatID])
 		conv, ok := b.convs[chatID]
 		if !ok {
 			conv = wire.Conversation{
@@ -1251,8 +1729,16 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 				IsGroup:     jid.Server == types.GroupServer,
 				Unread:      c.GetUnreadCount() > 0,
 			}
+		} else if resolvedNames[chatID] != "" && isFallbackConversationName(jid, conv.Name) {
+			conv.Name = resolvedNames[chatID]
+			conv.Initials = initials(conv.Name)
 		}
 
+		var pendingReactions []struct {
+			messageID string
+			actor     string
+			emoji     string
+		}
 		for _, hMsg := range c.GetMessages() {
 			webMsg := hMsg.GetMessage()
 			if webMsg == nil || webMsg.GetMessage() == nil {
@@ -1261,6 +1747,20 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 			raw := webMsg.GetMessage()
 			unwrapped, _ := unwrapMessage(raw)
 			id := webMsg.GetKey().GetID()
+			if reaction := unwrapped.GetReactionMessage(); reaction != nil {
+				actor := webMsg.GetKey().GetParticipant()
+				if webMsg.GetKey().GetFromMe() {
+					actor = ownReactionActor
+				} else if actor == "" {
+					actor = chatID
+				}
+				pendingReactions = append(pendingReactions, struct {
+					messageID string
+					actor     string
+					emoji     string
+				}{reaction.GetKey().GetID(), actor, reaction.GetText()})
+				continue
+			}
 			restricted := isViewOnce(raw) || isEphemeralWrapped(raw)
 			var text string
 			var atts []wire.Attachment
@@ -1288,6 +1788,7 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 				Timestamp:      ts,
 				FromMe:         fromMe,
 				Attachments:    atts,
+				Reactions:      reactionsFromActors(b.reactionActors[rawMediaKey(chatID, id)]),
 			}
 			if fromMe {
 				m.Delivery = wire.DeliverySent
@@ -1318,6 +1819,9 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 				}
 				conv.PreviewMine = fromMe
 			}
+		}
+		for _, reaction := range pendingReactions {
+			_, _ = b.setReactionLocked(chatID, reaction.messageID, reaction.actor, reaction.emoji)
 		}
 
 		sort.Slice(b.messages[chatID], func(i, j int) bool {
@@ -1394,10 +1898,11 @@ func (b *Backend) handleReceipt(gen uint64, evt *events.Receipt) {
 
 func (b *Backend) saveStoreLocked() {
 	stored := &StoredChatData{
-		Conversations: b.convs,
-		Order:         b.order,
-		Messages:      b.messages,
-		RawMedia:      snapshotRawMedia(b.rawMsgs),
+		Conversations:  b.convs,
+		Order:          b.order,
+		Messages:       b.messages,
+		RawMedia:       snapshotRawMedia(b.rawMsgs),
+		ReactionActors: b.reactionActors,
 	}
 	if err := saveChatStore(b.paths.WhatsAppStoreFile(), stored); err != nil {
 		b.log.Warn().Err(err).Msg("Failed to persist WhatsApp chat store")

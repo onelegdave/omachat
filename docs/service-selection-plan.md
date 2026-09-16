@@ -28,7 +28,9 @@ a send whose outcome was interrupted.
 
 ## First run and upgrades
 
-- Existing installations without a saved service list keep all three services.
+- Existing installations without a saved service list keep the original three
+  services. Messenger remains opt-in and never starts merely because an older
+  installation is upgraded.
 - A fresh installation with no configuration or account/session evidence starts
   with no services enabled and asks you to choose.
 - Saving an explicit empty list means all services stay off after restarting;
