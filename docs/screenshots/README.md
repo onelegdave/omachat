@@ -5,6 +5,8 @@ messages, rendered using the stock Omarchy theme base palettes listed below.
 The fixture uses default control styling, not machine-specific shell overrides.
 The connected state and delivery receipts are simulated demonstration data.
 They are not proof of live connectivity or a full desktop theme installation.
+The current captures show all four service tabs, per-service unread badges,
+Messenger, reactions, and the shared attachment, voice, GIF, and emoji controls.
 
 ## Tokyo Night
 

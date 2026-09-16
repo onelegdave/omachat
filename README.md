@@ -4,12 +4,13 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messeng
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.3.13**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.13).
+Current stable release: **0.4.3**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.4.3).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
 The preview shows the current QML panel with fictional contacts and messages,
-using the Tokyo Night base palette. Connection and delivery states are simulated.
+all four service tabs, unread badges, and reactions using the Tokyo Night base
+palette. Connection and delivery states are simulated.
 Never include private conversations or account details in public screenshots.
 
 <details>
@@ -251,8 +252,10 @@ WhatsApp uses [whatsmeow](https://github.com/tulir/whatsmeow), Telegram uses
 [gotd/td](https://github.com/gotd/td), and Messenger uses
 [mautrix-meta](https://github.com/mautrix/meta).
 
-MIT for original OmaChat code. Vendored dependencies retain their own terms,
-including the AGPL terms for libgm and mautrix-meta and the MPL-2.0 license for whatsmeow. See
+OmaChat v0.4.3 and later is licensed under AGPL-3.0-or-later. Earlier OmaChat
+releases retain their original MIT grant. Vendored dependencies retain their
+own terms, including the AGPL terms for libgm and mautrix-meta and the MPL-2.0
+license for whatsmeow. See
 [Credits and third-party notices](CREDITS.md), [LICENSE](LICENSE), and [NOTICE](NOTICE).
 
 Other plugins: [OmaDroid](https://github.com/onelegdave/omadroid) and

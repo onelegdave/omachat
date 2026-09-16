@@ -104,6 +104,21 @@ migrations can still make re-pairing necessary.
 
 ## Exact next work
 
+Stable release v0.4.3 is being prepared from `dev`. Claude's full release and
+marketplace review found three release blockers: the combined helper needed an
+AGPL-compatible project license, this private handoff must stay out of public
+`main`, and the version must advance beyond the published beta tags. OneLegDave
+approved AGPL-3.0-or-later for v0.4.3 and later while preserving historical MIT
+grants. The review also found a Messenger E2EE-store lifecycle race and
+order-dependent WhatsApp history reactions; both now have focused fixes, with a
+regression test for reaction-before-target history. Fresh fictional-data
+screenshots now show Messenger, all four service tabs, unread badges, reactions,
+and the shared media controls. Complete the full gate and final review, promote
+to public `main` without this file, live-check the exact stable build on
+oldsmaru, then publish the immutable v0.4.3 tag and GitHub Release. Run the
+marketplace's exact-commit compatibility and security checks before preparing
+the six-heading submission for OneLegDave's explicit approval.
+
 Google account pairing in the v0.4.1 beta regressed when commit `c23dcaf`
 re-vendored dependencies while adding Messenger and silently removed the
 v0.3.7 Gaia pairing backport. The `PrivateAPIConfirmation` finish-request

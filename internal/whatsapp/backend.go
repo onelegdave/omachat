@@ -1734,6 +1734,11 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 			conv.Initials = initials(conv.Name)
 		}
 
+		var pendingReactions []struct {
+			messageID string
+			actor     string
+			emoji     string
+		}
 		for _, hMsg := range c.GetMessages() {
 			webMsg := hMsg.GetMessage()
 			if webMsg == nil || webMsg.GetMessage() == nil {
@@ -1749,7 +1754,11 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 				} else if actor == "" {
 					actor = chatID
 				}
-				_, _ = b.setReactionLocked(chatID, reaction.GetKey().GetID(), actor, reaction.GetText())
+				pendingReactions = append(pendingReactions, struct {
+					messageID string
+					actor     string
+					emoji     string
+				}{reaction.GetKey().GetID(), actor, reaction.GetText()})
 				continue
 			}
 			restricted := isViewOnce(raw) || isEphemeralWrapped(raw)
@@ -1810,6 +1819,9 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 				}
 				conv.PreviewMine = fromMe
 			}
+		}
+		for _, reaction := range pendingReactions {
+			_, _ = b.setReactionLocked(chatID, reaction.messageID, reaction.actor, reaction.emoji)
 		}
 
 		sort.Slice(b.messages[chatID], func(i, j int) bool {

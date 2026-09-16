@@ -52,6 +52,7 @@ type Backend struct {
 	publish        func(wire.Event)
 	config         *appStore.ConfigStore
 	mu             sync.RWMutex
+	storeMu        sync.Mutex
 	status         wire.Status
 	client         *messagix.Client
 	e2eeClient     *whatsmeow.Client
@@ -220,16 +221,6 @@ func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 		b.mergeStoredMessengerDataLocked(loadStoredMessengerData(b.paths.MessengerStoreFile()))
 		b.mu.Unlock()
 	}
-	if b.waStore == nil {
-		if err := ensureMessengerSQLiteFile(b.paths.MessengerDBFile()); err != nil {
-			return fmt.Errorf("secure E2EE store: %w", err)
-		}
-		container, err := sqlstore.New(ctx, "sqlite3", "file:"+b.paths.MessengerDBFile()+"?_foreign_keys=on", waLog.Zerolog(b.log.With().Str("component", "e2ee-db").Logger()))
-		if err != nil {
-			return fmt.Errorf("open E2EE store: %w", err)
-		}
-		b.waStore = container
-	}
 	cli := messagix.NewClient(mc, b.log.With().Str("component", "meta").Logger(), &messagix.Config{})
 	connected := false
 	defer func() {
@@ -252,24 +243,8 @@ func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 	b.selfID, b.client = user.GetFBID(), cli
 	b.mu.Unlock()
 	b.handleTable(initial)
-	device, err := b.waStore.GetFirstDevice(ctx)
-	if err != nil {
-		return fmt.Errorf("load E2EE device: %w", err)
-	}
-	newDevice := needsMessengerRegistration(device)
-	if newDevice {
-		if device == nil {
-			device = b.waStore.NewDevice()
-		}
-	}
-	cli.SetDevice(device)
-	if newDevice {
-		if err = cli.RegisterE2EE(ctx, user.GetFBID()); err != nil {
-			return fmt.Errorf("register E2EE device: %w", err)
-		}
-		if err = device.Save(ctx); err != nil {
-			return fmt.Errorf("save E2EE device: %w", err)
-		}
+	if err = b.prepareE2EEDevice(ctx, cli, user.GetFBID()); err != nil {
+		return err
 	}
 	if err = cli.Connect(ctx); err != nil {
 		return fmt.Errorf("connect Messenger transport: %w", err)
@@ -291,6 +266,40 @@ func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 	return nil
 }
 
+func (b *Backend) prepareE2EEDevice(ctx context.Context, cli *messagix.Client, userID int64) error {
+	b.storeMu.Lock()
+	defer b.storeMu.Unlock()
+	if b.waStore == nil {
+		if err := ensureMessengerSQLiteFile(b.paths.MessengerDBFile()); err != nil {
+			return fmt.Errorf("secure E2EE store: %w", err)
+		}
+		container, err := sqlstore.New(ctx, "sqlite3", "file:"+b.paths.MessengerDBFile()+"?_foreign_keys=on", waLog.Zerolog(b.log.With().Str("component", "e2ee-db").Logger()))
+		if err != nil {
+			return fmt.Errorf("open E2EE store: %w", err)
+		}
+		b.waStore = container
+	}
+	device, err := b.waStore.GetFirstDevice(ctx)
+	if err != nil {
+		return fmt.Errorf("load E2EE device: %w", err)
+	}
+	if !needsMessengerRegistration(device) {
+		cli.SetDevice(device)
+		return nil
+	}
+	if device == nil {
+		device = b.waStore.NewDevice()
+	}
+	cli.SetDevice(device)
+	if err = cli.RegisterE2EE(ctx, userID); err != nil {
+		return fmt.Errorf("register E2EE device: %w", err)
+	}
+	if err = device.Save(ctx); err != nil {
+		return fmt.Errorf("save E2EE device: %w", err)
+	}
+	return nil
+}
+
 func ensureMessengerSQLiteFile(path string) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
@@ -309,8 +318,8 @@ func needsMessengerRegistration(device *waStore.Device) bool {
 
 func (b *Backend) Stop() {
 	b.mu.Lock()
-	cancel, e2ee, cli, waStore := b.cancel, b.e2eeClient, b.client, b.waStore
-	b.cancel, b.runCtx, b.e2eeClient, b.client, b.waStore = nil, nil, nil, nil, nil
+	cancel, e2ee, cli := b.cancel, b.e2eeClient, b.client
+	b.cancel, b.runCtx, b.e2eeClient, b.client = nil, nil, nil, nil
 	b.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -321,11 +330,15 @@ func (b *Backend) Stop() {
 	if cli != nil {
 		cli.Disconnect()
 	}
+	b.storeMu.Lock()
+	waStore := b.waStore
+	b.waStore = nil
 	if waStore != nil {
 		if err := waStore.Close(); err != nil {
 			b.log.Warn().Err(err).Msg("Failed to close Messenger E2EE store")
 		}
 	}
+	b.storeMu.Unlock()
 }
 func (b *Backend) Unpair(context.Context) error {
 	b.Stop()

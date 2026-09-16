@@ -1,6 +1,6 @@
 # OmaChat documentation
 
-The current stable release is OmaChat v0.3.13. Documentation on the `dev`
+The current stable release is OmaChat v0.4.3. Documentation on the `dev`
 branch may also describe unreleased work intended for a later beta or stable
 release.
 

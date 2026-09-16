@@ -10,12 +10,13 @@ ShellRoot {
   property var palettes: JSON.parse(Quickshell.env("OMACHAT_GALLERY_PALETTES"))
   property int frame: 0
   property string outputDir: Quickshell.env("OMACHAT_UI_ARTIFACTS")
-  property double now: Date.now() * 1000
+  // Fixed synthetic clock keeps committed screenshots reproducible.
+  property double now: 1767225600000000
   QtObject {
     id: fake
     property bool connected: true
-    property string currentNetwork: "gmessages"
-    property var enabledServices: ["gmessages", "whatsapp", "telegram"]
+    property string currentNetwork: "messenger"
+    property var enabledServices: ["gmessages", "whatsapp", "telegram", "messenger"]
     property bool servicesConfigLoaded: true
     property bool serviceSelectionRequired: false
     property bool savingServices: false
@@ -40,14 +41,14 @@ ShellRoot {
     function statusFor(net) { return status }
     function stateFor(net) { return "connected" }
     function conversationsFor(net) { return conversations }
-    function unreadFor(net) { return net === "gmessages" ? 1 : 0 }
+    function unreadFor(net) { return net === "messenger" ? 2 : (net === "whatsapp" ? 1 : 0) }
     function loadConversations(net) {}
     function refreshConversations(net) {}
     function call(method, params, callback, network) {
       if (!callback) return
       if (method === "config") callback(true,{uiScale:1.1,giphyKeySet:false,enabledServices:enabledServices})
       else if (method === "messages") callback(true,{hasMore:false,messages:[
-        {id:"demo-1",conversationID:"demo-alex",text:"Ready for a walk this weekend?",fromMe:false,timestamp:root.now-600000000,attachments:[],reactions:[]},
+        {id:"demo-1",conversationID:"demo-alex",text:"Ready for a walk this weekend?",fromMe:false,timestamp:root.now-600000000,attachments:[],reactions:[{emoji:"👍",count:2,mine:true}]},
         {id:"demo-2",conversationID:"demo-alex",text:"Absolutely. Saturday morning works for me.",fromMe:true,timestamp:root.now-480000000,delivery:"delivered",attachments:[],reactions:[]},
         {id:"demo-3",conversationID:"demo-alex",text:"Let's take the lakeside trail and bring a picnic.",fromMe:false,timestamp:root.now-360000000,attachments:[],reactions:[]},
         {id:"demo-4",conversationID:"demo-alex",text:"Sounds good. I'll bring coffee and sandwiches.",fromMe:true,timestamp:root.now-240000000,delivery:"read",attachments:[],reactions:[]},
@@ -78,6 +79,7 @@ ShellRoot {
     onTriggered: {
       var loader=inspect.findChild(panel,"inboxLoader")
       if (!loader || !loader.item) { console.error("GALLERY_FAIL inbox unavailable"); Qt.quit(); return }
+      panel.activeService="messenger"
       loader.item.selectConversation("demo-alex")
       save.restart()
     }

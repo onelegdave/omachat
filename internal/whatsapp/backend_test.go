@@ -663,6 +663,40 @@ func TestWhatsAppHistorySync(t *testing.T) {
 	}
 }
 
+func TestWhatsAppHistorySyncAppliesReactionBeforeTarget(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	chatID := "15557778888@s.whatsapp.net"
+	mock.TriggerEvent(&events.HistorySync{Data: &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{{
+		ID: proto.String(chatID),
+		Messages: []*waHistorySync.HistorySyncMsg{
+			{Message: &waWeb.WebMessageInfo{
+				Key:     &waCommon.MessageKey{ID: proto.String("reaction-first")},
+				Message: &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{Key: &waCommon.MessageKey{ID: proto.String("target-later")}, Text: proto.String("👍")}},
+			}},
+			{Message: &waWeb.WebMessageInfo{
+				Key:              &waCommon.MessageKey{ID: proto.String("target-later")},
+				MessageTimestamp: proto.Uint64(1700000000),
+				Message:          &waE2E.Message{Conversation: proto.String("hello")},
+			}},
+		},
+	}}}})
+
+	res, err := backend.Messages(ctx, wire.MessagesParams{ConversationID: chatID, Count: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Messages) != 1 || len(res.Messages[0].Reactions) != 1 || res.Messages[0].Reactions[0].Emoji != "👍" || res.Messages[0].Reactions[0].Count != 1 {
+		t.Fatalf("history reaction before target was lost: %+v", res.Messages)
+	}
+}
+
 func TestWhatsAppHistorySyncUpgradesFallbackConversationName(t *testing.T) {
 	backend, mock, _ := setupTestBackend(t)
 	backend.SetClient(mock, true)
