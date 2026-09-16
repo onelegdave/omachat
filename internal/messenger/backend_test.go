@@ -158,6 +158,56 @@ func TestHandleTableIncludesHistoricalUpserts(t *testing.T) {
 	}
 }
 
+func TestHandleTablePublishesMessagesWithSenderNames(t *testing.T) {
+	var published []wire.Event
+	b := New(zerolog.Nop(), nil, func(event wire.Event) { published = append(published, event) })
+	b.handleTable(&table.LSTable{
+		LSVerifyContactRowExists: []*table.LSVerifyContactRowExists{{ContactId: 42, Name: "Ada Lovelace"}},
+		LSUpsertMessage: []*table.LSUpsertMessage{{
+			ThreadKey: 7, MessageId: "live-1", Text: "I see it", TimestampMs: 1_700_000_000_123, SenderId: 42,
+		}},
+	})
+
+	got := b.messages["7"]
+	if len(got) != 1 || got[0].SenderName != "Ada Lovelace" {
+		t.Fatalf("stored message sender = %#v", got)
+	}
+	found := false
+	for _, event := range published {
+		msg, ok := event.Data.(wire.Message)
+		if event.Event == wire.EventMessage && event.Network == wire.NetworkMessenger && ok && msg.ID == "live-1" && msg.SenderName == "Ada Lovelace" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("published events did not contain named live message: %#v", published)
+	}
+}
+
+func TestLateContactNameUpdatesStoredMessages(t *testing.T) {
+	var published []wire.Event
+	b := New(zerolog.Nop(), nil, func(event wire.Event) { published = append(published, event) })
+	b.handleTable(&table.LSTable{LSUpsertMessage: []*table.LSUpsertMessage{{
+		ThreadKey: 7, MessageId: "live-1", Text: "I see it", TimestampMs: 1_700_000_000_123, SenderId: 42,
+	}}})
+	published = nil
+	b.handleTable(&table.LSTable{LSDeleteThenInsertContact: []*table.LSDeleteThenInsertContact{{Id: 42, Name: "Ada Lovelace"}}})
+
+	if got := b.messages["7"][0].SenderName; got != "Ada Lovelace" {
+		t.Fatalf("late sender name = %q", got)
+	}
+	found := false
+	for _, event := range published {
+		msg, ok := event.Data.(wire.Message)
+		if event.Event == wire.EventMessage && ok && msg.ID == "live-1" && msg.SenderName == "Ada Lovelace" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("late contact update was not published: %#v", published)
+	}
+}
+
 func TestMessengerTimeTimestampUsesWireMicroseconds(t *testing.T) {
 	timestamp := time.Date(2026, time.September, 15, 22, 30, 45, 123456000, time.UTC)
 	if got, want := messengerTimeTimestamp(timestamp), timestamp.UnixMicro(); got != want {

@@ -47,30 +47,31 @@ type sessionData struct {
 }
 
 type Backend struct {
-	log         zerolog.Logger
-	paths       *appStore.Paths
-	publish     func(wire.Event)
-	config      *appStore.ConfigStore
-	mu          sync.RWMutex
-	status      wire.Status
-	client      *messagix.Client
-	e2eeClient  *whatsmeow.Client
-	waStore     *sqlstore.Container
-	selfID      int64
-	convs       map[string]wire.Conversation
-	messages    map[string][]wire.Message
-	threadToJID map[int64]waTypes.JID
-	jidToThread map[string]int64
-	threadTypes map[int64]table.ThreadType
-	runCtx      context.Context
-	cancel      context.CancelFunc
+	log          zerolog.Logger
+	paths        *appStore.Paths
+	publish      func(wire.Event)
+	config       *appStore.ConfigStore
+	mu           sync.RWMutex
+	status       wire.Status
+	client       *messagix.Client
+	e2eeClient   *whatsmeow.Client
+	waStore      *sqlstore.Container
+	selfID       int64
+	convs        map[string]wire.Conversation
+	messages     map[string][]wire.Message
+	contactNames map[int64]string
+	threadToJID  map[int64]waTypes.JID
+	jidToThread  map[string]int64
+	threadTypes  map[int64]table.ThreadType
+	runCtx       context.Context
+	cancel       context.CancelFunc
 }
 
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *Backend {
 	return &Backend{
 		log: log.With().Str("svc", "messenger").Logger(), paths: paths, publish: publish,
 		status: wire.Status{Network: wire.NetworkMessenger, State: wire.StateUnpaired, PhoneOK: true},
-		convs:  make(map[string]wire.Conversation), messages: make(map[string][]wire.Message),
+		convs:  make(map[string]wire.Conversation), messages: make(map[string][]wire.Message), contactNames: make(map[int64]string),
 		threadToJID: make(map[int64]waTypes.JID), jidToThread: make(map[string]int64),
 		threadTypes: make(map[int64]table.ThreadType),
 	}
@@ -334,7 +335,24 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	if tbl == nil {
 		return
 	}
+	publish := make(map[string]wire.Message)
+	queue := func(msg wire.Message) {
+		if msg.ID == "" {
+			return
+		}
+		publish[msg.ConversationID+"\x00"+msg.ID] = msg
+	}
 	b.mu.Lock()
+	for _, contact := range tbl.LSVerifyContactRowExists {
+		for _, msg := range b.setContactNameLocked(contact.ContactId, contact.Name) {
+			queue(msg)
+		}
+	}
+	for _, contact := range tbl.LSDeleteThenInsertContact {
+		for _, msg := range b.setContactNameLocked(contact.Id, contact.Name) {
+			queue(msg)
+		}
+	}
 	for _, m := range tbl.LSUpdateThreadAuthorityAndMappingWithOTIDFromJID {
 		b.setMappingLocked(m.ThreadKey, m.ThreadJID, table.ENCRYPTED_OVER_WA_ONE_TO_ONE)
 	}
@@ -348,16 +366,19 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, false, false, t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
 	}
 	for _, m := range tbl.LSDeleteThenInsertMessage {
-		b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId)
+		queue(b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId))
 	}
 	for _, m := range tbl.LSUpsertMessage {
-		b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId)
+		queue(b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId))
 	}
 	for _, m := range tbl.LSInsertMessage {
-		b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId)
+		queue(b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId))
 	}
 	b.recountUnreadLocked()
 	b.mu.Unlock()
+	for _, msg := range publish {
+		b.publishMessage(msg)
+	}
 	b.publishSnapshots()
 }
 func (b *Backend) setMappingLocked(threadKey, jid int64, typ table.ThreadType) {
@@ -385,25 +406,47 @@ func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS 
 	_ = avatar
 	b.convs[key] = wire.Conversation{ID: key, Name: name, Preview: preview, Timestamp: messengerTimestamp(ts), Unread: unread, IsGroup: group, ReadOnly: readOnly, AvatarColor: "#0084ff", Initials: initials(name)}
 }
-func (b *Backend) addMessageLocked(thread int64, id, text string, ts, sender int64, deleted bool, reply string) {
+func (b *Backend) setContactNameLocked(id int64, name string) []wire.Message {
+	name = strings.TrimSpace(name)
+	if id == 0 || name == "" || b.contactNames[id] == name {
+		return nil
+	}
+	b.contactNames[id] = name
+	senderID := strconv.FormatInt(id, 10)
+	var updated []wire.Message
+	for conversationID, list := range b.messages {
+		for i := range list {
+			if list[i].SenderID != senderID || list[i].SenderName == name {
+				continue
+			}
+			list[i].SenderName = name
+			updated = append(updated, list[i])
+		}
+		b.messages[conversationID] = list
+	}
+	return updated
+}
+
+func (b *Backend) addMessageLocked(thread int64, id, text string, ts, sender int64, deleted bool, reply string) wire.Message {
 	if id == "" {
-		return
+		return wire.Message{}
 	}
 	if !deleted && strings.TrimSpace(text) == "" {
 		text = unsupportedMessageText
 	}
 	key := strconv.FormatInt(thread, 10)
-	msg := wire.Message{ID: id, ConversationID: key, Text: text, Timestamp: messengerTimestamp(ts), FromMe: sender == b.selfID, SenderID: strconv.FormatInt(sender, 10), Deleted: deleted, ReplyToID: reply}
+	msg := wire.Message{ID: id, ConversationID: key, Text: text, Timestamp: messengerTimestamp(ts), FromMe: sender == b.selfID, SenderID: strconv.FormatInt(sender, 10), SenderName: b.contactNames[sender], Deleted: deleted, ReplyToID: reply}
 	list := b.messages[key]
 	for i := range list {
 		if list[i].ID == id {
 			list[i] = msg
 			b.messages[key] = list
-			return
+			return msg
 		}
 	}
 	b.messages[key] = append(list, msg)
 	sort.Slice(b.messages[key], func(i, j int) bool { return b.messages[key][i].Timestamp < b.messages[key][j].Timestamp })
+	return msg
 }
 
 func (b *Backend) handleE2EEEvent(raw any) {
@@ -426,12 +469,13 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		if _, ok := b.convs[key]; !ok {
 			b.upsertThreadLocked(thread, jid.User, text, evt.Info.Timestamp.UnixMilli(), 0, true, jid.Server == waTypes.GroupServer, false, "", table.ENCRYPTED_OVER_WA_ONE_TO_ONE)
 		}
-		b.addMessageLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "")
+		msg := b.addMessageLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "")
 		conv := b.convs[key]
 		conv.Preview, conv.Timestamp, conv.Unread = text, messengerTimeTimestamp(evt.Info.Timestamp), !evt.Info.IsFromMe
 		b.convs[key] = conv
 		b.recountUnreadLocked()
 		b.mu.Unlock()
+		b.publishMessage(msg)
 		b.publishSnapshots()
 	case *events.Connected:
 		b.setState(wire.StateConnected, "")
@@ -489,6 +533,13 @@ func (b *Backend) publishSnapshots() {
 		b.publish(wire.Event{Event: wire.EventConversation, Network: wire.NetworkMessenger, Data: c})
 	}
 	b.publish(wire.Event{Event: wire.EventStatus, Network: wire.NetworkMessenger, Data: b.Status()})
+}
+
+func (b *Backend) publishMessage(msg wire.Message) {
+	if b.publish == nil || msg.ID == "" {
+		return
+	}
+	b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkMessenger, Data: msg})
 }
 
 func (b *Backend) Conversations(count int) []wire.Conversation {
