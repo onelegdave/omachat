@@ -120,7 +120,7 @@ def arm(old_pid: int, reason: str, service: str = "", *, root: Path | None = Non
         "oldPid": old_pid,
         "oldStart": start,
         "reason": reason,
-        "service": service if service in ("gmessages", "whatsapp", "telegram") else "",
+        "service": service if service in ("gmessages", "whatsapp", "telegram", "messenger") else "",
         "expiresAt": current_time + max(1, ttl),
     })
     if spawn and not spawn_watcher(target_root):
@@ -195,7 +195,7 @@ def watch(root: Path, *, now_fn=time.time, same_process_fn=process_is_same,
                 ])
                 if code == 0 and output == "ok":
                     service = str(state.get("service", ""))
-                    if service in ("gmessages", "whatsapp", "telegram"):
+                    if service in ("gmessages", "whatsapp", "telegram", "messenger"):
                         run_fn(["omarchy-shell", PLUGIN_ID, "showService", service])
                     remove_state(root, {"oldPid": old_pid, "oldStart": old_start})
                     return 0

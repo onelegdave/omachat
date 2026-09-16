@@ -44,7 +44,8 @@ Panel {
   readonly property var allServiceTabs: [
     { value: "gmessages", label: "Google", icon: "󰭹", tooltip: "Google Messages" },
     { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "WhatsApp" },
-    { value: "telegram", label: "Telegram", icon: "\uf2c6", tooltip: "Telegram" }
+    { value: "telegram", label: "Telegram", icon: "\uf2c6", tooltip: "Telegram" },
+    { value: "messenger", label: "Messenger", icon: "󰈎", tooltip: "Facebook Messenger" }
   ]
   readonly property var serviceTabs: allServiceTabs.filter(function(tab) {
     return !root.service || !Array.isArray(root.service.enabledServices) || root.service.enabledServices.indexOf(tab.value) >= 0
@@ -58,7 +59,7 @@ Panel {
   }
   property real uiScale: 1
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
-  readonly property bool serviceLive: activeService === "gmessages" || activeService === "whatsapp"
+  readonly property bool serviceLive: activeService === "gmessages" || activeService === "whatsapp" || activeService === "messenger"
   readonly property bool telegramLive: activeService === "telegram"
 
   readonly property var chat: service
@@ -216,7 +217,7 @@ Panel {
     root.activeService = v
     if (root.service) {
       root.service.currentNetwork = v
-      if (v === "gmessages" || v === "whatsapp" || v === "telegram") root.service.loadConversations(v)
+      if (v === "gmessages" || v === "whatsapp" || v === "telegram" || v === "messenger") root.service.loadConversations(v)
     }
   }
 
@@ -436,7 +437,9 @@ Panel {
           ? " Check WhatsApp on your phone under Linked devices."
           : (currentNet === "telegram"
             ? " Check Telegram on your phone or desktop."
-            : " Check Google Messages on your phone under Device pairing.")
+            : (currentNet === "messenger"
+              ? " Check Facebook or Messenger for active sessions."
+              : " Check Google Messages on your phone under Device pairing."))
         root.unpairError = "Unpair did not complete successfully: " + String(res) + advice
       }
     }, currentNet)
@@ -466,6 +469,7 @@ Panel {
         if (event.text === "1") { root.setActiveService("gmessages"); event.accepted = true }
         else if (event.text === "2") { root.setActiveService("whatsapp"); event.accepted = true }
         else if (event.text === "3") { root.setActiveService("telegram"); event.accepted = true }
+        else if (event.text === "4") { root.setActiveService("messenger"); event.accepted = true }
         else if (event.text === "r" || event.text === "R") { root.refresh(); event.accepted = true }
       }
 
@@ -486,7 +490,7 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             width: Style.space(22)
             height: Style.space(22)
-            text: root.activeService === "whatsapp" ? "󰖣" : (root.activeService === "telegram" ? "\uf2c6" : "󰭹")
+            text: root.activeService === "whatsapp" ? "󰖣" : (root.activeService === "telegram" ? "\uf2c6" : (root.activeService === "messenger" ? "󰈎" : "󰭹"))
             color: root.accentInk
             fontFamily: root.fontFamily
             fontSize: root.fs(Style.font.heading)
@@ -721,8 +725,9 @@ Panel {
         var g = typeof root.service.stateFor === "function" ? root.service.stateFor("gmessages") : (root.service.state || "")
         var w = typeof root.service.stateFor === "function" ? root.service.stateFor("whatsapp") : ""
         var t = typeof root.service.stateFor === "function" ? root.service.stateFor("telegram") : ""
+        var m = typeof root.service.stateFor === "function" ? root.service.stateFor("messenger") : ""
         var isReady = function(st) { return st !== "unpaired" && st !== "pairing" && st !== "gaiaPairing" && st !== "error" && st !== "" }
-        return isReady(g) || isReady(w) || isReady(t)
+        return isReady(g) || isReady(w) || isReady(t) || isReady(m)
       }
 
       // Retain drafts and selection while Settings or another tab is shown.
@@ -1081,7 +1086,7 @@ Panel {
       host: surfaceHost
       viewActive: inboxLoader.visible
       settings: root.settings
-      networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : (root.activeService === "telegram" ? "Telegram" : "Google Messages")
+      networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : (root.activeService === "telegram" ? "Telegram" : (root.activeService === "messenger" ? "Messenger" : "Google Messages"))
       uiScale: root.uiScale
     }
   }

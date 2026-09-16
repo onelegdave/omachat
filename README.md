@@ -1,6 +1,6 @@
 # OmaChat
 
-A **Native Omarchy Plugin** for Google Messages, WhatsApp, and Telegram.
+A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messenger.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
@@ -108,6 +108,7 @@ Each service is optional and pairs only when you request it.
 | Google Messages | Sign in to Messages for web in a supported Chromium-family browser, then select **Pair with Google** and confirm the matching emoji on the phone. | [Google Messages](docs/services/google-messages.md) |
 | WhatsApp | Select **Use a QR code** in the WhatsApp tab and scan it using the phone's **Linked devices** screen. | [WhatsApp](docs/services/whatsapp.md) |
 | Telegram | Configure your own Telegram API credentials, select **Pair with Telegram**, and scan the QR code from Telegram's **Devices** screen. | [Telegram](docs/services/telegram.md) |
+| Messenger | Sign in to Facebook or Messenger in a supported Chromium-family browser, then select **Pair from browser**. | [Messenger](docs/services/messenger.md) |
 
 The guides include requirements, pairing, supported features, limitations,
 storage, and recovery. A service losing authentication does not automatically
@@ -115,17 +116,17 @@ start pairing again.
 
 ## Features and limits
 
-| Feature | Google Messages | WhatsApp | Telegram |
-| --- | --- | --- | --- |
-| Conversation list, text, per-chat drafts | Yes | Yes | Yes |
-| Photos and captions | Yes | Yes | Yes |
-| Send GIF files | Yes | Yes | No dedicated GIF sending support |
-| Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay |
-| GIPHY search | Optional personal API key | Unavailable | Unavailable |
-| Reactions | Yes | Unavailable | Unavailable |
-| Incoming static WebP stickers | No dedicated sticker support | Yes | Yes |
-| Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages |
-| Calling | Unavailable | Unavailable | Unavailable |
+| Feature | Google Messages | WhatsApp | Telegram | Messenger |
+| --- | --- | --- | --- | --- |
+| Conversation list, text, per-chat drafts | Yes | Yes | Yes | Yes |
+| Photos and captions | Yes | Yes | Yes | Incoming display only initially |
+| Send GIF files | Yes | Yes | No dedicated GIF sending support | Unavailable |
+| Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Unavailable |
+| GIPHY search | Optional personal API key | Unavailable | Unavailable | Unavailable |
+| Reactions | Yes | Unavailable | Unavailable | Unavailable initially |
+| Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | No dedicated support initially |
+| Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
+| Calling | Unavailable | Unavailable | Unavailable | Unavailable |
 
 Threads open with the latest 60 messages; **Load older messages** pages back
 while preserving the reading position. WhatsApp cannot currently request
@@ -174,7 +175,7 @@ remain visible when you return to their conversation during the current shell se
 
 ## Privacy, storage, and removal
 
-Sessions, chat caches, media, and drafts are separated by service. All three
+Sessions, chat caches, media, and drafts are separated by service. All four
 services share the helper process and configuration file. Private files are
 kept locally; see [Security](SECURITY.md) for protections and limitations.
 Each service limits its downloaded attachment cache to 256 MiB and evicts older
@@ -186,8 +187,9 @@ files as new downloads complete.
 | `~/.local/share/omachat/session.json` | Google Messages credentials |
 | `~/.local/share/omachat/whatsapp.db` and `whatsapp_store.json` | WhatsApp credentials and chat cache |
 | `~/.local/share/omachat/telegram.session` and `telegram_store.json` | Telegram credentials and chat cache |
+| `~/.local/share/omachat/messenger_session.json` and `messenger.db` | Messenger session cookies and encrypted-device state |
 | `~/.local/share/omachat/config.json` | Service choices, text size, browser selection, GIPHY key, Telegram API credentials |
-| `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/` | Service-specific media caches |
+| `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, `media_messenger/` | Service-specific media caches |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Private plugin/helper control socket |
 
 Before uninstalling, select **Unpair this desktop** on each connected service
@@ -201,7 +203,7 @@ omarchy plugin remove onelegdave.omachat
 
 Uninstalling does not erase account data. If you want to remove all remaining
 OmaChat data, including API keys, delete `~/.local/share/omachat/` and
-`~/.cache/omachat/` yourself after unpairing. This affects all three services.
+`~/.cache/omachat/` yourself after unpairing. This affects all four services.
 
 ## Development and documentation
 

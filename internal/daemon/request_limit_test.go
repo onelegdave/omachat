@@ -24,7 +24,7 @@ func TestConnectionBackpressureAndCancellation(t *testing.T) {
 	go func() { d.handleConn(ctx, server); close(done) }()
 	reader := bufio.NewReader(client)
 	// Initial status for each backend; then deliberately stop reading responses.
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		if _, err := reader.ReadString('\n'); err != nil {
 			t.Fatal(err)
 		}

@@ -34,6 +34,7 @@ ShellRoot {
   property string state: "connected"
   property var status: ({phoneOK:true, state:"connected"})
   property var statusWA: ({phoneOK:true, state:"connected"})
+  property var statusFB: ({phoneOK:true, state:"unpaired"})
   property int unread: 0
   property string refreshError: ""
   property var browserProfiles: []
@@ -44,15 +45,18 @@ ShellRoot {
   property var conversationsWA: [
    {id:"wa-1@s.whatsapp.net",name:"Demo WA",preview:"WA test",timestamp:3000000}
   ]
+  property var conversationsFB: [
+   {id:"fb-1",name:"Demo Messenger",preview:"Messenger test",timestamp:4000000}
+  ]
   property var calls: []
   property var delayed: []
   property bool failMedia: true
   signal messageReceived(var message, var net)
   signal conversationUpdated(var conversation, var net)
   signal paired(var net)
-  function statusFor(net) { return net === "whatsapp" ? statusWA : status }
+  function statusFor(net) { return net === "whatsapp" ? statusWA : (net === "messenger" ? statusFB : status) }
   function stateFor(net) { var s = statusFor(net); return s && s.state ? s.state : state }
-  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : conversations }
+  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : (net === "messenger" ? conversationsFB : conversations) }
   function unreadFor(net) { return 0 }
   function loadConversations(net) {}
   function loadProfiles() {}
@@ -480,6 +484,18 @@ ShellRoot {
     fake.call("status", null, function() {}, "telegram")
     var tel = fake.calls[fake.calls.length-1]
     root.check(tel.network === "telegram", "explicit unknown network is not rewritten to google")
+    fake.enabledServices = ["gmessages","whatsapp","telegram","messenger"]
+    fake.statusFB = {phoneOK:true, state:"connected"}
+    panel.syncActiveService()
+    panel.setActiveService("messenger")
+    var fbInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(fbInbox && fbInbox.isMessenger && fbInbox.network === "messenger", "Messenger tab opens an isolated native inbox")
+    root.check(!inspect.findChild(fbInbox, "attachButton").visible && !inspect.findChild(fbInbox, "micButton").visible && !inspect.findChild(fbInbox, "gifButton").visible,
+      "Messenger hides unsupported media, voice, and GIF actions")
+    fbInbox.selectConversation("fb-1")
+    fbInbox.sendMessage("Messenger pending")
+    var fbPending = fake.delayed.pop()
+    root.check(fbPending.method === "send" && fbPending.network === "messenger", "Messenger send is routed only to Messenger")
     panel.setActiveService("gmessages")
     var screenshot=Quickshell.env("OMACHAT_TEST_SCREENSHOT")
     if (screenshot) {

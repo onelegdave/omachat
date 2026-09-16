@@ -253,6 +253,9 @@ func (p *Paths) MessengerStoreFile() string { return filepath.Join(p.Data, "mess
 func (p *Paths) ClearMessengerSession() error {
 	p.sessionMu.Lock()
 	defer p.sessionMu.Unlock()
+	if err := os.Remove(p.MessengerSessionFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	for _, ext := range []string{"", "-wal", "-shm", "-journal"} {
 		f := p.MessengerDBFile() + ext
 		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {

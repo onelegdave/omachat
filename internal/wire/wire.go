@@ -18,6 +18,7 @@ const (
 	NetworkGMessages = "gmessages"
 	NetworkWhatsApp  = "whatsapp"
 	NetworkTelegram  = "telegram"
+	NetworkMessenger = "messenger"
 )
 
 // KnownNetworks lists all supported network identifiers.
@@ -25,12 +26,13 @@ var KnownNetworks = []string{
 	NetworkGMessages,
 	NetworkWhatsApp,
 	NetworkTelegram,
+	NetworkMessenger,
 }
 
 // IsKnownNetwork reports whether net is recognized by the daemon.
 func IsKnownNetwork(net string) bool {
 	switch net {
-	case NetworkGMessages, NetworkWhatsApp, NetworkTelegram:
+	case NetworkGMessages, NetworkWhatsApp, NetworkTelegram, NetworkMessenger:
 		return true
 	default:
 		return false

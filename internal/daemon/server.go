@@ -146,6 +146,9 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	if d.tg != nil {
 		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkTelegram, Data: d.tg.Status()})
 	}
+	if d.fb != nil {
+		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkMessenger, Data: d.fb.Status()})
+	}
 
 	go func() {
 		for {
@@ -246,10 +249,104 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		return d.dispatchWhatsApp(ctx, req)
 	case wire.NetworkTelegram:
 		return d.dispatchTelegram(ctx, req)
+	case wire.NetworkMessenger:
+		return d.dispatchMessenger(ctx, req)
 	case "", wire.NetworkGMessages:
 		return d.dispatchGMessages(ctx, req)
 	default:
 		return wire.Response{ID: req.ID, OK: false, Error: "unknown network: " + req.Network}
+	}
+}
+
+func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.Response {
+	fail := func(err error) wire.Response { return wire.Response{ID: req.ID, Error: err.Error()} }
+	ok := func(result any) wire.Response { return wire.Response{ID: req.ID, OK: true, Result: result} }
+	if d.fb == nil {
+		return fail(errors.New("Messenger backend not initialized"))
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	switch req.Method {
+	case wire.MethodStatus:
+		return ok(d.fb.Status())
+	case wire.MethodConversations:
+		p, err := decodeParams[wire.ConversationsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(d.fb.Conversations(p.Count))
+	case wire.MethodMessages:
+		p, err := decodeParams[wire.MessagesParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.fb.Messages(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodSend:
+		p, err := decodeParams[wire.SendParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		msg, err := d.fb.Send(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(msg)
+	case wire.MethodMarkRead:
+		p, err := decodeParams[wire.MarkReadParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err = d.fb.MarkRead(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodRefresh:
+		if err := d.fb.Refresh(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodPairFromBrowser:
+		if err := d.fb.PairFromBrowser(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodListProfiles:
+		return ok(d.ListProfiles())
+	case wire.MethodSetProfile:
+		p, err := decodeParams[wire.SetProfileParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err = d.SetProfile(p.Name); err != nil {
+			return fail(err)
+		}
+		return ok(d.ListProfiles())
+	case wire.MethodUnpair:
+		if err := d.fb.Unpair(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodConfig:
+		return ok(d.PluginConfig())
+	case wire.MethodSetUiScale:
+		p, err := decodeParams[wire.SetUiScaleParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err = d.SetUiScale(p.Scale); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+	case wire.MethodPickImage, wire.MethodDiscardCapture, wire.MethodSendMedia, wire.MethodMedia, wire.MethodReact, wire.MethodSetTyping, wire.MethodGifSearch, wire.MethodGifFetch:
+		return fail(errors.New("this feature is not supported on Messenger yet"))
+	case wire.MethodStartPairing, wire.MethodGaiaPairing:
+		return fail(errors.New("use browser pairing for Messenger"))
+	default:
+		return fail(fmt.Errorf("unknown method %q for network messenger", req.Method))
 	}
 }
 

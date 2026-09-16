@@ -20,7 +20,7 @@ the app reports a check failure and you can install Python manually.
 ## Shared requirements
 
 An Omarchy desktop with its Quickshell plugin system provides the native UI.
-All three services share a locally compiled helper:
+All four services share a locally compiled helper:
 
 | Requirement | Purpose | Your choice |
 | --- | --- | --- |

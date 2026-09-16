@@ -335,8 +335,10 @@ func ExtractMessengerCookiesContext(ctx context.Context, p Profile) (map[string]
 		cookies[name] = value
 	}
 
-	if len(cookies) == 0 {
-		return nil, errors.New("no Messenger cookies could be read (is the login keyring unlocked, and are you signed in?)")
+	for name := range messengerWantedHosts {
+		if cookies[name] == "" {
+			return nil, fmt.Errorf("required Messenger cookie %q could not be read (is the login keyring unlocked, and are you signed in?)", name)
+		}
 	}
 	return cookies, nil
 }

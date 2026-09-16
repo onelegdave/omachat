@@ -30,4 +30,10 @@ Telegram support vendors github.com/gotd/td and its transitive dependencies
 under permissive licenses (MIT, Apache-2.0, and BSD-3-Clause). Upstream
 authorship and licenses remain intact.
 
+Facebook Messenger support vendors go.mau.fi/mautrix-meta. That work remains
+copyright its upstream authors and is licensed under GNU AGPL version 3, with
+the exceptions retained in vendor/go.mau.fi/mautrix-meta/LICENSE.exceptions.
+OmaChat uses its unofficial Messenger and encrypted-chat protocol code; the
+root MIT license does not relicense the vendored dependency.
+
 See CREDITS.md for project credits and links to retained third-party notices.

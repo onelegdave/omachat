@@ -19,7 +19,8 @@ Item {
   property string network: "gmessages"
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
-  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : "Google Messages")
+  readonly property bool isMessenger: network === "messenger"
+  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : "Google Messages"))
 
   readonly property color dim: Model.readableInk(panelBg, Color.muted)
   readonly property color errorInk: Model.readableInk(panelBg, Color.urgent)
@@ -316,7 +317,7 @@ Item {
       historyCursorStalled = true
       historyError = root.isWhatsApp
         ? "WhatsApp repeated the cached history cursor. Refresh the conversation to try again."
-        : (root.isTelegram ? "Telegram repeated the history cursor. Refresh the conversation to try again." : "Google repeated the history cursor. Refresh the conversation to try again.")
+        : (root.isTelegram ? "Telegram repeated the history cursor. Refresh the conversation to try again." : (root.isMessenger ? "Messenger repeated the history cursor. Refresh the conversation to try again." : "Google repeated the history cursor. Refresh the conversation to try again."))
     }
     historyCursorID = id
     historyCursorTime = time
@@ -534,8 +535,8 @@ Item {
   }
 
   function openGifPicker() {
-    if (root.isWhatsApp) {
-      threadError = "GIF search is not supported for WhatsApp in this version."
+    if (root.isWhatsApp || root.isMessenger) {
+      threadError = "GIF search is not supported for " + root.networkLabel + " in this version."
       return
     }
     if (!service) return
@@ -670,8 +671,8 @@ Item {
   }
 
   function startRecording() {
-    if (root.isWhatsApp) {
-      threadError = "Voice messages are not supported for WhatsApp in this version."
+    if (root.isWhatsApp || root.isMessenger) {
+      threadError = "Voice messages are not supported for " + root.networkLabel + " in this version."
       return
     }
     if (recording || selectedConvID === "") return
@@ -797,8 +798,8 @@ Item {
 
   function react(messageID, emoji) {
     reactingTo = ""
-    if (root.isWhatsApp) {
-      threadError = "Reactions are not supported for WhatsApp in this version."
+    if (root.isWhatsApp || root.isMessenger) {
+      threadError = "Reactions are not supported for " + root.networkLabel + " in this version."
       return
     }
     if (!service || selectedConvID === "" || !messageID) return
@@ -828,6 +829,8 @@ Item {
   onStatusWAChanged: if (statusWA && statusWA.state === "unpaired") root.clearNetwork("whatsapp")
   readonly property var statusTG: service && typeof service.statusFor === "function" ? service.statusFor("telegram") : (service ? service.statusTG : null)
   onStatusTGChanged: if (statusTG && statusTG.state === "unpaired") root.clearNetwork("telegram")
+  readonly property var statusFB: service && typeof service.statusFor === "function" ? service.statusFor("messenger") : (service ? service.statusFB : null)
+  onStatusFBChanged: if (statusFB && statusFB.state === "unpaired") root.clearNetwork("messenger")
   readonly property var statusGM: service && typeof service.statusFor === "function" ? service.statusFor("gmessages") : (service ? service.status : null)
   onStatusGMChanged: if (statusGM && statusGM.state === "unpaired") root.clearNetwork("gmessages")
 
@@ -1641,7 +1644,7 @@ Item {
                 }
                 Item { width: Style.space(4); height: 1 }
                 Text {
-                  visible: !root.isWhatsApp && row.msg && !row.msg.deleted
+                  visible: !root.isWhatsApp && !root.isMessenger && row.msg && !row.msg.deleted
                   text: (row.msg && root.reactingTo === row.msg.id) ? "Close" : "React"
                   color: row.mine ? root.mineMeta : root.theirsMeta
                   font.family: root.fontFamily
@@ -1917,10 +1920,11 @@ Item {
         anchors.left: parent.left
         anchors.leftMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
-        size: fs(Style.space(28))
+        size: visible ? fs(Style.space(28)) : 0
         fontSize: fs(Style.space(16))
         iconText: "󰁦"
         tooltipText: "Attach a photo or GIF"
+        visible: !root.isMessenger
         foreground: root.foreground
         fontFamily: root.fontFamily
         enabled: composer.enabled && !root.sendingMedia
@@ -1933,7 +1937,7 @@ Item {
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Microphone"
-        visible: !root.isWhatsApp
+        visible: !root.isWhatsApp && !root.isMessenger
         anchors.left: attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter
@@ -1953,7 +1957,7 @@ Item {
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Search GIFs"
-        visible: !root.isWhatsApp && !root.isTelegram
+        visible: !root.isWhatsApp && !root.isTelegram && !root.isMessenger
         anchors.left: micButton.visible ? micButton.right : attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter

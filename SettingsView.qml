@@ -375,7 +375,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "OmaChat supports Google Messages, WhatsApp, and Telegram with separate credentials, caches, and drafts in one shared helper. Choose enabled services in Settings. Previously paired, enabled services reconnect automatically. Service separation is not a security sandbox."
+        text: "OmaChat supports Google Messages, WhatsApp, Telegram, and Messenger with separate credentials, caches, and drafts in one shared helper. Choose enabled services in Settings. Previously paired, enabled services reconnect automatically. Service separation is not a security sandbox."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
@@ -444,6 +444,29 @@ Flickable {
           width: parent.width
           wrapMode: Text.Wrap
           text: "• Setup: Obtain your api_id and api_hash from my.telegram.org. These are application credentials, not your Telegram login password.\n1. Configure credentials directly in Settings > Telegram API credentials below, or in a terminal run:\npython3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py\n2. In OmaChat, select Telegram > Pair with Telegram. On your phone, open Telegram > Settings > Devices > Link Desktop Device and scan the QR code. Saving credentials alone does not pair your account.\n• Features: Dialog synchronization, older history paging, text, photos, captions, static WebP stickers, read receipts, and voice notes (with ffmpeg/ffplay).\n• Limitations: Animated TGS and video stickers are unsupported. Self-destructing/TTL media is not saved. Calling is unsupported."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          lineHeight: 1.25
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(6)
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "Messenger"
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "• Setup: Sign in to facebook.com or messenger.com in Chrome, Chromium, or Brave, unlock the desktop keyring, then select Pair from browser in the Messenger tab. Pairing copies only the required session cookies into Messenger's private session store.\n• Features: Encrypted personal and group conversations, history, text sending, and read receipts.\n• Limitations: Meta does not provide a personal-inbox API, so this uses an unofficial protocol client that may break or require re-pairing when Meta changes its service. Calling and media sending are unavailable in the initial release."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)
@@ -997,7 +1020,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "OmaChat (onelegdave.omachat) is a Native Omarchy Plugin providing unified messaging across Google Messages, WhatsApp, and Telegram. Created and maintained by OneLegDave, with AI assistance from Codex."
+        text: "OmaChat (onelegdave.omachat) is a Native Omarchy Plugin providing unified messaging across Google Messages, WhatsApp, Telegram, and Messenger. Created and maintained by OneLegDave, with AI assistance from Codex."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)

@@ -2,6 +2,7 @@ package messenger
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +12,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func TestBackend_Blockers(t *testing.T) {
+func TestBackendRequiresConnection(t *testing.T) {
 	log := zerolog.Nop()
 
 	// Create mock paths
@@ -45,12 +46,12 @@ func TestBackend_Blockers(t *testing.T) {
 
 	ctx := context.Background()
 
-	if err := b.Refresh(ctx); err == nil {
-		t.Error("expected blocker error for Refresh")
+	if err := b.Refresh(ctx); !errors.Is(err, ErrNotConfigured) {
+		t.Errorf("expected ErrNotConfigured for Refresh, got %v", err)
 	}
 
-	if _, err := b.Messages(ctx, wire.MessagesParams{}); err == nil {
-		t.Error("expected blocker error for Messages")
+	if _, err := b.Send(ctx, wire.SendParams{ConversationID: "1", Text: "hello"}); !errors.Is(err, ErrNotConfigured) {
+		t.Errorf("expected ErrNotConfigured for Send, got %v", err)
 	}
 }
 
@@ -62,7 +63,9 @@ func TestBackend_Unpair(t *testing.T) {
 	paths, _ := appStore.NewPaths()
 
 	b := New(zerolog.Nop(), paths, func(wire.Event) {})
-	b.setPaired(true)
+	if err := os.WriteFile(paths.MessengerSessionFile(), []byte(`{"cookies":{"c_user":"1"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	b.setState(wire.StateConnected, "")
 
 	if err := b.Unpair(context.Background()); err != nil {
@@ -70,5 +73,8 @@ func TestBackend_Unpair(t *testing.T) {
 	}
 	if b.Status().State != wire.StateUnpaired {
 		t.Errorf("expected unpaired after Unpair, got %v", b.Status().State)
+	}
+	if _, err := os.Stat(paths.MessengerSessionFile()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Messenger session was not removed: %v", err)
 	}
 }

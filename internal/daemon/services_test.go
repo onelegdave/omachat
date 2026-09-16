@@ -128,7 +128,7 @@ func TestServiceRestartOnlyAfterSocketWrite(t *testing.T) {
 	defer cancel()
 	go d.handleConn(ctx, server)
 	reader := bufio.NewReader(client)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		if _, err := reader.ReadBytes('\n'); err != nil {
 			t.Fatal(err)
 		}

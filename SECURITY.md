@@ -1,6 +1,6 @@
 # Security
 
-This Native Omarchy Plugin talks to Google Messages, WhatsApp, and Telegram. It
+This Native Omarchy Plugin talks to Google Messages, WhatsApp, Telegram, and Messenger. It
 reads browser cookies while checking pairing profiles, pairing, changing the
 selected profile, and recovering from authentication failures. WhatsApp and
 Telegram use their QR flows. Message content and credentials are cached locally.
@@ -17,8 +17,9 @@ or working exploit details in a public issue.
 - WhatsApp device store: `~/.local/share/omachat/whatsapp.db` (0600 from creation)
 - WhatsApp chat cache: `~/.local/share/omachat/whatsapp_store.json` (0600)
 - Telegram session and chat cache: `~/.local/share/omachat/telegram.session` and `telegram_store.json` (0600)
+- Messenger session, encrypted-device state, and chat cache: `~/.local/share/omachat/messenger.db` and `messenger_store.json` (0600)
 - Config (browser profile, GIPHY key, Telegram API credentials): `~/.local/share/omachat/config.json` (0600)
-- Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, and `media_telegram/`
+- Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, and `media_messenger/`
 - Telegram conversation caches from before typed peer IDs are ignored on upgrade;
   pairing credentials are retained and ambiguous attachment filenames are not reused.
 - Control socket: `$XDG_RUNTIME_DIR/omachat/daemon.sock` (0600)
@@ -46,7 +47,7 @@ separate from messaging credentials. Daily checks are off by default.
 - Cookie values are not logged. Errors name which cookie is missing.
 - View-once and ephemeral WhatsApp media are omitted from disk persistence and cannot be reopened or redownloaded.
 - Telegram self-destructing media is omitted from disk persistence and cannot be reopened or redownloaded.
-- Google Messages, WhatsApp, and Telegram maintain separate credential stores, databases, sessions, and cache directories. Unpairing one network never deletes or exposes files belonging to another.
+- Google Messages, WhatsApp, Telegram, and Messenger maintain separate credential stores, databases, sessions, and cache directories. Unpairing one network never deletes or exposes files belonging to another.
 
 ## Accepted
 
@@ -67,6 +68,10 @@ separate from messaging credentials. Daily checks are off by default.
   toolchain and external tools current through your normal update workflow.
 
 - `libgm` is a reverse-engineered client. Google can break or detect it.
+- `mautrix-meta` uses Meta's unofficial Messenger client protocol. Meta can
+  break or detect it, invalidate sessions, or restrict an account. Messenger
+  pairing imports the minimum required browser cookies into a separate private
+  store; cookie values are never exposed to QML or logs.
 - Links in messages open only after a confirm dialog, and only `http`/`https`
   URLs. Images open locally with `xdg-open` after they are already in the cache.
 - Pairing copies the browser cookie database to a 0600 tempfile so it can

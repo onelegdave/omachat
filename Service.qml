@@ -100,7 +100,7 @@ Item {
       servicesError = "Rebuild the helper to use service selection."
       return false
     }
-    var next = config.enabledServices.filter(function(net) { return ["gmessages", "whatsapp", "telegram"].indexOf(net) >= 0 })
+    var next = config.enabledServices.filter(function(net) { return ["gmessages", "whatsapp", "telegram", "messenger"].indexOf(net) >= 0 })
     if (next.length !== config.enabledServices.length || next.some(function(net,index) { return next.indexOf(net) !== index })) { servicesError = "Invalid service configuration from helper."; return false }
     if (JSON.stringify(next) !== JSON.stringify(enabledServices)) servicesGeneration++
     enabledServices = next
@@ -110,6 +110,7 @@ Item {
     if (!isServiceEnabled("gmessages")) { conversations = []; browserProfiles = [] }
     if (!isServiceEnabled("whatsapp")) conversationsWA = []
     if (!isServiceEnabled("telegram")) conversationsTG = []
+    if (!isServiceEnabled("messenger")) conversationsFB = []
     return true
   }
 
@@ -167,11 +168,13 @@ Item {
   property var status: ({ state: "disconnected", unread: 0, phoneOK: false, qrURL: "", error: "" })
   property var statusWA: ({ state: "disconnected", unread: 0, phoneOK: true, qrURL: "", error: "" })
   property var statusTG: ({ state: "unpaired", unread: 0, phoneOK: true, qrURL: "", error: "" })
+  property var statusFB: ({ state: "unpaired", unread: 0, phoneOK: true, qrURL: "", error: "" })
   readonly property string state: status && status.state ? status.state : "disconnected"
-  readonly property int unread: unreadFor("gmessages") + unreadFor("whatsapp") + unreadFor("telegram")
+  readonly property int unread: unreadFor("gmessages") + unreadFor("whatsapp") + unreadFor("telegram") + unreadFor("messenger")
   property var conversations: []
   property var conversationsWA: []
   property var conversationsTG: []
+  property var conversationsFB: []
   property var browserProfiles: []
   property bool refreshing: false
   property string refreshError: ""
@@ -179,6 +182,7 @@ Item {
   function statusFor(net) {
     if (net === "whatsapp") return root.statusWA
     if (net === "telegram") return root.statusTG
+    if (net === "messenger") return root.statusFB
     return root.status
   }
   function stateFor(net) {
@@ -193,6 +197,7 @@ Item {
   function conversationsFor(net) {
     if (net === "whatsapp") return root.conversationsWA
     if (net === "telegram") return root.conversationsTG
+    if (net === "messenger") return root.conversationsFB
     return root.conversations
   }
 
@@ -229,6 +234,7 @@ Item {
       if (ok && res && generation === servicesGeneration && root.isServiceEnabled(net)) {
         if (net === "whatsapp") root.conversationsWA = res
         else if (net === "telegram") root.conversationsTG = res
+        else if (net === "messenger") root.conversationsFB = res
         else root.conversations = res
       }
     }, net)
@@ -254,10 +260,14 @@ Item {
   }
 
   function loadProfiles() {
-    if (!isServiceEnabled("gmessages")) return
+	var net = currentNetwork === "messenger" ? "messenger" : "gmessages"
+	if (!isServiceEnabled(net)) {
+	  net = isServiceEnabled("gmessages") ? "gmessages" : (isServiceEnabled("messenger") ? "messenger" : "")
+	}
+	if (!net) return
     call("listProfiles", null, function(ok, res) {
       if (ok && res) root.browserProfiles = res
-    }, "gmessages")
+    }, net)
   }
 
   // Quickshell Socket is single-use, and toggling a Loader's active flag in
@@ -490,6 +500,7 @@ Item {
             root.call("status", null, function(ok, res) { if (ok && res) root.status = res }, "gmessages")
             root.call("status", null, function(ok, res) { if (ok && res) root.statusWA = res }, "whatsapp")
             root.call("status", null, function(ok, res) { if (ok && res) root.statusTG = res }, "telegram")
+            root.call("status", null, function(ok, res) { if (ok && res) root.statusFB = res }, "messenger")
             root.loadServiceConfig()
             root.checkRunningBuild()
           })
@@ -553,7 +564,7 @@ Item {
 
     if (frame.event !== undefined) {
       var net = frame.network || "gmessages"
-      if (net !== "gmessages" && net !== "whatsapp" && net !== "telegram") return
+      if (net !== "gmessages" && net !== "whatsapp" && net !== "telegram" && net !== "messenger") return
       root._handleEvent(frame)
       return
     }
@@ -582,6 +593,9 @@ Item {
       } else if (net === "telegram") {
         root.statusTG = frame.data
         if (root.statusTG && root.statusTG.state === "unpaired") root.conversationsTG = []
+      } else if (net === "messenger") {
+        root.statusFB = frame.data
+        if (root.statusFB && root.statusFB.state === "unpaired") root.conversationsFB = []
       } else {
         root.status = frame.data
         if (root.state === "unpaired") root.conversations = []
@@ -592,6 +606,8 @@ Item {
         root._mergeConversationWA(frame.data)
       } else if (net === "telegram") {
         root._mergeConversationTG(frame.data)
+      } else if (net === "messenger") {
+        root._mergeConversationFB(frame.data)
       } else {
         root._mergeConversation(frame.data)
       }
@@ -664,5 +680,25 @@ Item {
     })
     root.conversationsTG = list
     root.conversationUpdated(conv, "telegram")
+  }
+
+  function _mergeConversationFB(conv) {
+    if (!conv || !conv.id) return
+    var list = root.conversationsFB.slice()
+    var found = false
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === conv.id) {
+        list[i] = conv
+        found = true
+        break
+      }
+    }
+    if (!found) list.push(conv)
+    list.sort(function(a, b) {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+      return (b.timestamp || 0) - (a.timestamp || 0)
+    })
+    root.conversationsFB = list
+    root.conversationUpdated(conv, "messenger")
   }
 }
