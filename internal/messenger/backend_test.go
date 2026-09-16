@@ -10,6 +10,7 @@ import (
 	appStore "github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/wire"
 	"github.com/rs/zerolog"
+	"go.mau.fi/mautrix-meta/pkg/messagix"
 )
 
 func TestBackendRequiresConnection(t *testing.T) {
@@ -76,5 +77,19 @@ func TestBackend_Unpair(t *testing.T) {
 	}
 	if _, err := os.Stat(paths.MessengerSessionFile()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Messenger session was not removed: %v", err)
+	}
+}
+
+func TestNilDisconnectEventsDoNotPanic(t *testing.T) {
+	b := New(zerolog.Nop(), nil, func(wire.Event) {})
+
+	b.handleMetaEvent(context.Background(), &messagix.TransientDisconnectEvent{})
+	if got := b.Status(); got.State != wire.StateDisconnected || got.Error != "Messenger transport disconnected" {
+		t.Fatalf("unexpected transient disconnect status: %#v", got)
+	}
+
+	b.handleMetaEvent(context.Background(), &messagix.PermanentErrorEvent{})
+	if got := b.Status(); got.State != wire.StateError || got.Error != "Messenger transport stopped" {
+		t.Fatalf("unexpected permanent disconnect status: %#v", got)
 	}
 }

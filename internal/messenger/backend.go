@@ -290,9 +290,17 @@ func (b *Backend) handleMetaEvent(_ context.Context, evt any) {
 	case *messagix.ConnectedEvent, *messagix.ReconnectedEvent:
 		b.setState(wire.StateConnected, "")
 	case *messagix.TransientDisconnectEvent:
-		b.setState(wire.StateDisconnected, v.Err.Error())
+		detail := "Messenger transport disconnected"
+		if v.Err != nil {
+			detail = v.Err.Error()
+		}
+		b.setState(wire.StateDisconnected, detail)
 	case *messagix.PermanentErrorEvent:
-		b.setState(wire.StateError, v.Err.Error())
+		detail := "Messenger transport stopped"
+		if v.Err != nil {
+			detail = v.Err.Error()
+		}
+		b.setState(wire.StateError, detail)
 	}
 }
 func (b *Backend) handleTable(tbl *table.LSTable) {

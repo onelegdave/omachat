@@ -51,6 +51,18 @@ Item {
   property string helperError: ""
   property string helperState: "checking"
   property string buildLog: ""
+  property string helperCrashDiagnostic: ""
+
+  function recordHelperStderr(line) {
+    var text = String(line || "").trim()
+    // Dependency logs may contain account metadata. Retain only Go's panic
+    // headline so a crashing helper can be diagnosed without logging chats,
+    // cookies, identifiers, or arbitrary protocol output.
+    if (text.indexOf("panic:") === 0 || text.indexOf("fatal error:") === 0) {
+      helperCrashDiagnostic = text.substring(0, 512)
+      console.warn("OmaChat helper crash diagnostic: " + helperCrashDiagnostic)
+    }
+  }
 
   property string currentNetwork: "gmessages"
   property var enabledServices: []
@@ -419,14 +431,20 @@ Item {
   Process {
     id: helperProc
     command: [root.helperPath, "--log-level", "info"]
+    stderr: SplitParser {
+      onRead: function(line) { root.recordHelperStderr(line) }
+    }
     onStarted: {
       root._startingHelper = false
       root._restartMs = 1000
+      root.helperCrashDiagnostic = ""
       root.helperPresent = true
       root.helperState = "running"
       helperReadyTimer.restart()
     }
     onExited: function(code) {
+      if (code !== 0)
+        console.warn("OmaChat helper exited with code " + code + (root.helperCrashDiagnostic ? ": " + root.helperCrashDiagnostic : ""))
       root._startingHelper = false
       if (root.restartingBuild) {
         root.restartingBuild=false
