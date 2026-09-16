@@ -35,7 +35,7 @@ on the official site and pair again.
 - Outbound text messages.
 - Incoming images, GIFs, stickers, files, videos, and voice messages.
 - Outbound image and file attachments from the system file chooser.
-- Emoji reactions and incoming/outgoing typing indicators.
+- Emoji reactions.
 - M4A voice recording and playback with optional ffmpeg/ffplay.
 - In-app GIF search with an optional personal GIPHY API key.
 - Contact and group avatars cached privately in the background.

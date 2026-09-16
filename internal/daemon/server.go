@@ -376,15 +376,6 @@ func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(nil)
-	case wire.MethodSetTyping:
-		p, err := decodeParams[wire.SetTypingParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		if err = d.fb.SetTyping(ctx, p); err != nil {
-			return fail(err)
-		}
-		return ok(nil)
 	case wire.MethodDiscardCapture:
 		p, err := decodeParams[wire.DiscardCaptureParams](req.Params)
 		if err != nil {
@@ -502,16 +493,6 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(res)
-
-	case wire.MethodSetTyping:
-		p, err := decodeParams[wire.SetTypingParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		if err := d.SetTyping(ctx, p); err != nil {
-			return fail(err)
-		}
-		return ok(nil)
 
 	case wire.MethodRefresh:
 		if err := d.Refresh(ctx); err != nil {
@@ -806,9 +787,6 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 	case wire.MethodReact:
 		return fail(errors.New("reactions are not supported on WhatsApp"))
 
-	case wire.MethodSetTyping:
-		return fail(errors.New("typing indicators are not supported on WhatsApp"))
-
 	case wire.MethodGifSearch, wire.MethodGifFetch:
 		return fail(errors.New("GIF search is not supported on WhatsApp"))
 
@@ -963,9 +941,6 @@ func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Re
 
 	case wire.MethodReact:
 		return fail(errors.New("reactions are not supported on Telegram yet"))
-
-	case wire.MethodSetTyping:
-		return fail(errors.New("typing indicators are not supported on Telegram yet"))
 
 	case wire.MethodGifSearch, wire.MethodGifFetch:
 		return fail(errors.New("GIF search is not supported on Telegram"))

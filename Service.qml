@@ -216,7 +216,6 @@ Item {
   signal messageReceived(var message, string network)
   signal conversationUpdated(var conversation, string network)
   signal paired(string network)
-  signal typingReceived(var state, string network)
   signal transportError(string message)
 
   property int _nextId: 1
@@ -633,9 +632,6 @@ Item {
       break
     case "message":
       root.messageReceived(frame.data, net)
-      break
-    case "typing":
-      root.typingReceived(frame.data, net)
       break
     case "paired":
       root.paired(net)

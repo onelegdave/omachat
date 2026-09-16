@@ -54,7 +54,6 @@ ShellRoot {
   signal messageReceived(var message, var net)
   signal conversationUpdated(var conversation, var net)
   signal paired(var net)
-  signal typingReceived(var state, var net)
   function statusFor(net) { return net === "whatsapp" ? statusWA : (net === "messenger" ? statusFB : status) }
   function stateFor(net) { var s = statusFor(net); return s && s.state ? s.state : state }
   function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : (net === "messenger" ? conversationsFB : conversations) }
@@ -500,11 +499,6 @@ ShellRoot {
     root.check(fbReaction.method === "react" && fbReaction.network === "messenger", "Messenger reaction is routed only to Messenger")
     fbInbox.openGifPicker()
     root.check(fake.calls.some(function(c){ return c.method === "gifSearch" && c.network === "messenger" }), "Messenger GIF search uses the Messenger route")
-    var fbComposer = inspect.findChild(fbInbox, "composer")
-    fbComposer.text = "typing"
-    root.check(fake.calls.some(function(c){ return c.method === "setTyping" && c.network === "messenger" && c.params.typing === true }), "Messenger composer publishes typing presence")
-    fake.typingReceived({conversationID:"fb-1",senderName:"Demo Messenger",typing:true}, "messenger")
-    root.check(inspect.findChild(fbInbox, "typingIndicator").text === "Demo Messenger is typing...", "incoming Messenger typing presence is visible")
     fbInbox.sendMessage("Messenger pending")
     var fbPending = fake.delayed.pop()
     root.check(fbPending.method === "send" && fbPending.network === "messenger", "Messenger send is routed only to Messenger")

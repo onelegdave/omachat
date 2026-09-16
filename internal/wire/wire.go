@@ -70,7 +70,6 @@ const (
 	EventQR           = "qr"
 	EventEmoji        = "emoji"
 	EventPaired       = "paired"
-	EventTyping       = "typing"
 )
 
 // Method names.
@@ -101,7 +100,6 @@ const (
 	MethodUnpair                 = "unpair"
 	MethodMedia                  = "media"
 	MethodAvatar                 = "avatar"
-	MethodSetTyping              = "setTyping"
 	MethodRefresh                = "refresh"
 	MethodSetTelegramCredentials = "setTelegramCredentials"
 )
@@ -233,15 +231,6 @@ type Reaction struct {
 	Emoji string `json:"emoji"`
 	Count int    `json:"count"`
 	Mine  bool   `json:"mine"`
-}
-
-// Typing is a transient conversation presence update. SenderName may be empty
-// when Messenger has not delivered the contact row yet.
-type Typing struct {
-	ConversationID string `json:"conversationID"`
-	SenderID       string `json:"senderID,omitempty"`
-	SenderName     string `json:"senderName,omitempty"`
-	Typing         bool   `json:"typing"`
 }
 
 // ReactParams toggles a reaction on a message. An empty Emoji removes whatever
@@ -475,9 +464,4 @@ type MediaResult struct {
 	Pending bool `json:"pending,omitempty"`
 	// Thumbnail means Path is a low-resolution stand-in.
 	Thumbnail bool `json:"thumbnail,omitempty"`
-}
-
-type SetTypingParams struct {
-	ConversationID string `json:"conversationID"`
-	Typing         bool   `json:"typing"`
 }

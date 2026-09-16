@@ -284,11 +284,6 @@ func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 		cli.Disconnect()
 		return fmt.Errorf("connect E2EE transport: %w", err)
 	}
-	// Encrypted Messenger chats use the WhatsApp transport, which only emits
-	// chat-presence events while this device is marked available.
-	if err = e2ee.SendPresence(ctx, waTypes.PresenceAvailable); err != nil {
-		b.log.Warn().Err(err).Msg("Could not enable encrypted Messenger typing indicators")
-	}
 	b.mu.Lock()
 	b.e2eeClient = e2ee
 	b.mu.Unlock()
@@ -446,9 +441,6 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 			queue(msg)
 		}
 	}
-	for _, typing := range tbl.LSUpdateTypingIndicator {
-		b.publishTypingLocked(typing.ThreadKey, typing.SenderId, typing.IsTyping)
-	}
 	b.refreshConversationNamesLocked()
 	avatarJobs := b.avatarJobsLocked()
 	b.recountUnreadLocked()
@@ -591,15 +583,6 @@ func (b *Backend) deleteAggregateReactionLocked(thread int64, messageID string, 
 	return b.setAggregateReactionLocked(thread, messageID, 0, emoji, 0, false)
 }
 
-func (b *Backend) publishTypingLocked(thread, sender int64, typing bool) {
-	if b.publish == nil || thread == 0 || sender == b.selfID {
-		return
-	}
-	b.publish(wire.Event{Event: wire.EventTyping, Network: wire.NetworkMessenger, Data: wire.Typing{
-		ConversationID: strconv.FormatInt(thread, 10), SenderID: strconv.FormatInt(sender, 10),
-		SenderName: b.contactNames[sender], Typing: typing,
-	}})
-}
 func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS int64, unread, group, readOnly bool, avatar string, typ table.ThreadType) {
 	key := strconv.FormatInt(id, 10)
 	if name = strings.TrimSpace(name); name != "" {
@@ -786,11 +769,6 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		b.mu.Unlock()
 		b.publishMessage(msg)
 		b.publishSnapshots()
-	case *events.ChatPresence:
-		b.mu.Lock()
-		thread := b.threadForJIDLocked(evt.Chat.ToNonAD())
-		b.publishTypingLocked(thread, parseUser(evt.Sender.User), evt.State == waTypes.ChatPresenceComposing)
-		b.mu.Unlock()
 	case *events.Connected:
 		b.setState(wire.StateConnected, "")
 	case *events.Disconnected:
@@ -1042,40 +1020,6 @@ func (b *Backend) React(ctx context.Context, p wire.ReactParams) error {
 		b.publishMessage(msg)
 	}
 	return nil
-}
-
-func (b *Backend) SetTyping(ctx context.Context, p wire.SetTypingParams) error {
-	thread, err := strconv.ParseInt(p.ConversationID, 10, 64)
-	if err != nil {
-		return errors.New("invalid Messenger conversation ID")
-	}
-	b.mu.RLock()
-	cli, e2ee, jid := b.client, b.e2eeClient, b.threadToJID[thread]
-	typ := b.threadTypes[thread]
-	conv := b.convs[p.ConversationID]
-	b.mu.RUnlock()
-	if cli == nil {
-		return ErrNotConfigured
-	}
-	if !jid.IsEmpty() {
-		if e2ee == nil {
-			return errors.New("Messenger encrypted transport is not connected")
-		}
-		state := waTypes.ChatPresencePaused
-		if p.Typing {
-			state = waTypes.ChatPresenceComposing
-		}
-		return e2ee.SendChatPresence(ctx, jid, state, waTypes.ChatPresenceMediaText)
-	}
-	isGroup := int64(0)
-	if conv.IsGroup {
-		isGroup = 1
-	}
-	isTyping := int64(0)
-	if p.Typing {
-		isTyping = 1
-	}
-	return cli.ExecuteStatelessTask(ctx, &socket.UpdatePresenceTask{ThreadKey: thread, IsGroupThread: isGroup, IsTyping: isTyping, SyncGroup: 1, ThreadType: int64(typ)})
 }
 
 func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {

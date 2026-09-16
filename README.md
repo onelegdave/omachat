@@ -124,7 +124,6 @@ start pairing again.
 | Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
 | GIPHY search | Optional personal API key | Unavailable | Unavailable | Optional personal API key |
 | Reactions | Yes | Unavailable | Unavailable | Yes |
-| Typing indicators | No dedicated display | Unavailable | Unavailable | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
 | Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable |

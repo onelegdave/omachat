@@ -213,32 +213,19 @@ func TestLateContactNameUpdatesStoredMessages(t *testing.T) {
 	}
 }
 
-func TestHandleTableAppliesMessengerReactionsAndTyping(t *testing.T) {
-	var published []wire.Event
-	b := New(zerolog.Nop(), nil, func(event wire.Event) { published = append(published, event) })
+func TestHandleTableAppliesMessengerReactions(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
 	b.selfID = 1
-	b.contactNames[2] = "Ada"
 	b.handleTable(&table.LSTable{
 		LSUpsertMessage: []*table.LSUpsertMessage{{ThreadKey: 7, MessageId: "m1", Text: "hello", SenderId: 2}},
 		LSUpsertReaction: []*table.LSUpsertReaction{
 			{ThreadKey: 7, MessageId: "m1", ActorId: 1, Reaction: "👍"},
 			{ThreadKey: 7, MessageId: "m1", ActorId: 2, Reaction: "👍"},
 		},
-		LSUpdateTypingIndicator: []*table.LSUpdateTypingIndicator{{ThreadKey: 7, SenderId: 2, IsTyping: true}},
 	})
 	got := b.messages["7"][0]
 	if len(got.Reactions) != 1 || got.Reactions[0].Emoji != "👍" || got.Reactions[0].Count != 2 || !got.Reactions[0].Mine {
 		t.Fatalf("reactions = %#v", got.Reactions)
-	}
-	foundTyping := false
-	for _, event := range published {
-		state, ok := event.Data.(wire.Typing)
-		if event.Event == wire.EventTyping && ok && state.ConversationID == "7" && state.SenderName == "Ada" && state.Typing {
-			foundTyping = true
-		}
-	}
-	if !foundTyping {
-		t.Fatalf("typing event not published: %#v", published)
 	}
 	b.handleTable(&table.LSTable{LSDeleteReaction: []*table.LSDeleteReaction{{ThreadKey: 7, MessageId: "m1", ActorId: 1}}})
 	got = b.messages["7"][0]

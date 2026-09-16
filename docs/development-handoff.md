@@ -68,17 +68,17 @@ vendored `mautrix-meta` client. It currently includes:
 - lazy incoming images, GIFs, stickers, files, video, and voice-message media;
 - private conversation/message persistence across helper restarts;
 - microsecond timestamps for locally sent messages;
-- reactions and incoming/outgoing typing indicators;
+- reactions;
 - outbound M4A voice notes with optional ffmpeg/ffplay;
 - optional GIPHY search using the shared personal API-key setting;
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
-The active installed checkout was fast-forwarded to `ff95559` on 2026-09-16,
-the helper was rebuilt from vendored source, and the Omarchy shell was cleanly
-restarted. The new shell-owned helper connected successfully and the Messenger
-tab visibly loaded live conversation data. The feature-specific live actions
-below still require OneLegDave's confirmation.
+The active installed checkout was fast-forwarded to `081e75f` on 2026-09-16.
+The helper was rebuilt from vendored source during the feature pass, and the
+Omarchy shell was cleanly restarted after the reaction UI correction. The new
+shell-owned helper connected successfully and the Messenger tab visibly loaded
+live conversation data.
 
 The 2026-09-16 live parity pass confirmed that a video-backed Messenger GIF
 stays inline and loops, a new incoming reply appears without sending or
@@ -95,19 +95,18 @@ migrations can still make re-pairing necessary.
 
 ## Exact next work
 
-Voice recording and GIF search are implemented and live-confirmed by
-OneLegDave. Reaction transport is implemented; the first live pass exposed a
-Messenger-only UI gate that hid the existing reaction action, which is now
-covered by a focused QML regression check and needs one visible recheck after
-installation. Typing transport remains implemented and synthetically covered,
-but its live preview was not observed and is deliberately deprioritized at
-OneLegDave's request. Calling remains explicitly out of scope and unsupported.
+Voice recording, GIF search, and reactions are implemented and live-confirmed
+by OneLegDave. The first reaction pass exposed a Messenger-only UI gate that hid
+the existing action; `081e75f` fixed it and the visible recheck passed. Typing
+indicators were subsequently removed end to end at OneLegDave's request because
+the app does not need a typing preview. Calling remains explicitly out of scope
+and unsupported.
 
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and
-`git diff --check`. Recorded voice-note delivery and a GIF chosen through search
-passed live. Reaction add/remove needs a visible recheck after the UI correction;
-typing remains live-unconfirmed and is not current follow-up work.
+`git diff --check`. Recorded voice-note delivery, a GIF chosen through search,
+and the corrected reaction action passed live. No Messenger feature follow-up
+is currently selected.
 
 ## Runtime and data safety
 

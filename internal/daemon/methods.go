@@ -189,18 +189,6 @@ func (d *Daemon) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 	return nil
 }
 
-// SetTyping forwards a typing indicator. Failures here are cosmetic.
-func (d *Daemon) SetTyping(ctx context.Context, p wire.SetTypingParams) error {
-	c, err := d.requireClient()
-	if err != nil {
-		return err
-	}
-	if !p.Typing {
-		return nil
-	}
-	return c.SetTyping(ctx, p.ConversationID, nil)
-}
-
 // Refresh re-pulls the conversation list from the phone.
 func (d *Daemon) Refresh(ctx context.Context) error {
 	// Sync is permitted while connecting. Sending still requires connected.

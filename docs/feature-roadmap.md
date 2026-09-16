@@ -15,12 +15,12 @@ dependencies does not add missing protocol support.
   without requiring a shell restart. The API hash is never exposed in logs or status.
 - Existing text, photo, history, and supported voice features remain available
   according to the [service guides](README.md).
-- Messenger reactions, typing indicators, voice notes, and optional GIPHY search.
+- Messenger reactions, voice notes, and optional GIPHY search.
 
 ## Next priorities
 
-1. **More service capabilities:** assess WhatsApp/Telegram reactions and typing,
-   then WhatsApp voice notes. The current helper explicitly rejects unsupported
+1. **More service capabilities:** assess WhatsApp/Telegram reactions, then
+   WhatsApp voice notes. The current helper explicitly rejects unsupported
    operations; add backend behavior and isolated tests before enabling controls.
 2. **Device readiness:** distinguish missing tools from unavailable cameras,
    microphone permissions, file portals, and locked keyrings. Never open a camera
