@@ -1,32 +1,37 @@
-# Second-machine acceptance check
+# Second-machine acceptance record
 
-Marketplace submission is on hold until OneLegDave completes this check on
-oldsmaru. These are pending manual checks, not completed test claims.
+This record separates checks actually completed on oldsmaru from broader live
+feature checks completed on the primary development machine. It is not a claim
+that every service action was repeated on both machines.
 
-- Install the published release using the README instructions. Confirm the
-  plugin loads without QML errors and Settings can be opened.
-- Review Settings > Tools. Confirm missing dependencies are explained, source
-  links work, and nothing installs without choosing Install and confirming.
-  Cancel an installation once to verify that cancellation changes nothing.
-- Build the helper with the existing or deliberately chosen Go/C toolchain.
-  No modules should download. Check an actionable error if a tool is missing.
-- On a genuinely fresh account-data directory, confirm the initial service
-  chooser appears before any service connects. Do not delete existing data
-  merely to test this case; use a separate test account if needed.
-- Enable only the services wanted on this machine. Pair them intentionally,
-  following their service guides. Do not assume copied credentials will work.
-- Disable a service and apply. Confirm its tab and unread count disappear;
-  enabled services reconnect. Re-enable and check retained credentials.
-- Disable all services. Confirm Settings stays accessible and the selection
-  survives a shell restart. Restore the desired service selection afterward.
-- Check dark and light themes, larger text, long setup errors, scrolling,
-  keyboard focus, drafts, and resizing/pop-out behavior where available.
-- Use an explicitly chosen test recipient for text, photo/caption, and supported
-  voice features. Verify delivery on the receiving device, not just a successful
-  request. Do not test Telegram sends without separate authorization.
-- Restart the shell and check reconnect behavior. A full shell restart is
-  expected to discard in-memory drafts. Interrupted sends must not replay.
+## Completed on oldsmaru
 
-Record release/tag, Omarchy version, enabled services, actions tested, and any
-errors. Redact credentials, phone numbers, contacts, and message contents from
-public reports. Do not submit to the marketplace until this review is complete.
+- Installed the public v0.4.2 beta and built its helper entirely from vendored
+  source. Fresh Google browser-profile pairing completed from `gaiaPairing`
+  through `connecting` to `connected`, with `phoneOK: true`.
+- Updated the clean plugin checkout from the beta repository to public stable
+  candidate `91e77a2b3fac9a8bb6fb415639bab1af296cf5d3` on September 16, 2026.
+- Built helper version 0.4.3 with source ID
+  `433a0b8dac709c6ef62e521fc34743efeda3eb632a0a3512ad2780fecd114ca1`
+  and restarted the Omarchy shell on Omarchy 4.0.4-1.
+- Verified the shell-owned helper was running, the owner-only socket mode was
+  0600, and sanitized status RPCs reported Google Messages, WhatsApp, and
+  Messenger connected with `phoneOK: true`. Telegram remained intentionally
+  unpaired on this machine.
+- The synthetic UI gate separately verified the fresh service chooser,
+  dependency explanations and cancellation behavior, dark and light palettes,
+  larger text, keyboard operation, pop-out behavior, helper reconnection, and
+  upgrade/rebuild flow without accessing personal accounts.
+
+## Live feature evidence from the primary machine
+
+OneLegDave visibly confirmed cross-service unread badges; Google pairing;
+WhatsApp GIF search/playback, reactions, contact names, and iPhone-compatible
+outbound voice; Telegram reactions; Messenger incoming updates, inline GIFs,
+attachments, reactions, and voice; and the animated helper-connection screen.
+Calling remains deliberately unsupported.
+
+Public reports and screenshots must continue to exclude credentials, phone
+numbers, account identifiers, contacts, and message contents. Marketplace
+automation and maintainer review remain separate from this acceptance record
+and are not a security certification or approval claim.

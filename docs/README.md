@@ -6,7 +6,7 @@ release.
 
 - [Theme screenshots with fictional chats](screenshots/README.md)
 - [Marketplace readiness and review limits](marketplace-readiness.md)
-- [Pending oldsmaru acceptance check](oldsmaru-checklist.md)
+- [Oldsmaru acceptance record](oldsmaru-checklist.md)
 
 - [Overview, installation, features, and removal](../README.md)
 - [Dependencies and optional features](dependencies.md)

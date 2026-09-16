@@ -1,8 +1,10 @@
 # Marketplace readiness
 
-Submission is intentionally on hold until the owner completes the
-[oldsmaru acceptance check](oldsmaru-checklist.md). Publishing a GitHub release
-does not submit, list, approve, or verify the plugin in the marketplace.
+The owner completed the scoped [oldsmaru acceptance check](oldsmaru-checklist.md)
+and authorized stable release preparation on September 16, 2026. Marketplace
+submission still requires the owner to approve the completed six-heading issue
+body. Publishing a GitHub release does not submit, list, approve, or verify the
+plugin in the marketplace.
 
 ## Repository requirements
 
@@ -57,5 +59,5 @@ guarantee security, approval, or error-free operation. Do not suppress genuine
 capabilities or describe `review-required` as a clean security certification.
 
 Before submitting, rerun the repository test suite and exact-commit marketplace
-checks, inspect the public screenshots and release metadata, complete the
-second-machine tests, and obtain the owner's explicit submission approval.
+checks, inspect the public screenshots and release metadata, and obtain the
+owner's explicit approval of the completed submission body.

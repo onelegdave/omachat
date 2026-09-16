@@ -233,7 +233,9 @@ See [Contributing](CONTRIBUTING.md) for prerequisites and verification,
 [Security](SECURITY.md) for reporting, and the [documentation index](docs/README.md)
 for service guides, release notes, and historical reviews.
 
-Marketplace submission is pending the [oldsmaru acceptance check](docs/oldsmaru-checklist.md).
+Marketplace submission is pending owner approval of the completed submission
+body and marketplace maintainer review. See the
+[oldsmaru acceptance record](docs/oldsmaru-checklist.md).
 See [marketplace readiness](docs/marketplace-readiness.md) for check results,
 review capabilities, and their limits. OmaChat is not claiming marketplace approval.
 
