@@ -649,7 +649,11 @@ Item {
         if (res.message && res.message.attachments) {
           for (var ai = 0; ai < res.message.attachments.length; ai++) {
             var sentAttachment = res.message.attachments[ai]
-            if (sentAttachment && sentAttachment.key) root._withMedia(sentAttachment.key, path)
+            // WhatsApp converts GIF inputs to MP4 before upload. Let the media
+            // request fetch that sent MP4 instead of mapping its key to the
+            // original GIF and handing it to the video player.
+            if (sentAttachment && sentAttachment.key && !(sentAttachment.isGif && sentAttachment.isVideo))
+              root._withMedia(sentAttachment.key, path)
           }
         }
         root.mergeMessage(res.message, targetNet, true)

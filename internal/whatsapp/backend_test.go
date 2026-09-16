@@ -346,6 +346,89 @@ func TestWhatsAppSendMediaImage(t *testing.T) {
 	}
 }
 
+func TestWhatsAppSendMediaGIFAsPlaybackVideo(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	backend.setState(wire.StateConnected, "")
+
+	gifPath := filepath.Join(t.TempDir(), "test.gif")
+	gifBytes := []byte{
+		0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00,
+		0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0x21,
+		0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00,
+		0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44,
+		0x01, 0x00, 0x3b,
+	}
+	if err := os.WriteFile(gifPath, gifBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mp4Bytes := []byte("synthetic-mp4")
+	backend.convertGIF = func(context.Context, string) ([]byte, error) {
+		return mp4Bytes, nil
+	}
+
+	var uploadedType whatsmeow.MediaType
+	mock.UploadFunc = func(ctx context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
+		uploadedType = appInfo
+		if string(plaintext) != string(mp4Bytes) {
+			t.Errorf("uploaded original GIF instead of converted MP4: %q", plaintext)
+		}
+		return whatsmeow.UploadResponse{URL: "https://mock.whatsapp.net/gif", DirectPath: "/direct/gif"}, nil
+	}
+	var sent *waE2E.Message
+	mock.SendMessageFunc = func(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+		sent = message
+		return whatsmeow.SendResponse{ID: "server-gif-id", Timestamp: time.Now()}, nil
+	}
+
+	chatJID, _ := types.ParseJID("15559876543@s.whatsapp.net")
+	res, err := backend.SendMedia(ctx, wire.SendMediaParams{
+		TmpID: "tmp-gif-1", ConversationID: chatJID.String(), Path: gifPath,
+	})
+	if err != nil {
+		t.Fatalf("SendMedia GIF: %v", err)
+	}
+	if uploadedType != whatsmeow.MediaVideo {
+		t.Errorf("uploaded type = %v, want MediaVideo", uploadedType)
+	}
+	if sent == nil || sent.GetImageMessage() != nil || sent.GetVideoMessage() == nil {
+		t.Fatalf("expected a video message, got %+v", sent)
+	}
+	if !sent.GetVideoMessage().GetGifPlayback() || sent.GetVideoMessage().GetMimetype() != "video/mp4" {
+		t.Errorf("expected GIF-playback MP4, got %+v", sent.GetVideoMessage())
+	}
+	if res.Message == nil || len(res.Message.Attachments) != 1 {
+		t.Fatalf("unexpected GIF result: %+v", res)
+	}
+	att := res.Message.Attachments[0]
+	if !att.IsGif || !att.IsVideo || att.IsImage || att.MimeType != "video/mp4" {
+		t.Errorf("unexpected GIF attachment flags: %+v", att)
+	}
+}
+
+func TestWhatsAppIncomingGIFPlaybackStaysInline(t *testing.T) {
+	msg := &waE2E.Message{VideoMessage: &waE2E.VideoMessage{
+		Mimetype: proto.String("video/mp4"), GifPlayback: proto.Bool(true),
+		Width: proto.Uint32(320), Height: proto.Uint32(180), FileLength: proto.Uint64(1234),
+	}}
+	atts := extractAttachments(msg, "chat", "gif-message")
+	if len(atts) != 1 {
+		t.Fatalf("expected one attachment, got %+v", atts)
+	}
+	if !atts[0].IsGif || !atts[0].IsVideo || atts[0].IsImage {
+		t.Errorf("incoming GIF playback lost its flags: %+v", atts[0])
+	}
+	if atts[0].Width != 320 || atts[0].Height != 180 {
+		t.Errorf("incoming GIF dimensions lost: %+v", atts[0])
+	}
+}
+
 func TestWhatsAppMediaDownload(t *testing.T) {
 	backend, mock, _ := setupTestBackend(t)
 	backend.SetClient(mock, true)

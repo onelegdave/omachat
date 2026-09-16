@@ -10,8 +10,10 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -72,23 +74,66 @@ type Backend struct {
 	// mediaCommitStall is a test hook invoked after a download and before the
 	// generation-checked cache commit.
 	mediaCommitStall func()
+	convertGIF       func(context.Context, string) ([]byte, error)
 }
 
 // New creates an unstarted WhatsApp backend.
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *Backend {
 	return &Backend{
-		log:      log.With().Str("network", wire.NetworkWhatsApp).Logger(),
-		paths:    paths,
-		publish:  publish,
-		convs:    make(map[string]wire.Conversation),
-		messages: make(map[string][]wire.Message),
-		rawMsgs:  make(map[string]*waE2E.Message),
+		log:        log.With().Str("network", wire.NetworkWhatsApp).Logger(),
+		paths:      paths,
+		publish:    publish,
+		convs:      make(map[string]wire.Conversation),
+		messages:   make(map[string][]wire.Message),
+		rawMsgs:    make(map[string]*waE2E.Message),
+		convertGIF: convertGIFToMP4,
 		status: wire.Status{
 			Network: wire.NetworkWhatsApp,
 			State:   wire.StateUnpaired,
 			PhoneOK: true,
 		},
 	}
+}
+
+func convertGIFToMP4(ctx context.Context, input string) ([]byte, error) {
+	out, err := os.CreateTemp("", "omachat-whatsapp-gif-*.mp4")
+	if err != nil {
+		return nil, fmt.Errorf("create GIF conversion file: %w", err)
+	}
+	outPath := out.Name()
+	if err := out.Close(); err != nil {
+		_ = os.Remove(outPath)
+		return nil, fmt.Errorf("prepare GIF conversion file: %w", err)
+	}
+	defer os.Remove(outPath)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+		"-i", input, "-an", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+		"-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+		"-movflags", "+faststart", outPath)
+	if err := cmd.Run(); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, errors.New("WhatsApp GIF sending requires ffmpeg; install it from Settings > Tools")
+		}
+		return nil, fmt.Errorf("convert GIF for WhatsApp: %w", err)
+	}
+
+	f, err := os.Open(outPath)
+	if err != nil {
+		return nil, fmt.Errorf("read converted GIF: %w", err)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxOutboundMediaBytes+1))
+	_ = f.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read converted GIF: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, errors.New("ffmpeg produced an empty WhatsApp GIF")
+	}
+	if len(data) > maxOutboundMediaBytes {
+		return nil, errors.New("converted GIF exceeds 16MB limit")
+	}
+	return data, nil
 }
 
 // ensureSQLiteFile guarantees the sqlite file exists with private 0600 permissions before opening.
@@ -797,7 +842,7 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (wire.Message, er
 	return out, nil
 }
 
-// SendMedia uploads an image file and sends it to a WhatsApp chat.
+// SendMedia uploads an image or GIF file and sends it to a WhatsApp chat.
 func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.SendMediaResult, error) {
 	b.mu.RLock()
 	cli := b.client
@@ -845,6 +890,16 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 	if format == "jpg" {
 		mimeType = "image/jpeg"
 	}
+	isGIF := format == "gif"
+	mediaType := whatsmeow.MediaImage
+	if isGIF {
+		data, err = b.convertGIF(ctx, cleanPath)
+		if err != nil {
+			return wire.SendMediaResult{}, err
+		}
+		mimeType = "video/mp4"
+		mediaType = whatsmeow.MediaVideo
+	}
 
 	toJID, err := types.ParseJID(p.ConversationID)
 	if err != nil {
@@ -854,13 +909,28 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 		return wire.SendMediaResult{}, fmt.Errorf("unsupported recipient server: %s", toJID.Server)
 	}
 
-	uploadResp, err := cli.Upload(ctx, data, whatsmeow.MediaImage)
+	uploadResp, err := cli.Upload(ctx, data, mediaType)
 	if err != nil {
-		return wire.SendMediaResult{}, fmt.Errorf("upload image: %w", err)
+		return wire.SendMediaResult{}, fmt.Errorf("upload media: %w", err)
 	}
 
-	waMsg := &waE2E.Message{
-		ImageMessage: &waE2E.ImageMessage{
+	waMsg := &waE2E.Message{}
+	if isGIF {
+		waMsg.VideoMessage = &waE2E.VideoMessage{
+			Caption:       proto.String(p.Caption),
+			Mimetype:      proto.String(mimeType),
+			GifPlayback:   proto.Bool(true),
+			Width:         proto.Uint32(uint32(cfg.Width)),
+			Height:        proto.Uint32(uint32(cfg.Height)),
+			URL:           &uploadResp.URL,
+			DirectPath:    &uploadResp.DirectPath,
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		}
+	} else {
+		waMsg.ImageMessage = &waE2E.ImageMessage{
 			Caption:       proto.String(p.Caption),
 			Mimetype:      proto.String(mimeType),
 			URL:           &uploadResp.URL,
@@ -869,7 +939,7 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 			FileEncSHA256: uploadResp.FileEncSHA256,
 			FileSHA256:    uploadResp.FileSHA256,
 			FileLength:    proto.Uint64(uint64(len(data))),
-		},
+		}
 	}
 
 	resp, err := cli.SendMessage(ctx, toJID, waMsg)
@@ -896,7 +966,11 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 				MediaID:  resp.ID,
 				MimeType: mimeType,
 				Size:     int64(len(data)),
-				IsImage:  true,
+				Width:    int64(cfg.Width),
+				Height:   int64(cfg.Height),
+				IsImage:  !isGIF,
+				IsGif:    isGIF,
+				IsVideo:  isGIF,
 			},
 		},
 	}
@@ -924,7 +998,7 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	opaque := mediaKeyToOpaque(key)
 
 	// Check for existing cached file safely without globbing user input
-	for _, ext := range []string{".jpg", ".png", ".webp", ".gif", ".bin"} {
+	for _, ext := range []string{".jpg", ".png", ".webp", ".gif", ".mp4", ".bin"} {
 		candidate := filepath.Join(cacheDir, opaque+ext)
 		fi, err := os.Lstat(candidate)
 		if err != nil || fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
@@ -990,6 +1064,8 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 		ext = ".webp"
 	case strings.Contains(mimeType, "gif"):
 		ext = ".gif"
+	case strings.Contains(mimeType, "mp4"):
+		ext = ".mp4"
 	}
 	if ext == ".bin" {
 		inner, _ := unwrapMessage(rawMsg)

@@ -104,10 +104,10 @@ and unsupported.
 
 WhatsApp now exposes the shared optional GIPHY search and routes search and
 download requests through the existing hardened daemon implementation. Selected
-GIFs continue through WhatsApp's already-supported local attachment path. The
-synthetic suite confirms that the button is visible in a selected WhatsApp
-conversation and that search uses the WhatsApp route. A live WhatsApp search,
-selection, and send remains the next manual check.
+GIFs are converted with ffmpeg and sent as the MP4 video messages with
+`gifPlayback=true` required by WhatsApp. Incoming GIF-playback videos retain
+that flag and render as inline looping animations instead of generic video
+buttons. A repeat live outbound and inbound WhatsApp GIF check remains next.
 
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and

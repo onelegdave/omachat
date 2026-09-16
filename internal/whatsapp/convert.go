@@ -215,6 +215,9 @@ func extractAttachments(msg *waE2E.Message, chatID, messageID string) []wire.Att
 			MediaID:  messageID,
 			MimeType: mime,
 			Size:     int64(vid.GetFileLength()),
+			Width:    int64(vid.GetWidth()),
+			Height:   int64(vid.GetHeight()),
+			IsGif:    vid.GetGifPlayback(),
 			IsVideo:  true,
 		})
 	} else if aud := msg.GetAudioMessage(); aud != nil {

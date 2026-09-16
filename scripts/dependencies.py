@@ -19,7 +19,7 @@ TOOLS = [
     tool("go", "Go 1.27+", "Build the shared helper for all services.", ["go"], "go"),
     tool("compiler", "C compiler", "Build shared SQLite support. Either gcc or clang is sufficient.", ["gcc", "clang"], "gcc"),
     tool("qrencode", "QR encoder", "Pair WhatsApp, Telegram, or use Google's legacy QR fallback.", ["qrencode"], "qrencode"),
-    tool("ffmpeg", "FFmpeg and FFplay", "Camera capture and Google/Telegram voice recording and playback.", ["ffmpeg", "ffplay"], "ffmpeg"),
+    tool("ffmpeg", "FFmpeg and FFplay", "Camera capture, WhatsApp GIF conversion, and Google/Telegram voice recording and playback.", ["ffmpeg", "ffplay"], "ffmpeg"),
     tool("sqlite", "SQLite CLI", "Read the selected Google browser profile for pairing.", ["sqlite3"], "sqlite"),
     tool("libsecret", "Secret Service tool", "Google browser pairing; also needs an unlocked desktop keyring.", ["secret-tool"], "libsecret"),
     tool("clipboard", "Wayland clipboard", "Copy message text.", ["wl-copy"], "wl-clipboard"),
