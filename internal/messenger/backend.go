@@ -60,6 +60,8 @@ type Backend struct {
 	convs        map[string]wire.Conversation
 	messages     map[string][]wire.Message
 	contactNames map[int64]string
+	threadNames  map[int64]string
+	participants map[int64][]int64
 	threadToJID  map[int64]waTypes.JID
 	jidToThread  map[string]int64
 	threadTypes  map[int64]table.ThreadType
@@ -72,6 +74,7 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *B
 		log: log.With().Str("svc", "messenger").Logger(), paths: paths, publish: publish,
 		status: wire.Status{Network: wire.NetworkMessenger, State: wire.StateUnpaired, PhoneOK: true},
 		convs:  make(map[string]wire.Conversation), messages: make(map[string][]wire.Message), contactNames: make(map[int64]string),
+		threadNames: make(map[int64]string), participants: make(map[int64][]int64),
 		threadToJID: make(map[int64]waTypes.JID), jidToThread: make(map[string]int64),
 		threadTypes: make(map[int64]table.ThreadType),
 	}
@@ -359,11 +362,14 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	for _, m := range tbl.LSVerifyHybridThreadExists {
 		b.setMappingLocked(m.ThreadKey, m.ThreadJID, m.ThreadType)
 	}
+	for _, participant := range tbl.LSAddParticipantIdToGroupThread {
+		b.addParticipantLocked(participant.ThreadKey, participant.ContactId)
+	}
 	for _, t := range tbl.LSDeleteThenInsertThread {
-		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, t.UnreadMessageCount > 0, t.MemberCount > 2, t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
+		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, t.UnreadMessageCount > 0, messengerGroupThread(t.ThreadType, t.MemberCount), t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
 	}
 	for _, t := range tbl.LSUpdateOrInsertThread {
-		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, false, false, t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
+		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, false, messengerGroupThread(t.ThreadType, 0), t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
 	}
 	for _, m := range tbl.LSDeleteThenInsertMessage {
 		queue(b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId))
@@ -374,12 +380,21 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	for _, m := range tbl.LSInsertMessage {
 		queue(b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId))
 	}
+	b.refreshConversationNamesLocked()
 	b.recountUnreadLocked()
 	b.mu.Unlock()
 	for _, msg := range publish {
 		b.publishMessage(msg)
 	}
 	b.publishSnapshots()
+}
+func messengerGroupThread(typ table.ThreadType, memberCount int64) bool {
+	switch typ {
+	case table.GROUP_THREAD, table.TINCAN_GROUP_DISAPPEARING, table.CARRIER_MESSAGING_GROUP, table.ENCRYPTED_OVER_WA_GROUP:
+		return true
+	default:
+		return memberCount > 2
+	}
 }
 func (b *Backend) setMappingLocked(threadKey, jid int64, typ table.ThreadType) {
 	if jid == 0 {
@@ -396,15 +411,77 @@ func (b *Backend) setMappingLocked(threadKey, jid int64, typ table.ThreadType) {
 }
 func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS int64, unread, group, readOnly bool, avatar string, typ table.ThreadType) {
 	key := strconv.FormatInt(id, 10)
-	if name == "" {
-		name = "Messenger conversation"
+	if name = strings.TrimSpace(name); name != "" {
+		b.threadNames[id] = name
+	}
+	if current, ok := b.convs[key]; ok {
+		group = group || current.IsGroup
 	}
 	b.threadTypes[id] = typ
 	_ = readTS
 	// Messenger picture URLs are remote. Keep them out of AvatarPath, which is
 	// reserved for daemon-controlled local files.
 	_ = avatar
+	name = b.conversationNameLocked(id, group)
 	b.convs[key] = wire.Conversation{ID: key, Name: name, Preview: preview, Timestamp: messengerTimestamp(ts), Unread: unread, IsGroup: group, ReadOnly: readOnly, AvatarColor: "#0084ff", Initials: initials(name)}
+}
+
+func (b *Backend) addParticipantLocked(thread, contact int64) {
+	if thread == 0 || contact == 0 {
+		return
+	}
+	for _, existing := range b.participants[thread] {
+		if existing == contact {
+			return
+		}
+	}
+	b.participants[thread] = append(b.participants[thread], contact)
+}
+
+func (b *Backend) conversationNameLocked(thread int64, group bool) string {
+	if name := b.threadNames[thread]; name != "" {
+		return name
+	}
+	if !group {
+		contact := thread
+		if jid := b.threadToJID[thread]; !jid.IsEmpty() {
+			if parsed := parseUser(jid.User); parsed != 0 {
+				contact = parsed
+			}
+		}
+		if name := b.contactNames[contact]; name != "" {
+			return name
+		}
+		return "Messenger conversation"
+	}
+	var names []string
+	for _, contact := range b.participants[thread] {
+		if contact == b.selfID {
+			continue
+		}
+		if name := b.contactNames[contact]; name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(names) > 3 {
+		return strings.Join(names[:3], ", ") + " +" + strconv.Itoa(len(names)-3)
+	}
+	if len(names) > 0 {
+		return strings.Join(names, ", ")
+	}
+	return "Messenger group"
+}
+
+func (b *Backend) refreshConversationNamesLocked() {
+	for key, conversation := range b.convs {
+		thread, err := strconv.ParseInt(key, 10, 64)
+		if err != nil {
+			continue
+		}
+		conversation.Name = b.conversationNameLocked(thread, conversation.IsGroup)
+		conversation.Initials = initials(conversation.Name)
+		b.convs[key] = conversation
+	}
 }
 func (b *Backend) setContactNameLocked(id int64, name string) []wire.Message {
 	name = strings.TrimSpace(name)
@@ -467,7 +544,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		}
 		key := strconv.FormatInt(thread, 10)
 		if _, ok := b.convs[key]; !ok {
-			b.upsertThreadLocked(thread, jid.User, text, evt.Info.Timestamp.UnixMilli(), 0, true, jid.Server == waTypes.GroupServer, false, "", table.ENCRYPTED_OVER_WA_ONE_TO_ONE)
+			b.upsertThreadLocked(thread, "", text, evt.Info.Timestamp.UnixMilli(), 0, true, jid.Server == waTypes.GroupServer, false, "", table.ENCRYPTED_OVER_WA_ONE_TO_ONE)
 		}
 		msg := b.addMessageLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "")
 		conv := b.convs[key]

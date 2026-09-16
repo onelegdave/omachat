@@ -208,6 +208,60 @@ func TestLateContactNameUpdatesStoredMessages(t *testing.T) {
 	}
 }
 
+func TestConversationNamesUseTitlesContactsAndParticipants(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.selfID = 1
+	b.handleTable(&table.LSTable{
+		LSVerifyContactRowExists: []*table.LSVerifyContactRowExists{
+			{ContactId: 2, Name: "Ada Lovelace"},
+			{ContactId: 3, Name: "Grace Hopper"},
+		},
+		LSAddParticipantIdToGroupThread: []*table.LSAddParticipantIdToGroupThread{
+			{ThreadKey: 70, ContactId: 1},
+			{ThreadKey: 70, ContactId: 2},
+			{ThreadKey: 70, ContactId: 3},
+		},
+		LSDeleteThenInsertThread: []*table.LSDeleteThenInsertThread{
+			{ThreadKey: 2, ThreadType: table.ONE_TO_ONE},
+			{ThreadKey: 70, ThreadType: table.GROUP_THREAD, MemberCount: 3},
+			{ThreadKey: 80, ThreadType: table.GROUP_THREAD, ThreadName: "Named group", MemberCount: 3},
+		},
+	})
+
+	if got := b.convs["2"].Name; got != "Ada Lovelace" {
+		t.Fatalf("one-to-one name = %q", got)
+	}
+	if got := b.convs["70"].Name; got != "Ada Lovelace, Grace Hopper" {
+		t.Fatalf("derived group name = %q", got)
+	}
+	if got := b.convs["80"].Name; got != "Named group" {
+		t.Fatalf("explicit group name = %q", got)
+	}
+
+	b.handleTable(&table.LSTable{LSUpdateOrInsertThread: []*table.LSUpdateOrInsertThread{{
+		ThreadKey: 80, ThreadType: table.GROUP_THREAD,
+	}}})
+	if got := b.convs["80"].Name; got != "Named group" {
+		t.Fatalf("blank partial update replaced explicit group name with %q", got)
+	}
+}
+
+func TestEncryptedConversationNameUsesMappedContact(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.handleTable(&table.LSTable{
+		LSVerifyContactRowExists: []*table.LSVerifyContactRowExists{{ContactId: 42, Name: "Ada Lovelace"}},
+		LSVerifyHybridThreadExists: []*table.LSVerifyHybridThreadExists{{
+			ThreadKey: 900, ThreadJID: 42, ThreadType: table.ENCRYPTED_OVER_WA_ONE_TO_ONE,
+		}},
+		LSUpdateOrInsertThread: []*table.LSUpdateOrInsertThread{{
+			ThreadKey: 900, ThreadType: table.ENCRYPTED_OVER_WA_ONE_TO_ONE,
+		}},
+	})
+	if got := b.convs["900"].Name; got != "Ada Lovelace" {
+		t.Fatalf("encrypted one-to-one name = %q", got)
+	}
+}
+
 func TestMessengerTimeTimestampUsesWireMicroseconds(t *testing.T) {
 	timestamp := time.Date(2026, time.September, 15, 22, 30, 45, 123456000, time.UTC)
 	if got, want := messengerTimeTimestamp(timestamp), timestamp.UnixMicro(); got != want {
