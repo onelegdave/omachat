@@ -1425,26 +1425,31 @@ Item {
                   readonly property bool isImage: !!(modelData && (modelData.isImage || modelData.isGif) && !modelData.isAudio && !modelData.isVideo)
                   readonly property bool isVoice: !!(modelData && modelData.isAudio)
                   readonly property bool isVideo: !!(modelData && modelData.isVideo)
+                  readonly property bool isVideoGif: !!(isVideo && modelData && modelData.isGif)
+                  readonly property bool loadsInline: isImage || isVideoGif
                   readonly property string mediaKey: modelData && modelData.key ? modelData.key : ""
                   readonly property string mediaPath: mediaKey && root.mediaPaths[mediaKey]
                     ? root.mediaPaths[mediaKey] : (modelData && modelData.path ? modelData.path : "")
                   readonly property string mediaState: mediaKey && root.mediaRequests[mediaKey] ? root.mediaRequests[mediaKey] : ""
-                  readonly property bool mediaFailed: isImage && mediaPath === "" && mediaState === "failed"
-                  readonly property bool mediaLoading: isImage && !mediaFailed && !thumb.ready && !thumb.hasError
+                  readonly property bool mediaFailed: loadsInline && mediaPath === "" && mediaState === "failed"
+                  readonly property bool mediaLoading: loadsInline && !mediaFailed
+                    && !(isImage ? thumb.ready : (videoGifLoader.item && videoGifLoader.item.ready))
+                    && !(isImage ? thumb.hasError : (videoGifLoader.item && videoGifLoader.item.hasError))
                   readonly property bool playingThis: isVoice && root.playingKey === mediaKey
                   readonly property bool loadingThis: isVoice && root.audioWaitingKey === mediaKey
                   width: parent.width
                   height: {
-                    if (isVoice || isVideo) return Style.space(36)
-                    if (isImage) {
-                      if (mediaPath !== "" && thumb.visible) return thumb.height || Style.space(96)
+                    if (isVoice || (isVideo && !isVideoGif)) return Style.space(36)
+                    if (loadsInline) {
+                      if (mediaPath !== "") return isImage ? (thumb.height || Style.space(96))
+                        : ((videoGifLoader.item && videoGifLoader.item.height) || Style.space(96))
                       return Style.space(96)
                     }
                     return 0
                   }
                   visible: isImage || isVoice || isVideo
-                  onMediaKeyChanged: if (isImage && mediaKey && !mediaPath) root.requestMedia(mediaKey)
-                  Component.onCompleted: if (isImage && mediaKey && !mediaPath) root.requestMedia(mediaKey)
+                  onMediaKeyChanged: if (loadsInline && mediaKey && !mediaPath) root.requestMedia(mediaKey)
+                  Component.onCompleted: if (loadsInline && mediaKey && !mediaPath) root.requestMedia(mediaKey)
 
                   Rectangle {
                     visible: parent.isVoice
@@ -1473,7 +1478,7 @@ Item {
                   }
 
                   Rectangle {
-                    visible: parent.isVideo
+                    visible: parent.isVideo && !parent.isVideoGif
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
@@ -1553,6 +1558,25 @@ Item {
                       if (parent.mediaKey) {
                         root._evictMedia(parent.mediaKey)
                         root.setMediaRequest(parent.mediaKey, "failed")
+                      }
+                    }
+                  }
+
+                  Loader {
+                    id: videoGifLoader
+                    active: parent.isVideoGif
+                    visible: active && parent.mediaPath !== ""
+                    sourceComponent: Component {
+                      LoopingVideoThumb {
+                        path: attachItem.isVideoGif ? attachItem.mediaPath : ""
+                        playing: root.panelOpen && videoGifLoader.visible
+                        maxEdge: Math.min(attachItem.width, Style.space(280))
+                        onLoadFailed: {
+                          if (attachItem.mediaKey) {
+                            root._evictMedia(attachItem.mediaKey)
+                            root.setMediaRequest(attachItem.mediaKey, "failed")
+                          }
+                        }
                       }
                     }
                   }

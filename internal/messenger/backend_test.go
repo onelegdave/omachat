@@ -388,10 +388,16 @@ func TestMessengerMediaURLRejectsLocalTargets(t *testing.T) {
 }
 
 func TestMessengerAnimatedVideoContainerIsNotClassifiedAsImage(t *testing.T) {
-	media := &messengerMedia{name: "animation.f4v", mime: "application/octet-stream"}
+	media := &messengerMedia{name: "gif-1777463936921843", mime: "video/mp4"}
 	classifyMessengerMedia(media, table.AttachmentTypeAnimatedImage)
-	if !media.isVideo || media.isImage || media.isGIF {
+	if !media.isVideo || media.isImage || !media.isGIF {
 		t.Fatalf("animated video classification = image:%v gif:%v video:%v", media.isImage, media.isGIF, media.isVideo)
+	}
+
+	videoTypedGIF := &messengerMedia{name: "gif-1777463936921843", mime: "video/mp4"}
+	classifyMessengerMedia(videoTypedGIF, table.AttachmentTypeVideo)
+	if !videoTypedGIF.isVideo || videoTypedGIF.isImage || !videoTypedGIF.isGIF {
+		t.Fatalf("video-typed GIF classification = image:%v gif:%v video:%v", videoTypedGIF.isImage, videoTypedGIF.isGIF, videoTypedGIF.isVideo)
 	}
 
 	gif := &messengerMedia{name: "animation.gif", mime: "image/gif"}

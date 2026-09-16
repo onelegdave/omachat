@@ -57,14 +57,14 @@ func messengerMediaKey(messageID, attachmentID string, index int64) string {
 func classifyMessengerMedia(m *messengerMedia, typ table.AttachmentType) {
 	lower := strings.ToLower(m.mime)
 	ext := messengerMediaExtension(m)
+	baseName := strings.ToLower(filepath.Base(m.name))
 	videoContainer := strings.HasPrefix(lower, "video/") || ext == ".f4v" || ext == ".mp4" || ext == ".m4v" || ext == ".mov" || ext == ".webm" || ext == ".mkv" || ext == ".3gp"
-	m.isGIF = !videoContainer && (typ == table.AttachmentTypeAnimatedImage || strings.Contains(lower, "gif") || ext == ".gif")
-	m.isImage = typ == table.AttachmentTypeImage || typ == table.AttachmentTypeSticker || typ == table.AttachmentTypeSelfieSticker || typ == table.AttachmentTypeThirdPartySticker || m.isGIF || strings.HasPrefix(lower, "image/")
+	m.isGIF = typ == table.AttachmentTypeAnimatedImage || strings.Contains(lower, "gif") || ext == ".gif" || strings.HasPrefix(baseName, "gif-") || strings.HasPrefix(baseName, "gif_")
+	m.isImage = typ == table.AttachmentTypeImage || typ == table.AttachmentTypeSticker || typ == table.AttachmentTypeSelfieSticker || typ == table.AttachmentTypeThirdPartySticker || (m.isGIF && !videoContainer) || strings.HasPrefix(lower, "image/")
 	m.isAudio = typ == table.AttachmentTypeAudio || typ == table.AttachmentTypeSoundBite || strings.HasPrefix(lower, "audio/")
 	m.isVideo = typ == table.AttachmentTypeVideo || videoContainer
 	if m.isVideo {
 		m.isImage = false
-		m.isGIF = false
 	}
 }
 
