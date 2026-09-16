@@ -74,11 +74,11 @@ vendored `mautrix-meta` client. It currently includes:
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
-The active installed checkout was fast-forwarded to `66daa96` on 2026-09-16.
+The active installed checkout was fast-forwarded to `d5b2773` on 2026-09-16.
 The helper was rebuilt from vendored source, and the Omarchy shell was cleanly
-restarted after the WhatsApp voice transport correction. The new shell-owned
-helper (PID `4026673`) reported source fingerprint
-`351f5dcddab69c734591faf04475b19e04a8b96a0323386a5b08e2a58d4aa300`
+restarted after the WhatsApp cross-platform audio fallback. The new shell-owned
+helper (PID `1556429`) reported source fingerprint
+`8eb78583b090ebf9d0b0269e41341efabdb3826067e53138f4a49365e1a87ab1`
 through the live owner-only socket, and WhatsApp reported connected. OneLegDave
 already live-confirmed the cross-service notification badges. Phone-side
 outbound voice playback remains the explicit live check rather than an assumed
