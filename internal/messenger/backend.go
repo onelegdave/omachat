@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -193,6 +194,9 @@ func (b *Backend) Start(parent context.Context) error {
 
 func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 	if b.waStore == nil {
+		if err := ensureMessengerSQLiteFile(b.paths.MessengerDBFile()); err != nil {
+			return fmt.Errorf("secure E2EE store: %w", err)
+		}
 		container, err := sqlstore.New(ctx, "sqlite3", "file:"+b.paths.MessengerDBFile()+"?_foreign_keys=on", waLog.Zerolog(b.log.With().Str("component", "e2ee-db").Logger()))
 		if err != nil {
 			return fmt.Errorf("open E2EE store: %w", err)
@@ -258,6 +262,18 @@ func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 	b.mu.Unlock()
 	connected = true
 	return nil
+}
+
+func ensureMessengerSQLiteFile(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func needsMessengerRegistration(device *waStore.Device) bool {

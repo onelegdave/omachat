@@ -107,3 +107,32 @@ func TestMessengerDeviceRegistrationDetection(t *testing.T) {
 		t.Fatal("saved device with an ID must be reused")
 	}
 }
+
+func TestEnsureMessengerSQLiteFileIsPrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "messenger.db")
+	if err := os.WriteFile(path, []byte("db"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureMessengerSQLiteFile(path); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("Messenger database mode = %04o, want 0600", got)
+	}
+
+	target := filepath.Join(t.TempDir(), "target.db")
+	if err := os.WriteFile(target, []byte("target"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "messenger.db")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureMessengerSQLiteFile(link); err == nil {
+		t.Fatal("expected Messenger database symlink to be rejected")
+	}
+}
