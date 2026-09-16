@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -423,7 +424,7 @@ func TestWhatsAppSendMediaVoiceAsPTTOpus(t *testing.T) {
 	backend.setState(wire.StateConnected, "")
 
 	voicePath := filepath.Join(t.TempDir(), "voice-123.ogg")
-	voiceBytes := append([]byte("OggS"), []byte("synthetic-OpusHead-audio")...)
+	voiceBytes := testOggOpusVoice(2, 1)
 	if err := os.WriteFile(voicePath, voiceBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +435,11 @@ func TestWhatsAppSendMediaVoiceAsPTTOpus(t *testing.T) {
 		if string(plaintext) != string(voiceBytes) {
 			t.Fatalf("uploaded voice bytes = %q", plaintext)
 		}
-		return whatsmeow.UploadResponse{URL: "https://mock.whatsapp.net/voice", DirectPath: "/direct/voice"}, nil
+		return whatsmeow.UploadResponse{
+			URL: "https://mock.whatsapp.net/voice", DirectPath: "/direct/voice",
+			MediaKey: []byte("media-key"), FileEncSHA256: []byte("encrypted-hash"),
+			FileSHA256: []byte("plain-hash"), FileLength: uint64(len(plaintext)),
+		}, nil
 	}
 	mock.SendMessageFunc = func(_ context.Context, _ types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
 		sent = message
@@ -452,9 +457,49 @@ func TestWhatsAppSendMediaVoiceAsPTTOpus(t *testing.T) {
 	if !audio.GetPTT() || audio.GetMimetype() != "audio/ogg; codecs=opus" {
 		t.Fatalf("WhatsApp voice payload = %+v", audio)
 	}
+	if audio.GetSeconds() != 2 || audio.GetMediaKeyTimestamp() <= 0 || audio.GetFileLength() != uint64(len(voiceBytes)) {
+		t.Fatalf("WhatsApp voice metadata = %+v", audio)
+	}
+	if string(audio.GetMediaKey()) != "media-key" || string(audio.GetFileEncSHA256()) != "encrypted-hash" || string(audio.GetFileSHA256()) != "plain-hash" {
+		t.Fatalf("WhatsApp voice upload metadata = %+v", audio)
+	}
 	if res.Message == nil || res.Message.Text != "" || len(res.Message.Attachments) != 1 || !res.Message.Attachments[0].IsAudio {
 		t.Fatalf("voice result = %+v", res)
 	}
+}
+
+func TestOggOpusVoiceDurationRejectsIncompatibleAudio(t *testing.T) {
+	for name, data := range map[string][]byte{
+		"not ogg":   []byte("not audio"),
+		"stereo":    testOggOpusVoice(1, 2),
+		"truncated": testOggOpusVoice(1, 1)[:30],
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := oggOpusVoiceDuration(data); err == nil {
+				t.Fatal("expected incompatible voice data to be rejected")
+			}
+		})
+	}
+}
+
+func testOggOpusVoice(seconds uint32, channels byte) []byte {
+	head := make([]byte, 19)
+	copy(head, "OpusHead")
+	head[8] = 1
+	head[9] = channels
+	binary.LittleEndian.PutUint16(head[10:12], 312)
+	data := appendTestOggPage(nil, 0, head)
+	return appendTestOggPage(data, 312+uint64(seconds)*48000, []byte{0xf8, 0xff, 0xfe})
+}
+
+func appendTestOggPage(dst []byte, granule uint64, payload []byte) []byte {
+	page := make([]byte, 28+len(payload))
+	copy(page, "OggS")
+	binary.LittleEndian.PutUint64(page[6:14], granule)
+	page[26] = 1
+	page[27] = byte(len(payload))
+	copy(page[28:], payload)
+	return append(dst, page...)
 }
 
 func TestWhatsAppIncomingGIFPlaybackStaysInline(t *testing.T) {

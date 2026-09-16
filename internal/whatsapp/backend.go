@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
@@ -1052,13 +1053,11 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 	isVoice := ext == ".ogg" || ext == ".opus"
 	var cfg image.Config
 	format := ""
+	var voiceSeconds uint32
 	if isVoice {
-		probe := data
-		if len(probe) > 64*1024 {
-			probe = probe[:64*1024]
-		}
-		if len(data) < 4 || string(data[:4]) != "OggS" || !bytes.Contains(probe, []byte("OpusHead")) {
-			return wire.SendMediaResult{}, errors.New("WhatsApp voice note must be an Ogg Opus file")
+		voiceSeconds, err = oggOpusVoiceDuration(data)
+		if err != nil {
+			return wire.SendMediaResult{}, err
 		}
 	} else {
 		// Validate exact supported image types and dimensions.
@@ -1111,15 +1110,18 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 
 	waMsg := &waE2E.Message{}
 	if isVoice {
+		mediaKeyTimestamp := time.Now().Unix()
 		waMsg.AudioMessage = &waE2E.AudioMessage{
-			Mimetype:      proto.String(mimeType),
-			PTT:           proto.Bool(true),
-			URL:           &uploadResp.URL,
-			DirectPath:    &uploadResp.DirectPath,
-			MediaKey:      uploadResp.MediaKey,
-			FileEncSHA256: uploadResp.FileEncSHA256,
-			FileSHA256:    uploadResp.FileSHA256,
-			FileLength:    proto.Uint64(uint64(len(data))),
+			Mimetype:          proto.String(mimeType),
+			PTT:               proto.Bool(true),
+			Seconds:           proto.Uint32(voiceSeconds),
+			URL:               &uploadResp.URL,
+			DirectPath:        &uploadResp.DirectPath,
+			MediaKey:          uploadResp.MediaKey,
+			MediaKeyTimestamp: proto.Int64(mediaKeyTimestamp),
+			FileEncSHA256:     uploadResp.FileEncSHA256,
+			FileSHA256:        uploadResp.FileSHA256,
+			FileLength:        proto.Uint64(uploadResp.FileLength),
 		}
 	} else if isGIF {
 		waMsg.VideoMessage = &waE2E.VideoMessage{
@@ -1193,6 +1195,67 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 	return wire.SendMediaResult{
 		Message: &out,
 	}, nil
+}
+
+// oggOpusVoiceDuration validates the WhatsApp-compatible recording shape and
+// derives its duration from the final Ogg granule position. Opus granules are
+// always measured at 48 kHz, regardless of the input capture rate.
+func oggOpusVoiceDuration(data []byte) (uint32, error) {
+	const opusSampleRate = uint64(48000)
+	var (
+		offset       int
+		preSkip      uint64
+		lastGranule  uint64
+		foundHead    bool
+		foundGranule bool
+	)
+	for offset < len(data) {
+		if len(data)-offset < 27 || string(data[offset:offset+4]) != "OggS" || data[offset+4] != 0 {
+			return 0, errors.New("WhatsApp voice note must be a valid Ogg Opus file")
+		}
+		segmentCount := int(data[offset+26])
+		headerEnd := offset + 27 + segmentCount
+		if headerEnd > len(data) {
+			return 0, errors.New("WhatsApp voice note has a truncated Ogg page")
+		}
+		payloadSize := 0
+		for _, size := range data[offset+27 : headerEnd] {
+			payloadSize += int(size)
+		}
+		pageEnd := headerEnd + payloadSize
+		if pageEnd > len(data) {
+			return 0, errors.New("WhatsApp voice note has a truncated Ogg payload")
+		}
+		if !foundHead {
+			payload := data[headerEnd:pageEnd]
+			if headAt := bytes.Index(payload, []byte("OpusHead")); headAt >= 0 {
+				headAt += headerEnd
+				if headAt+19 > pageEnd || data[headAt+8] != 1 || data[headAt+9] != 1 {
+					return 0, errors.New("WhatsApp voice note must be mono Ogg Opus")
+				}
+				preSkip = uint64(binary.LittleEndian.Uint16(data[headAt+10 : headAt+12]))
+				foundHead = true
+			}
+		}
+		granule := binary.LittleEndian.Uint64(data[offset+6 : offset+14])
+		if granule != ^uint64(0) {
+			lastGranule = granule
+			foundGranule = true
+		}
+		offset = pageEnd
+	}
+	if !foundHead || !foundGranule || lastGranule <= preSkip {
+		return 0, errors.New("WhatsApp voice note must contain playable Ogg Opus audio")
+	}
+	samples := lastGranule - preSkip
+	if samples > uint64(^uint32(0))*opusSampleRate {
+		return 0, errors.New("WhatsApp voice note duration is invalid")
+	}
+	seconds := (samples + opusSampleRate - 1) / opusSampleRate
+	if seconds == 0 {
+		return 0, errors.New("WhatsApp voice note duration is invalid")
+	}
+	return uint32(seconds), nil
 }
 
 // Media retrieves or downloads an attachment file into the local WhatsApp cache.

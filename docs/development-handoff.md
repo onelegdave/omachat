@@ -127,15 +127,23 @@ Telegram publishes live conversation and unread-status updates, and Messenger
 marks newer ordinary incoming message rows unread while honoring provider read
 watermarks. The shared service also derives a safe unread fallback from its
 conversation models. The top-bar badge therefore aggregates all enabled
-services, and each in-app service tab receives its own red unread badge. The
-exact next work is live confirmation of WhatsApp voice-note delivery plus
-Messenger and Telegram bar/tab badges from real incoming messages.
+services, and each in-app service tab receives its own red unread badge.
+OneLegDave live-confirmed the notification behavior for the affected services.
+
+The first live WhatsApp outbound voice check delivered the message shell, but
+the phone rejected playback as unavailable. The transport fix now validates
+the complete mono Ogg Opus page stream, derives the duration from its final
+48 kHz granule position, and includes both `seconds` and
+`mediaKeyTimestamp` alongside the encrypted upload metadata. The exact next
+work is a repeat outbound voice-note check on the phone after the corrected
+helper is installed; inbound phone-to-app voice already works.
 
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and
-`git diff --check`. Recorded voice-note delivery, a GIF chosen through search,
-and the corrected reaction action passed live. No Messenger feature follow-up
-is currently selected.
+`git diff --check`. A GIF chosen through search and the corrected reaction
+action passed live. Outbound WhatsApp voice playback still requires the repeat
+live check described above. No Messenger feature follow-up is currently
+selected.
 
 ## Runtime and data safety
 
