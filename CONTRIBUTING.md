@@ -2,6 +2,11 @@
 
 Created and maintained by OneLegDave. Report issues with your Omarchy version, whether `omachatd` was running, and the action that failed. Strip phone numbers, message bodies, cookies, and GIPHY keys from public diagnostics.
 
+Development sessions on the private `dev` branch must begin with the
+[development handoff](docs/development-handoff.md) and update it before pushing
+when the current state or exact next work changes. This keeps branch, runtime,
+verification, and promotion context durable across sessions.
+
 ## Verify a change
 
 ```bash
