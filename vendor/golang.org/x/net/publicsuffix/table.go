@@ -45,7 +45,7 @@ var text string
 //	[16 bits] text index
 //	[ 6 bits] text length
 //
-//go:embed data/nodes
+//go:embed data/nodes.bin
 var nodes uint40String
 
 // children is the list of nodes' children, the parent's wildcard bit and the
@@ -60,7 +60,7 @@ var nodes uint40String
 //	[14 bits] high nodes index (exclusive) of children
 //	[14 bits] low nodes index (inclusive) of children
 //
-//go:embed data/children
+//go:embed data/children.bin
 var children uint32String
 
 // max children 935 (capacity 1023)

@@ -30,6 +30,11 @@ Telegram support vendors github.com/gotd/td and its transitive dependencies
 under permissive licenses (MIT, Apache-2.0, and BSD-3-Clause). Upstream
 authorship and licenses remain intact.
 
+The vendored golang.org/x/net/publicsuffix generated `nodes` and `children`
+lookup tables retain their exact upstream bytes under `.bin` filenames, with
+matching `go:embed` paths. This makes their binary format explicit to bounded
+static scanners. Preserve the rename when updating the vendored dependency.
+
 Facebook Messenger support vendors go.mau.fi/mautrix-meta. That work remains
 copyright its upstream authors and is licensed under GNU AGPL version 3, with
 the exceptions retained in vendor/go.mau.fi/mautrix-meta/LICENSE.exceptions.
