@@ -25,8 +25,8 @@ func setupMessengerPaths(t *testing.T) *appStore.Paths {
 	return paths
 }
 
-// TestMessengerRestartRoundTrip is the regression test for the Budget Nudes
-// bug: a live encrypted reply received while connected must still be there,
+// TestMessengerRestartRoundTrip covers a group-chat persistence regression:
+// a live encrypted reply received while connected must still be there,
 // with historyNotice, after the helper process restarts and the in-memory
 // maps are gone.
 func TestMessengerRestartRoundTrip(t *testing.T) {
