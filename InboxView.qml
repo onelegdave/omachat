@@ -20,7 +20,7 @@ Item {
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
   readonly property bool isMessenger: network === "messenger"
-  readonly property bool reactionsSupported: !isWhatsApp
+  readonly property bool reactionsSupported: !isTelegram
   property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : "Google Messages"))
 
   readonly property color dim: Model.readableInk(panelBg, Color.muted)
@@ -679,7 +679,7 @@ Item {
   }
 
   function startRecording() {
-    if (!root.reactionsSupported) {
+    if (root.isWhatsApp) {
       threadError = "Voice messages are not supported for " + root.networkLabel + " in this version."
       return
     }
@@ -806,10 +806,6 @@ Item {
 
   function react(messageID, emoji) {
     reactingTo = ""
-    if (root.isWhatsApp) {
-      threadError = "Reactions are not supported for " + root.networkLabel + " in this version."
-      return
-    }
     if (!service || selectedConvID === "" || !messageID) return
     var generation = selectionGeneration
     service.call("react", {

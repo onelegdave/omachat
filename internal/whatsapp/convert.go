@@ -126,8 +126,9 @@ func isDisplayableMessage(raw *waE2E.Message, text string, atts []wire.Attachmen
 		raw.FastRatchetKeySenderKeyDistributionMessage != nil {
 		return false
 	}
-	// Must have text, attachments, or reaction to be displayable
-	if text == "" && len(atts) == 0 && raw.ReactionMessage == nil {
+	// Reactions are applied to their target message before conversion. A chat
+	// bubble itself must contain text or an attachment.
+	if text == "" && len(atts) == 0 {
 		return false
 	}
 	return true
@@ -297,7 +298,7 @@ func convertEventMessage(evt *events.Message) (wire.Message, bool) {
 
 // formatConversationName resolves a friendly chat name from a JID and available contact/push name.
 func formatConversationName(jid types.JID, pushName string) string {
-	if pushName != "" {
+	if pushName = strings.TrimSpace(pushName); pushName != "" {
 		return pushName
 	}
 	if jid.Server == types.GroupServer {
@@ -310,4 +311,9 @@ func formatConversationName(jid types.JID, pushName string) string {
 		return jid.User
 	}
 	return jid.String()
+}
+
+func isFallbackConversationName(jid types.JID, name string) bool {
+	name = strings.TrimSpace(name)
+	return name == "" || name == jid.User || name == formatConversationName(jid, "")
 }

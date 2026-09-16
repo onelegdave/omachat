@@ -528,6 +528,101 @@ func TestWhatsAppHistorySync(t *testing.T) {
 	}
 }
 
+func TestWhatsAppHistorySyncUpgradesFallbackConversationName(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	chatID := "192148934783072@lid"
+	mock.TriggerEvent(&events.HistorySync{Data: &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{{
+		ID: proto.String(chatID),
+		Messages: []*waHistorySync.HistorySyncMsg{{Message: &waWeb.WebMessageInfo{
+			Key:              &waCommon.MessageKey{ID: proto.String("hist-name-1")},
+			MessageTimestamp: proto.Uint64(1700000000),
+			Message:          &waE2E.Message{Conversation: proto.String("hello")},
+		}}},
+	}}}})
+	if got := backend.Conversations(1)[0].Name; got != "WhatsApp User (192148934783072)" {
+		t.Fatalf("initial fallback name = %q", got)
+	}
+
+	mock.TriggerEvent(&events.HistorySync{Data: &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{{
+		ID:   proto.String(chatID),
+		Name: proto.String("Saved Contact"),
+	}}}})
+	conv := backend.Conversations(1)[0]
+	if conv.Name != "Saved Contact" || conv.Initials != "SC" {
+		t.Fatalf("upgraded conversation = %+v", conv)
+	}
+}
+
+func TestWhatsAppReactionSendReceiveAndToggle(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mock.TriggerEvent(&events.Connected{})
+
+	chat, _ := types.ParseJID("15551112222@s.whatsapp.net")
+	mock.TriggerEvent(&events.Message{Info: types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+		ID:            "target-1", Timestamp: time.Now(), PushName: "Alice",
+	}, Message: &waE2E.Message{Conversation: proto.String("hello")}})
+
+	var sent []*waE2E.Message
+	mock.SendMessageFunc = func(_ context.Context, to types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+		if to != chat {
+			t.Fatalf("reaction recipient = %s", to)
+		}
+		sent = append(sent, message)
+		return whatsmeow.SendResponse{ID: "reaction-send", Timestamp: time.Now()}, nil
+	}
+
+	params := wire.ReactParams{ConversationID: chat.String(), MessageID: "target-1", Emoji: "❤️"}
+	if err := backend.React(ctx, params); err != nil {
+		t.Fatal(err)
+	}
+	reaction := sent[0].GetReactionMessage()
+	if reaction.GetText() != "❤️" || reaction.GetKey().GetID() != "target-1" || reaction.GetKey().GetFromMe() {
+		t.Fatalf("sent reaction = %+v", reaction)
+	}
+	msgs, _ := backend.Messages(ctx, wire.MessagesParams{ConversationID: chat.String(), Count: 10})
+	if got := msgs.Messages[0].Reactions; len(got) != 1 || got[0].Count != 1 || !got[0].Mine {
+		t.Fatalf("own reaction state = %+v", got)
+	}
+
+	other, _ := types.ParseJID("15553334444@s.whatsapp.net")
+	mock.TriggerEvent(&events.Message{Info: types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: chat, Sender: other},
+		ID:            "reaction-event", Timestamp: time.Now(),
+	}, Message: &waE2E.Message{ReactionMessage: &waE2E.ReactionMessage{
+		Key:  &waCommon.MessageKey{ID: proto.String("target-1")},
+		Text: proto.String("❤️"),
+	}}})
+	msgs, _ = backend.Messages(ctx, wire.MessagesParams{ConversationID: chat.String(), Count: 10})
+	if got := msgs.Messages[0].Reactions; len(got) != 1 || got[0].Count != 2 || !got[0].Mine {
+		t.Fatalf("aggregate reaction state = %+v", got)
+	}
+
+	if err := backend.React(ctx, params); err != nil {
+		t.Fatal(err)
+	}
+	if got := sent[1].GetReactionMessage().GetText(); got != "" {
+		t.Fatalf("second tap sent %q, want removal", got)
+	}
+	msgs, _ = backend.Messages(ctx, wire.MessagesParams{ConversationID: chat.String(), Count: 10})
+	if got := msgs.Messages[0].Reactions; len(got) != 1 || got[0].Count != 1 || got[0].Mine {
+		t.Fatalf("reaction state after own removal = %+v", got)
+	}
+}
+
 func TestWhatsAppUnpairTruthfulErrorAndCleanup(t *testing.T) {
 	backend, mock, _ := setupTestBackend(t)
 	backend.SetClient(mock, true)

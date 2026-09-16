@@ -16,12 +16,13 @@ dependencies does not add missing protocol support.
 - Existing text, photo, history, and supported voice features remain available
   according to the [service guides](README.md).
 - Messenger reactions, voice notes, and optional GIPHY search.
+- WhatsApp reactions, saved contact-name resolution, and optional GIPHY search.
 
 ## Next priorities
 
-1. **More service capabilities:** assess WhatsApp/Telegram reactions, then
-   WhatsApp voice notes. The current helper explicitly rejects unsupported
-   operations; add backend behavior and isolated tests before enabling controls.
+1. **More service capabilities:** assess Telegram reactions and WhatsApp voice
+   notes. The current helper explicitly rejects unsupported operations; add
+   backend behavior and isolated tests before enabling controls.
 2. **Device readiness:** distinguish missing tools from unavailable cameras,
    microphone permissions, file portals, and locked keyrings. Never open a camera
    or record audio just because Settings was opened.

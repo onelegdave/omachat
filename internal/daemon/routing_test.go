@@ -79,7 +79,7 @@ func TestNetworkRoutingIsolation(t *testing.T) {
 	}
 
 	// 3. WhatsApp unsupported methods are explicitly rejected
-	for _, method := range []string{wire.MethodGaiaPairing, wire.MethodPairFromBrowser, wire.MethodListProfiles, wire.MethodReact} {
+	for _, method := range []string{wire.MethodGaiaPairing, wire.MethodPairFromBrowser, wire.MethodListProfiles} {
 		req := wire.Request{
 			ID:      "req-unsupported",
 			Network: wire.NetworkWhatsApp,

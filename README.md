@@ -123,7 +123,7 @@ start pairing again.
 | Send GIF files | Yes | Yes (ffmpeg) | No dedicated GIF sending support | Yes |
 | Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
 | GIPHY search | Optional personal API key | Optional personal API key + ffmpeg | Unavailable | Optional personal API key |
-| Reactions | Yes | Unavailable | Unavailable | Yes |
+| Reactions | Yes | Yes | Unavailable | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
 | Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable |

@@ -807,7 +807,14 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 		return fail(errors.New("browser profiles are not supported on WhatsApp"))
 
 	case wire.MethodReact:
-		return fail(errors.New("reactions are not supported on WhatsApp"))
+		p, err := decodeParams[wire.ReactParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err = d.wa.React(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
 
 	default:
 		return fail(fmt.Errorf("unknown method %q for network whatsapp", req.Method))

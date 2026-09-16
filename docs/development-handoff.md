@@ -107,7 +107,16 @@ download requests through the existing hardened daemon implementation. Selected
 GIFs are converted with ffmpeg and sent as the MP4 video messages with
 `gifPlayback=true` required by WhatsApp. Incoming GIF-playback videos retain
 that flag and render as inline looping animations instead of generic video
-buttons. A repeat live outbound and inbound WhatsApp GIF check remains next.
+buttons. The repeat live outbound and inbound WhatsApp GIF check passed.
+
+WhatsApp reactions are now routed through the native protocol backend. The
+local cache tracks per-participant reaction state so add, switch, removal, live
+incoming aggregation, and restart persistence remain consistent. Conversation
+names now upgrade persisted LID/number fallbacks from synced contacts, history,
+push names, and business names instead of remaining stuck at "WhatsApp User."
+Synthetic backend and QML coverage passes. The exact next work is a live check
+that a reaction reaches the phone and that the affected conversation shows its
+saved contact name after the updated helper starts.
 
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and

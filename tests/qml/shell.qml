@@ -375,9 +375,11 @@ ShellRoot {
     var waGif = inspect.findChild(waInbox, "gifButton")
     root.check(waMic && !waMic.visible && waMic.width === 0, "voice recording button is hidden on WhatsApp")
     root.check(waGif && waGif.visible && waGif.width > 0, "GIF search button is visible on WhatsApp")
+    root.check(waInbox.reactionsSupported, "WhatsApp message bubbles enable the reaction action")
 
     waInbox.react("wa-msg", "❤️")
-    root.check(waInbox.threadError === "Reactions are not supported for WhatsApp in this version.", "reacting on WhatsApp displays unsupported error")
+    var waReaction = fake.delayed.pop()
+    root.check(waReaction.method === "react" && waReaction.network === "whatsapp", "WhatsApp reaction is routed only to WhatsApp")
     waInbox.openGifPicker()
     root.check(fake.calls.some(function(c){ return c.method === "gifSearch" && c.network === "whatsapp" }), "WhatsApp GIF search uses the WhatsApp route")
     waInbox.startRecording()
