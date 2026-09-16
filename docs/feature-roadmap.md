@@ -25,9 +25,9 @@ dependencies does not add missing protocol support.
 
 ## Next priorities
 
-1. **Device readiness:** distinguish missing tools from unavailable cameras,
-   microphone permissions, file portals, and locked keyrings. Never open a camera
-   or record audio just because Settings was opened.
+1. **Device readiness:** distinguish missing tools from microphone permissions,
+   file portals, and locked keyrings. Never record audio just because Settings
+   was opened.
 
 Verify service-specific errors, reconnect behavior, network isolation, and
 cancellation using synthetic fixtures before any live send/pairing tests. Live

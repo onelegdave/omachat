@@ -1,7 +1,8 @@
 # OmaChat documentation
 
-Current user documentation describes OmaChat v0.3.13, a Native Omarchy Plugin
-for Google Messages, WhatsApp, Telegram, and Messenger.
+The current stable release is OmaChat v0.3.13. Documentation on the `dev`
+branch may also describe unreleased work intended for a later beta or stable
+release.
 
 - [Theme screenshots with fictional chats](screenshots/README.md)
 - [Marketplace readiness and review limits](marketplace-readiness.md)
@@ -12,6 +13,7 @@ for Google Messages, WhatsApp, Telegram, and Messenger.
 - [Google Messages setup and recovery](services/google-messages.md)
 - [WhatsApp setup and recovery](services/whatsapp.md)
 - [Telegram setup and recovery](services/telegram.md)
+- [Messenger setup, limitations, and recovery](services/messenger.md)
 - [Development and release workflow](../CONTRIBUTING.md)
 - [Security and local data](../SECURITY.md)
 - [Credits and third-party notices](../CREDITS.md)

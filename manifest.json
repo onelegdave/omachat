@@ -19,16 +19,10 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "cameraDevice": "/dev/video0",
       "audioDevice": "default",
       "normalizeVoice": true
     },
     "schema": [
-      {
-        "key": "cameraDevice",
-        "type": "string",
-        "label": "Webcam device for photo capture"
-      },
       {
         "key": "audioDevice",
         "type": "string",

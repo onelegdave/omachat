@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messeng
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current release: **0.3.13**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.13).
+Current stable release: **0.3.13**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.3.13).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -123,7 +123,7 @@ start pairing again.
 | Send GIF files | Yes | Yes (ffmpeg) | No dedicated GIF sending support | Yes |
 | Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
 | GIPHY search | Optional personal API key | Optional personal API key + ffmpeg | Unavailable | Optional personal API key |
-| Reactions | Yes | Yes | Unavailable | Yes |
+| Reactions | Yes | Yes | Yes (chat-dependent) | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
 | Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable |
@@ -247,11 +247,12 @@ Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
 
 The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin).
 Google Messages uses [mautrix libgm](https://github.com/mautrix/gmessages),
-WhatsApp uses [whatsmeow](https://github.com/tulir/whatsmeow), and Telegram uses
-[gotd/td](https://github.com/gotd/td).
+WhatsApp uses [whatsmeow](https://github.com/tulir/whatsmeow), Telegram uses
+[gotd/td](https://github.com/gotd/td), and Messenger uses
+[mautrix-meta](https://github.com/mautrix/meta).
 
 MIT for original OmaChat code. Vendored dependencies retain their own terms,
-including libgm's AGPL license and whatsmeow's MPL-2.0 license. See
+including the AGPL terms for libgm and mautrix-meta and the MPL-2.0 license for whatsmeow. See
 [Credits and third-party notices](CREDITS.md), [LICENSE](LICENSE), and [NOTICE](NOTICE).
 
 Other plugins: [OmaDroid](https://github.com/onelegdave/omadroid) and

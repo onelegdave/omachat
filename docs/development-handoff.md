@@ -149,20 +149,28 @@ Telegram reactions are now implemented through MTProto. Standard emoji
 reactions can be added, switched, and removed; history carries existing counts
 and current-user state, and live Telegram reaction updates replace the local
 optimistic result. The shared reaction action is enabled in the Telegram inbox.
-This backend and QML path has synthetic coverage and awaits a deliberate live
-phone check.
+This backend and QML path has synthetic coverage. OneLegDave then live-confirmed
+the Telegram reaction UI and result on the installed build.
 
 The helper connection screen now shows the same rotating glyph and moving
 activity bar used during builds, changes its status text to "Connecting to
 helper...", and hides Retry while startup or reconnection is in progress. This
 prevents repeated starts during an ordinary transient connection.
 
+A full product-claims audit then reconciled Settings, About, the README feature
+matrix, dependency guidance, and visible credits with the shipped code. It
+added the missing Telegram reaction claim and Messenger `mautrix-meta` credit,
+replaced overstated "read receipts" wording with mark-as-read, clarified
+Telegram credential network use and protocol limitations, and removed the
+unused webcam setting and dependency claim. A focused regression test now
+guards the highest-risk capability and credit claims.
+
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and
 `git diff --check`. A GIF chosen through search, the corrected reaction action,
-and the compatible WhatsApp voice fallback passed live. Telegram reactions and
-the helper-connection animation are the current live checks. No Messenger
-feature follow-up is currently selected.
+the compatible WhatsApp voice fallback passed live. Telegram reactions and the
+helper-connection presentation subsequently passed OneLegDave's visible check.
+No Messenger feature follow-up is currently selected.
 
 ## Runtime and data safety
 
