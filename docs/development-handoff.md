@@ -74,11 +74,10 @@ vendored `mautrix-meta` client. It currently includes:
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
-The active installed checkout was fast-forwarded to `081e75f` on 2026-09-16.
-The helper was rebuilt from vendored source during the feature pass, and the
-Omarchy shell was cleanly restarted after the reaction UI correction. The new
-shell-owned helper connected successfully and the Messenger tab visibly loaded
-live conversation data.
+The active installed checkout was fast-forwarded to `eca99a6` on 2026-09-16.
+The helper was rebuilt from vendored source, and the Omarchy shell was cleanly
+restarted after typing support was removed. The new shell-owned helper connected
+successfully and the Messenger tab visibly loaded live conversation data.
 
 The 2026-09-16 live parity pass confirmed that a video-backed Messenger GIF
 stays inline and loops, a new incoming reply appears without sending or
