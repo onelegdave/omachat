@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	appStore "github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/wire"
@@ -154,6 +155,16 @@ func TestHandleTableIncludesHistoricalUpserts(t *testing.T) {
 	}
 	if got[0].Timestamp != 1_700_000_000_123_000 {
 		t.Fatalf("timestamp = %d, want microseconds", got[0].Timestamp)
+	}
+}
+
+func TestMessengerTimeTimestampUsesWireMicroseconds(t *testing.T) {
+	timestamp := time.Date(2026, time.September, 15, 22, 30, 45, 123456000, time.UTC)
+	if got, want := messengerTimeTimestamp(timestamp), timestamp.UnixMicro(); got != want {
+		t.Fatalf("timestamp = %d, want microseconds %d", got, want)
+	}
+	if got := messengerTimeTimestamp(timestamp); got < 1_000_000_000_000_000 {
+		t.Fatalf("timestamp = %d, looks like milliseconds and would render near 1970", got)
 	}
 }
 

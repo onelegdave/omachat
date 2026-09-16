@@ -428,7 +428,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		}
 		b.addMessageLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "")
 		conv := b.convs[key]
-		conv.Preview, conv.Timestamp, conv.Unread = text, evt.Info.Timestamp.UnixMicro(), !evt.Info.IsFromMe
+		conv.Preview, conv.Timestamp, conv.Unread = text, messengerTimeTimestamp(evt.Info.Timestamp), !evt.Info.IsFromMe
 		b.convs[key] = conv
 		b.recountUnreadLocked()
 		b.mu.Unlock()
@@ -442,6 +442,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 func messengerTimestamp(milliseconds int64) int64 {
 	return milliseconds * int64(time.Millisecond/time.Microsecond)
 }
+func messengerTimeTimestamp(timestamp time.Time) int64 { return timestamp.UnixMicro() }
 func fbText(evt *events.FBMessage) string {
 	consumer, ok := evt.Message.(*waConsumerApplication.ConsumerApplication)
 	if !ok {
@@ -572,9 +573,9 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, e
 			}
 		}
 	}
-	msg := wire.Message{TmpID: p.TmpID, ID: id, ConversationID: p.ConversationID, Text: text, Timestamp: ts.UnixMilli(), FromMe: true, SenderID: strconv.FormatInt(self, 10), Delivery: wire.DeliverySent}
+	msg := wire.Message{TmpID: p.TmpID, ID: id, ConversationID: p.ConversationID, Text: text, Timestamp: messengerTimeTimestamp(ts), FromMe: true, SenderID: strconv.FormatInt(self, 10), Delivery: wire.DeliverySent}
 	b.mu.Lock()
-	b.addMessageLocked(thread, id, text, msg.Timestamp, self, false, p.ReplyToID)
+	b.addMessageLocked(thread, id, text, ts.UnixMilli(), self, false, p.ReplyToID)
 	if c, ok := b.convs[p.ConversationID]; ok {
 		c.Preview = text
 		c.PreviewMine = true
