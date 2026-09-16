@@ -74,12 +74,14 @@ vendored `mautrix-meta` client. It currently includes:
 - an inline infinite-loop player for video-backed GIF messages; and
 - explicit notices when older encrypted history is unavailable.
 
-The active installed checkout was fast-forwarded to `c05462d` on 2026-09-16.
-The helper was rebuilt from vendored source, and the Omarchy shell was cleanly
-restarted after Telegram reactions and the helper-connection feedback were
-installed. The new shell-owned helper (PID `81867`) reported source fingerprint
-`940f20c58f92f60e1e9464a4bd7ee792d6df96a5f29d12e4998717119a163aec`
-through the live owner-only socket, and Telegram reported connected. OneLegDave
+The active installed checkout was fast-forwarded to audited feature commit
+`ce87bb5` on 2026-09-16. The helper was rebuilt from vendored source, and the
+Omarchy shell was cleanly restarted after the Settings, About, manifest, and
+documentation audit was installed. The new shell-owned helper (PID `2738608`)
+reported source fingerprint
+`248ea2d5890603561bde8a905af4e43dcd7d044e43d759c5e8925be6bde45cd2`
+through the live owner-only socket. Google Messages, WhatsApp, Telegram, and
+Messenger all reported connected after restart. OneLegDave
 already live-confirmed the cross-service notification badges and subsequently
 confirmed that the cross-platform WhatsApp audio fallback plays successfully
 on the previously failing iPhone.
@@ -202,10 +204,10 @@ go test -race -mod=vendor -count=1 ./...
 git diff --check
 ```
 
-At handoff update on 2026-09-16, every command above passed on `dev`. The exact
-feature commit was installed, its helper fingerprint matched the source, and
-Telegram reported connected. No message or reaction was sent as part of those
-checks.
+At handoff update on 2026-09-16, every command above passed on `dev`, including
+the product-claims regression test. The exact audited feature commit was
+installed, its helper fingerprint matched the source, and all four services
+reported connected. No message or reaction was sent as part of those checks.
 
 `make test-ui` uses synthetic content. Save screenshots only to a temporary
 artifact directory, inspect them, and remove them after review. A live
