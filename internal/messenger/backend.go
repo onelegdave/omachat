@@ -38,6 +38,8 @@ import (
 
 var ErrNotConfigured = errors.New("Messenger client not configured")
 
+const unsupportedMessageText = "Unsupported Messenger message. Open Messenger to view it."
+
 type sessionData struct {
 	Cookies map[string]string `json:"cookies"`
 }
@@ -346,6 +348,9 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	for _, m := range tbl.LSDeleteThenInsertMessage {
 		b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId)
 	}
+	for _, m := range tbl.LSUpsertMessage {
+		b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId)
+	}
 	for _, m := range tbl.LSInsertMessage {
 		b.addMessageLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId)
 	}
@@ -376,14 +381,17 @@ func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS 
 	// Messenger picture URLs are remote. Keep them out of AvatarPath, which is
 	// reserved for daemon-controlled local files.
 	_ = avatar
-	b.convs[key] = wire.Conversation{ID: key, Name: name, Preview: preview, Timestamp: ts, Unread: unread, IsGroup: group, ReadOnly: readOnly, AvatarColor: "#0084ff", Initials: initials(name)}
+	b.convs[key] = wire.Conversation{ID: key, Name: name, Preview: preview, Timestamp: messengerTimestamp(ts), Unread: unread, IsGroup: group, ReadOnly: readOnly, AvatarColor: "#0084ff", Initials: initials(name)}
 }
 func (b *Backend) addMessageLocked(thread int64, id, text string, ts, sender int64, deleted bool, reply string) {
 	if id == "" {
 		return
 	}
+	if !deleted && strings.TrimSpace(text) == "" {
+		text = unsupportedMessageText
+	}
 	key := strconv.FormatInt(thread, 10)
-	msg := wire.Message{ID: id, ConversationID: key, Text: text, Timestamp: ts, FromMe: sender == b.selfID, SenderID: strconv.FormatInt(sender, 10), Deleted: deleted, ReplyToID: reply}
+	msg := wire.Message{ID: id, ConversationID: key, Text: text, Timestamp: messengerTimestamp(ts), FromMe: sender == b.selfID, SenderID: strconv.FormatInt(sender, 10), Deleted: deleted, ReplyToID: reply}
 	list := b.messages[key]
 	for i := range list {
 		if list[i].ID == id {
@@ -401,7 +409,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 	case *events.FBMessage:
 		text := fbText(evt)
 		if text == "" {
-			text = "Unsupported Messenger message. Open Messenger to view it."
+			text = unsupportedMessageText
 		}
 		jid := evt.Info.Chat.ToNonAD()
 		b.mu.Lock()
@@ -418,7 +426,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		}
 		b.addMessageLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "")
 		conv := b.convs[key]
-		conv.Preview, conv.Timestamp, conv.Unread = text, evt.Info.Timestamp.UnixMilli(), !evt.Info.IsFromMe
+		conv.Preview, conv.Timestamp, conv.Unread = text, evt.Info.Timestamp.UnixMicro(), !evt.Info.IsFromMe
 		b.convs[key] = conv
 		b.recountUnreadLocked()
 		b.mu.Unlock()
@@ -428,6 +436,9 @@ func (b *Backend) handleE2EEEvent(raw any) {
 	case *events.Disconnected:
 		b.setState(wire.StateDisconnected, "Messenger encrypted transport disconnected")
 	}
+}
+func messengerTimestamp(milliseconds int64) int64 {
+	return milliseconds * int64(time.Millisecond/time.Microsecond)
 }
 func fbText(evt *events.FBMessage) string {
 	consumer, ok := evt.Message.(*waConsumerApplication.ConsumerApplication)

@@ -11,6 +11,7 @@ import (
 	"github.com/onelegdave/omachat/internal/wire"
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-meta/pkg/messagix"
+	"go.mau.fi/mautrix-meta/pkg/messagix/table"
 	waStore "go.mau.fi/whatsmeow/store"
 	waTypes "go.mau.fi/whatsmeow/types"
 )
@@ -134,5 +135,36 @@ func TestEnsureMessengerSQLiteFileIsPrivate(t *testing.T) {
 	}
 	if err := ensureMessengerSQLiteFile(link); err == nil {
 		t.Fatal("expected Messenger database symlink to be rejected")
+	}
+}
+
+func TestHandleTableIncludesHistoricalUpserts(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.selfID = 42
+	b.handleTable(&table.LSTable{LSUpsertMessage: []*table.LSUpsertMessage{
+		{ThreadKey: 7, MessageId: "history-1", Text: "historical text", TimestampMs: 1_700_000_000_123, SenderId: 42},
+	}})
+
+	got := b.messages["7"]
+	if len(got) != 1 {
+		t.Fatalf("historical upsert count = %d, want 1", len(got))
+	}
+	if got[0].Text != "historical text" || !got[0].FromMe {
+		t.Fatalf("historical upsert mapped incorrectly: %#v", got[0])
+	}
+	if got[0].Timestamp != 1_700_000_000_123_000 {
+		t.Fatalf("timestamp = %d, want microseconds", got[0].Timestamp)
+	}
+}
+
+func TestHandleTableLabelsUnsupportedHistory(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.handleTable(&table.LSTable{LSUpsertMessage: []*table.LSUpsertMessage{
+		{ThreadKey: 8, MessageId: "history-media", TimestampMs: 1_700_000_000_123, SenderId: 9},
+	}})
+
+	got := b.messages["8"]
+	if len(got) != 1 || got[0].Text != unsupportedMessageText {
+		t.Fatalf("unsupported historical message = %#v", got)
 	}
 }
