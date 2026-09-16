@@ -394,17 +394,30 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, t.UnreadMessageCount > 0, messengerGroupThread(t.ThreadType, t.MemberCount), t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
 	}
 	for _, t := range tbl.LSUpdateOrInsertThread {
-		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, false, messengerGroupThread(t.ThreadType, 0), t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
+		unread := t.LastActivityTimestampMs > t.LastReadWatermarkTimestampMs
+		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, unread, messengerGroupThread(t.ThreadType, 0), t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
 	}
 	attachments := b.tableAttachmentsLocked(tbl)
 	for _, m := range tbl.LSDeleteThenInsertMessage {
-		queue(b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId]))
+		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		b.applyLiveMessageUnreadLocked(msg)
+		queue(msg)
 	}
 	for _, m := range tbl.LSUpsertMessage {
-		queue(b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId]))
+		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		b.applyLiveMessageUnreadLocked(msg)
+		queue(msg)
 	}
 	for _, m := range tbl.LSInsertMessage {
-		queue(b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId]))
+		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		b.applyLiveMessageUnreadLocked(msg)
+		queue(msg)
+	}
+	for _, read := range tbl.LSMarkThreadRead {
+		b.clearUnreadLocked(read.ThreadKey)
+	}
+	for _, read := range tbl.LSMarkThreadReadV2 {
+		b.clearUnreadLocked(read.ThreadKey)
 	}
 	for messageID, media := range attachments {
 		for conversationID, list := range b.messages {
@@ -714,6 +727,34 @@ func (b *Backend) addMessageWithAttachmentsLocked(thread int64, id, text string,
 	b.messages[key] = append(list, msg)
 	sort.Slice(b.messages[key], func(i, j int) bool { return b.messages[key][i].Timestamp < b.messages[key][j].Timestamp })
 	return msg
+}
+
+func (b *Backend) applyLiveMessageUnreadLocked(msg wire.Message) {
+	if msg.ID == "" || msg.FromMe {
+		return
+	}
+	conv, ok := b.convs[msg.ConversationID]
+	if !ok || msg.Timestamp <= conv.Timestamp {
+		return
+	}
+	conv.Timestamp = msg.Timestamp
+	conv.Preview = msg.Text
+	if conv.Preview == "" && len(msg.Attachments) > 0 {
+		conv.Preview = "Attachment"
+	}
+	conv.PreviewMine = false
+	conv.Unread = true
+	b.convs[msg.ConversationID] = conv
+}
+
+func (b *Backend) clearUnreadLocked(thread int64) {
+	key := strconv.FormatInt(thread, 10)
+	conv, ok := b.convs[key]
+	if !ok {
+		return
+	}
+	conv.Unread = false
+	b.convs[key] = conv
 }
 
 func (b *Backend) handleE2EEEvent(raw any) {

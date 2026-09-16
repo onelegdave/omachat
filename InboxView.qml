@@ -679,10 +679,6 @@ Item {
   }
 
   function startRecording() {
-    if (root.isWhatsApp) {
-      threadError = "Voice messages are not supported for " + root.networkLabel + " in this version."
-      return
-    }
     if (recording || selectedConvID === "") return
     emojiPickerOpen = false
     gifPickerOpen = false
@@ -691,7 +687,7 @@ Item {
     pendingAttachment = ""
     pendingVoiceSeconds = 0
     recordSeconds = 0
-    voicePath = captureDir + "/voice-" + Date.now() + (root.isTelegram ? ".ogg" : ".m4a")
+    voicePath = captureDir + "/voice-" + Date.now() + ((root.isTelegram || root.isWhatsApp) ? ".ogg" : ".m4a")
     mkdirCache.running = false
     mkdirCache.running = true
   }
@@ -705,7 +701,7 @@ Item {
     if (setting("normalizeVoice", true) !== false && setting("normalizeVoice", true) !== "false") {
       cmd.push("-af", "highpass=f=80,speechnorm=e=12.5:r=0.00025:l=1")
     }
-    if (root.isTelegram)
+    if (root.isTelegram || root.isWhatsApp)
       cmd.push("-c:a", "libopus", "-b:a", "32k", "-application", "voip", "-f", "ogg")
     else
       cmd.push("-c:a", "aac", "-b:a", "96k")
@@ -1966,7 +1962,7 @@ Item {
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Microphone"
-        visible: !root.isWhatsApp
+        visible: true
         anchors.left: attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter

@@ -549,6 +549,9 @@ func TestTelegramIncomingMessageUpdatesCacheAndPublishes(t *testing.T) {
 	if len(convs) != 1 || convs[0].ID != "tg:7" || convs[0].Preview != "live" || !convs[0].Unread {
 		t.Fatalf("unexpected incoming conversation: %+v", convs)
 	}
+	if got := b.Status().Unread; got != 1 {
+		t.Fatalf("Telegram unread status = %d, want 1", got)
+	}
 	result, err := b.Messages(context.Background(), wire.MessagesParams{ConversationID: "tg:7"})
 	if err != nil || len(result.Messages) != 1 || result.Messages[0].ID != "tg:9" {
 		t.Fatalf("unexpected incoming message cache: %+v err=%v", result.Messages, err)
@@ -560,6 +563,22 @@ func TestTelegramIncomingMessageUpdatesCacheAndPublishes(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("incoming message event was not published")
+	}
+	seenConversation, seenStatus := false, false
+	for i := 0; i < 2; i++ {
+		select {
+		case event := <-events:
+			seenConversation = seenConversation || event.Event == wire.EventConversation
+			if event.Event == wire.EventStatus {
+				status, ok := event.Data.(wire.Status)
+				seenStatus = ok && status.Unread == 1
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for Telegram unread snapshots")
+		}
+	}
+	if !seenConversation || !seenStatus {
+		t.Fatalf("missing Telegram unread events: conversation=%v status=%v", seenConversation, seenStatus)
 	}
 	if _, err := os.Stat(paths.TelegramStoreFile()); err != nil {
 		t.Fatalf("incoming message was not persisted: %v", err)

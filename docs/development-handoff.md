@@ -116,9 +116,17 @@ local cache tracks per-participant reaction state so add, switch, removal, live
 incoming aggregation, and restart persistence remain consistent. Conversation
 names now upgrade persisted LID/number fallbacks from synced contacts, history,
 push names, and business names instead of remaining stuck at "WhatsApp User."
-Synthetic backend and QML coverage passes. The exact next work is a live check
-that a reaction reaches the phone and that the affected conversation shows its
-saved contact name after the updated helper starts.
+Synthetic backend and QML coverage passes. OneLegDave live-confirmed that a
+reaction reaches the phone and that the conversation list shows the saved name.
+
+WhatsApp now records OGG/Opus voice notes and sends them as native PTT audio.
+Telegram publishes live conversation and unread-status updates, and Messenger
+marks newer ordinary incoming message rows unread while honoring provider read
+watermarks. The shared service also derives a safe unread fallback from its
+conversation models. The top-bar badge therefore aggregates all enabled
+services, and each in-app service tab receives its own red unread badge. The
+exact next work is live confirmation of WhatsApp voice-note delivery plus
+Messenger and Telegram bar/tab badges from real incoming messages.
 
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and

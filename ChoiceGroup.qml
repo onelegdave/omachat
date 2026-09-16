@@ -20,6 +20,7 @@ Flow {
     model: root.options
     Button {
       id: choice
+      objectName: modelData.unread !== undefined ? "serviceTab-" + optionValue : ""
       required property var modelData
       readonly property string optionValue: String(modelData.value)
       readonly property bool checked: optionValue === root.value
@@ -35,6 +36,29 @@ Flow {
       accent: Model.readableInk(color, root.accent)
       borderSpec: Border.controlSpec(checked ? "selected" : "normal", foreground, accent)
       onClicked: root.changed(optionValue)
+
+      Rectangle {
+        objectName: choice.modelData.unread !== undefined ? "serviceTabBadge-" + choice.optionValue : ""
+        visible: Number(choice.modelData.unread || 0) > 0
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.rightMargin: -Style.space(3)
+        anchors.topMargin: -Style.space(3)
+        width: Math.max(Style.space(14), serviceBadgeText.implicitWidth + Style.space(6))
+        height: Style.space(14)
+        radius: height / 2
+        color: Color.urgent
+
+        Text {
+          id: serviceBadgeText
+          anchors.centerIn: parent
+          text: Number(choice.modelData.unread || 0) > 9 ? "9+" : String(Number(choice.modelData.unread || 0))
+          color: Model.readableInk(parent.color, Color.background)
+          font.family: root.fontFamily
+          font.pixelSize: Style.space(9)
+          font.bold: true
+        }
+      }
     }
   }
 }

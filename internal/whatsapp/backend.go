@@ -883,7 +883,6 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (wire.Message, er
 	if timestamp == 0 {
 		timestamp = time.Now().UnixMicro()
 	}
-
 	out := wire.Message{
 		ID:             resp.ID,
 		TmpID:          p.TmpID,
@@ -1020,7 +1019,7 @@ func reactionsFromActors(actors map[string]string) []wire.Reaction {
 	return out
 }
 
-// SendMedia uploads an image or GIF file and sends it to a WhatsApp chat.
+// SendMedia uploads an image, GIF, or Opus voice note to a WhatsApp chat.
 func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.SendMediaResult, error) {
 	b.mu.RLock()
 	cli := b.client
@@ -1049,27 +1048,45 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 		return wire.SendMediaResult{}, fmt.Errorf("read media file: %w", err)
 	}
 
-	// Validate exact supported image types and dimensions
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		// Allow webp magic detection if standard decoder lacks it
-		if bytes.HasPrefix(data, []byte("RIFF")) && len(data) >= 12 && string(data[8:12]) == "WEBP" {
-			format = "webp"
-		} else {
-			return wire.SendMediaResult{}, fmt.Errorf("unsupported image format: %w", err)
+	ext := strings.ToLower(filepath.Ext(cleanPath))
+	isVoice := ext == ".ogg" || ext == ".opus"
+	var cfg image.Config
+	format := ""
+	if isVoice {
+		probe := data
+		if len(probe) > 64*1024 {
+			probe = probe[:64*1024]
+		}
+		if len(data) < 4 || string(data[:4]) != "OggS" || !bytes.Contains(probe, []byte("OpusHead")) {
+			return wire.SendMediaResult{}, errors.New("WhatsApp voice note must be an Ogg Opus file")
 		}
 	} else {
-		if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxImageDimensionPixel || cfg.Height > maxImageDimensionPixel {
-			return wire.SendMediaResult{}, fmt.Errorf("invalid image dimensions: %dx%d", cfg.Width, cfg.Height)
+		// Validate exact supported image types and dimensions.
+		cfg, format, err = image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			// Allow webp magic detection if standard decoder lacks it.
+			if bytes.HasPrefix(data, []byte("RIFF")) && len(data) >= 12 && string(data[8:12]) == "WEBP" {
+				format = "webp"
+			} else {
+				return wire.SendMediaResult{}, fmt.Errorf("unsupported image format: %w", err)
+			}
+		} else {
+			if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxImageDimensionPixel || cfg.Height > maxImageDimensionPixel {
+				return wire.SendMediaResult{}, fmt.Errorf("invalid image dimensions: %dx%d", cfg.Width, cfg.Height)
+			}
 		}
 	}
 
-	mimeType := "image/" + format
-	if format == "jpg" {
+	mimeType := "audio/ogg; codecs=opus"
+	mediaType := whatsmeow.MediaAudio
+	if !isVoice {
+		mimeType = "image/" + format
+		mediaType = whatsmeow.MediaImage
+	}
+	if !isVoice && format == "jpg" {
 		mimeType = "image/jpeg"
 	}
 	isGIF := format == "gif"
-	mediaType := whatsmeow.MediaImage
 	if isGIF {
 		data, err = b.convertGIF(ctx, cleanPath)
 		if err != nil {
@@ -1093,7 +1110,18 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 	}
 
 	waMsg := &waE2E.Message{}
-	if isGIF {
+	if isVoice {
+		waMsg.AudioMessage = &waE2E.AudioMessage{
+			Mimetype:      proto.String(mimeType),
+			PTT:           proto.Bool(true),
+			URL:           &uploadResp.URL,
+			DirectPath:    &uploadResp.DirectPath,
+			MediaKey:      uploadResp.MediaKey,
+			FileEncSHA256: uploadResp.FileEncSHA256,
+			FileSHA256:    uploadResp.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		}
+	} else if isGIF {
 		waMsg.VideoMessage = &waE2E.VideoMessage{
 			Caption:       proto.String(p.Caption),
 			Mimetype:      proto.String(mimeType),
@@ -1129,12 +1157,16 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 	if timestamp == 0 {
 		timestamp = time.Now().UnixMicro()
 	}
+	outText := p.Caption
+	if isVoice {
+		outText = ""
+	}
 
 	out := wire.Message{
 		ID:             resp.ID,
 		TmpID:          p.TmpID,
 		ConversationID: p.ConversationID,
-		Text:           p.Caption,
+		Text:           outText,
 		Timestamp:      timestamp,
 		FromMe:         true,
 		Delivery:       wire.DeliverySent,
@@ -1146,9 +1178,10 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 				Size:     int64(len(data)),
 				Width:    int64(cfg.Width),
 				Height:   int64(cfg.Height),
-				IsImage:  !isGIF,
+				IsImage:  !isGIF && !isVoice,
 				IsGif:    isGIF,
 				IsVideo:  isGIF,
+				IsAudio:  isVoice,
 			},
 		},
 	}

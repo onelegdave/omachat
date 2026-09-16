@@ -51,7 +51,7 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 | Google browser pairing | Supported Chromium-family browser signed in at Messages for web; `sqlite3` and `secret-tool` (libsecret) for cookie access; unlocked desktop keyring |
 | WhatsApp pairing | WhatsApp phone app with Linked devices; `qrencode` |
 | Telegram setup | Personal `api_id` and `api_hash`; Python 3 for `scripts/configure-telegram.py`; Telegram phone app and `qrencode` |
-| Google/Telegram/Messenger voice notes | `ffmpeg` to record and `ffplay` to play audio |
+| Voice notes on all services | `ffmpeg` to record and `ffplay` to play audio |
 | WhatsApp GIF sending | `ffmpeg` to convert GIF files to WhatsApp's MP4 playback format |
 | Webcam photo capture | `ffmpeg` and an accessible camera device |
 | File selection | Working desktop portal and its file-picker backend |
@@ -60,8 +60,7 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 | Google/WhatsApp/Messenger GIPHY search | Your own GIPHY API key entered in Settings |
 
 For example, if you want voice notes, you can run `omarchy pkg add ffmpeg`
-yourself. Text and photos do not need voice tools. WhatsApp voice notes remain
-unavailable even when those tools are installed. Installing a tool does not
+yourself. Text and photos do not need voice tools. Installing a tool does not
 enable an unsupported service feature.
 
 Desktop packages vary. Accounts, API credentials, pairing, and optional features

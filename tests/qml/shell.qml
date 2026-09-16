@@ -34,6 +34,7 @@ ShellRoot {
   property string state: "connected"
   property var status: ({phoneOK:true, state:"connected"})
   property var statusWA: ({phoneOK:true, state:"connected"})
+  property var statusTG: ({phoneOK:true, state:"unpaired"})
   property var statusFB: ({phoneOK:true, state:"unpaired"})
   property int unread: 0
   property string refreshError: ""
@@ -57,7 +58,10 @@ ShellRoot {
   function statusFor(net) { return net === "whatsapp" ? statusWA : (net === "messenger" ? statusFB : status) }
   function stateFor(net) { var s = statusFor(net); return s && s.state ? s.state : state }
   function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : (net === "messenger" ? conversationsFB : conversations) }
-  function unreadFor(net) { return 0 }
+  function unreadFor(net) {
+    var s = net === "telegram" ? statusTG : statusFor(net)
+    return s && s.unread ? s.unread : 0
+  }
   function loadConversations(net) {}
   function loadProfiles() {}
   function refreshConversations(net) { calls.push({method:"refresh", network:net || "gmessages"}) }
@@ -316,6 +320,7 @@ ShellRoot {
     root.check(inspect.findChild(original,"threadErrorLabel").text === "Refresh failed", "thread success does not erase inbox refresh failure")
     fake.refreshError=""
     root.check(inspect.findChild(original,"threadErrorLabel").text === "", "next refresh clears the previous failure")
+    panel.activeService="gmessages"
     var unpairButton=inspect.findChild(panel,"unpairButton")
     panel.settingsOpen=true
     unpairButton.clicked()
@@ -373,7 +378,7 @@ ShellRoot {
     waInbox.selectConversation("wa-1@s.whatsapp.net")
     var waMic = inspect.findChild(waInbox, "micButton")
     var waGif = inspect.findChild(waInbox, "gifButton")
-    root.check(waMic && !waMic.visible && waMic.width === 0, "voice recording button is hidden on WhatsApp")
+    root.check(waMic && waMic.visible && waMic.width > 0, "voice recording button is visible on WhatsApp")
     root.check(waGif && waGif.visible && waGif.width > 0, "GIF search button is visible on WhatsApp")
     root.check(waInbox.reactionsSupported, "WhatsApp message bubbles enable the reaction action")
 
@@ -382,8 +387,10 @@ ShellRoot {
     root.check(waReaction.method === "react" && waReaction.network === "whatsapp", "WhatsApp reaction is routed only to WhatsApp")
     waInbox.openGifPicker()
     root.check(fake.calls.some(function(c){ return c.method === "gifSearch" && c.network === "whatsapp" }), "WhatsApp GIF search uses the WhatsApp route")
-    waInbox.startRecording()
-    root.check(waInbox.threadError === "Voice messages are not supported for WhatsApp in this version.", "voice recording on WhatsApp displays unsupported error")
+    fake.statusTG = {phoneOK:true, state:"connected", unread:2}
+    root.check(panel.serviceTabs.some(function(tab){ return tab.value === "telegram" && tab.unread === 2 }), "Telegram unread count reaches the service tab model")
+    var serviceTabs = inspect.findChild(panel, "serviceTabs")
+    root.check(serviceTabs && serviceTabs.options.some(function(tab){ return tab.value === "telegram" && tab.unread === 2 }), "inactive Telegram service tab receives its unread badge")
 
     // Test WhatsApp unpair phone advice
     panel.unpair()
@@ -488,8 +495,10 @@ ShellRoot {
     var tel = fake.calls[fake.calls.length-1]
     root.check(tel.network === "telegram", "explicit unknown network is not rewritten to google")
     fake.enabledServices = ["gmessages","whatsapp","telegram","messenger"]
-    fake.statusFB = {phoneOK:true, state:"connected"}
+    fake.statusFB = {phoneOK:true, state:"connected", unread:1}
     panel.syncActiveService()
+	serviceTabs = inspect.findChild(panel, "serviceTabs")
+	root.check(serviceTabs && serviceTabs.options.some(function(tab){ return tab.value === "messenger" && tab.unread === 1 }), "inactive Messenger service tab receives its unread badge")
     panel.setActiveService("messenger")
     var fbInbox = inspect.findChild(panel, "inboxLoader").item
     root.check(fbInbox && fbInbox.isMessenger && fbInbox.network === "messenger", "Messenger tab opens an isolated native inbox")

@@ -234,6 +234,30 @@ func TestHandleTableAppliesMessengerReactions(t *testing.T) {
 	}
 }
 
+func TestMessengerLiveMessageUpdatesUnreadStatus(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.selfID = 1
+	b.handleTable(&table.LSTable{LSUpdateOrInsertThread: []*table.LSUpdateOrInsertThread{{
+		ThreadKey: 7, ThreadName: "Alice", LastActivityTimestampMs: 1000, LastReadWatermarkTimestampMs: 1000,
+	}}})
+	if got := b.Status().Unread; got != 0 {
+		t.Fatalf("initial unread = %d", got)
+	}
+	b.handleTable(&table.LSTable{LSInsertMessage: []*table.LSInsertMessage{{
+		ThreadKey: 7, MessageId: "live-1", Text: "new", TimestampMs: 2000, SenderId: 2,
+	}}})
+	if got := b.Status().Unread; got != 1 {
+		t.Fatalf("unread after live message = %d", got)
+	}
+	if conv := b.Conversations(1)[0]; !conv.Unread || conv.Preview != "new" {
+		t.Fatalf("conversation after live message = %+v", conv)
+	}
+	b.handleTable(&table.LSTable{LSMarkThreadRead: []*table.LSMarkThreadRead{{ThreadKey: 7, LastReadWatermarkTimestampMs: 2000}}})
+	if got := b.Status().Unread; got != 0 {
+		t.Fatalf("unread after read watermark = %d", got)
+	}
+}
+
 func TestHandleTablePreservesAndDeletesAggregateReactions(t *testing.T) {
 	b := New(zerolog.Nop(), nil, nil)
 	b.handleTable(&table.LSTable{

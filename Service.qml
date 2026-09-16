@@ -204,7 +204,13 @@ Item {
   function unreadFor(net) {
     if (!isServiceEnabled(net)) return 0
     var s = statusFor(net)
-    return s && s.unread ? s.unread : 0
+    var statusUnread = s && s.unread ? Number(s.unread) : 0
+    var list = conversationsFor(net)
+    var conversationUnread = 0
+    if (Array.isArray(list)) {
+      for (var i = 0; i < list.length; i++) if (list[i] && list[i].unread === true) conversationUnread++
+    }
+    return Math.max(statusUnread, conversationUnread)
   }
   function conversationsFor(net) {
     if (net === "whatsapp") return root.conversationsWA

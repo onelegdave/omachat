@@ -412,6 +412,51 @@ func TestWhatsAppSendMediaGIFAsPlaybackVideo(t *testing.T) {
 	}
 }
 
+func TestWhatsAppSendMediaVoiceAsPTTOpus(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	backend.setState(wire.StateConnected, "")
+
+	voicePath := filepath.Join(t.TempDir(), "voice-123.ogg")
+	voiceBytes := append([]byte("OggS"), []byte("synthetic-OpusHead-audio")...)
+	if err := os.WriteFile(voicePath, voiceBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var uploadedType whatsmeow.MediaType
+	var sent *waE2E.Message
+	mock.UploadFunc = func(_ context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
+		uploadedType = appInfo
+		if string(plaintext) != string(voiceBytes) {
+			t.Fatalf("uploaded voice bytes = %q", plaintext)
+		}
+		return whatsmeow.UploadResponse{URL: "https://mock.whatsapp.net/voice", DirectPath: "/direct/voice"}, nil
+	}
+	mock.SendMessageFunc = func(_ context.Context, _ types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+		sent = message
+		return whatsmeow.SendResponse{ID: "server-voice-id", Timestamp: time.Now()}, nil
+	}
+
+	res, err := backend.SendMedia(ctx, wire.SendMediaParams{TmpID: "tmp-voice-1", ConversationID: "15559876543@s.whatsapp.net", Path: voicePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploadedType != whatsmeow.MediaAudio || sent.GetAudioMessage() == nil {
+		t.Fatalf("voice transport type=%v message=%+v", uploadedType, sent)
+	}
+	audio := sent.GetAudioMessage()
+	if !audio.GetPTT() || audio.GetMimetype() != "audio/ogg; codecs=opus" {
+		t.Fatalf("WhatsApp voice payload = %+v", audio)
+	}
+	if res.Message == nil || res.Message.Text != "" || len(res.Message.Attachments) != 1 || !res.Message.Attachments[0].IsAudio {
+		t.Fatalf("voice result = %+v", res)
+	}
+}
+
 func TestWhatsAppIncomingGIFPlaybackStaysInline(t *testing.T) {
 	msg := &waE2E.Message{VideoMessage: &waE2E.VideoMessage{
 		Mimetype: proto.String("video/mp4"), GifPlayback: proto.Bool(true),

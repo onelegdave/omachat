@@ -47,9 +47,34 @@ Panel {
     { value: "telegram", label: "Telegram", icon: "\uf2c6", tooltip: "Telegram" },
     { value: "messenger", label: "Messenger", icon: "󰈎", tooltip: "Facebook Messenger" }
   ]
-  readonly property var serviceTabs: allServiceTabs.filter(function(tab) {
+  property int unreadRevision: 0
+  readonly property var serviceTabs: {
+    var revision = unreadRevision
+    return allServiceTabs.filter(function(tab) {
     return !root.service || !Array.isArray(root.service.enabledServices) || root.service.enabledServices.indexOf(tab.value) >= 0
-  })
+    }).map(function(tab) {
+      return {
+        value: tab.value,
+        label: tab.label,
+        icon: tab.icon,
+        tooltip: tab.tooltip,
+        unread: root.service && typeof root.service.unreadFor === "function" ? root.service.unreadFor(tab.value) : 0
+      }
+    })
+  }
+
+  Connections {
+    target: root.service
+    ignoreUnknownSignals: true
+    function onStatusChanged() { root.unreadRevision++ }
+    function onStatusWAChanged() { root.unreadRevision++ }
+    function onStatusTGChanged() { root.unreadRevision++ }
+    function onStatusFBChanged() { root.unreadRevision++ }
+    function onConversationsChanged() { root.unreadRevision++ }
+    function onConversationsWAChanged() { root.unreadRevision++ }
+    function onConversationsTGChanged() { root.unreadRevision++ }
+    function onConversationsFBChanged() { root.unreadRevision++ }
+  }
   readonly property bool noServices: serviceTabs.length === 0
   onServiceTabsChanged: syncActiveService()
   function syncActiveService() {
@@ -652,6 +677,7 @@ Panel {
         }
 
         ChoiceGroup {
+          objectName: "serviceTabs"
           width: parent.width
           options: root.serviceTabs
           value: root.activeService

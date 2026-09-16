@@ -104,6 +104,7 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event), cf
 				b.convs[id] = conv
 			}
 		}
+		b.recountUnreadLocked()
 	}
 	return b
 }
@@ -476,12 +477,15 @@ func (b *Backend) ingestMessageFor(msg Message, epoch uint64) error {
 	conv := b.convs[conversationID]
 	conv.Preview, conv.Timestamp, conv.Unread = msg.Text, msg.Timestamp, !msg.FromMe
 	b.convs[conversationID] = conv
+	b.recountUnreadLocked()
 	if err := b.saveLocked(); err != nil {
 		b.log.Warn().Err(err).Msg("Could not save Telegram chat cache")
 	}
 	// Publish before releasing mu so a later unpair status cannot be overtaken.
 	if b.publish != nil {
 		b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkTelegram, Data: converted})
+		b.publish(wire.Event{Event: wire.EventConversation, Network: wire.NetworkTelegram, Data: conv})
+		b.publish(wire.Event{Event: wire.EventStatus, Network: wire.NetworkTelegram, Data: b.status})
 	}
 	return nil
 }
@@ -512,6 +516,16 @@ func (b *Backend) Status() wire.Status {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.status
+}
+
+func (b *Backend) recountUnreadLocked() {
+	n := 0
+	for _, conv := range b.convs {
+		if conv.Unread {
+			n++
+		}
+	}
+	b.status.Unread = n
 }
 
 // Client returns the active Client interface, or nil if not configured.
@@ -798,15 +812,24 @@ func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 		return err
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.epoch != epoch || ctx.Err() != nil {
+		b.mu.Unlock()
 		return context.Canceled
 	}
 	if conv, exists := b.convs[p.ConversationID]; exists {
 		conv.Unread = false
 		b.convs[p.ConversationID] = conv
+		if b.publish != nil {
+			b.publish(wire.Event{Event: wire.EventConversation, Network: wire.NetworkTelegram, Data: conv})
+		}
 	}
-	return b.saveLocked()
+	b.recountUnreadLocked()
+	if b.publish != nil {
+		b.publish(wire.Event{Event: wire.EventStatus, Network: wire.NetworkTelegram, Data: b.status})
+	}
+	err = b.saveLocked()
+	b.mu.Unlock()
+	return err
 }
 
 // StartPairing initiates the gotd QR authentication flow in a context-safe way.
@@ -1095,8 +1118,8 @@ func (b *Backend) Refresh(ctx context.Context) error {
 		msgs[conv.ID] = mapMessages(items, id)
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.epoch != epoch || ctx.Err() != nil {
+		b.mu.Unlock()
 		return context.Canceled
 	}
 	// Preserve updates that arrived while the provider page was in flight.
@@ -1107,7 +1130,17 @@ func (b *Backend) Refresh(ctx context.Context) error {
 	for _, conv := range convs {
 		b.convs[conv.ID] = conv
 	}
-	return b.saveLocked()
+	b.recountUnreadLocked()
+	err = b.saveLocked()
+	status := b.status
+	b.mu.Unlock()
+	if err == nil && b.publish != nil {
+		for _, conv := range convs {
+			b.publish(wire.Event{Event: wire.EventConversation, Network: wire.NetworkTelegram, Data: conv})
+		}
+		b.publish(wire.Event{Event: wire.EventStatus, Network: wire.NetworkTelegram, Data: status})
+	}
+	return err
 }
 
 func parseTelegramID(value string) (int64, error) {
@@ -1135,6 +1168,7 @@ func (b *Backend) AddTestConversation(conv wire.Conversation) {
 		b.order = append([]string{conv.ID}, b.order...)
 	}
 	b.convs[conv.ID] = conv
+	b.recountUnreadLocked()
 }
 
 // SetTestMessages sets messages for a conversation for testing.

@@ -121,7 +121,7 @@ start pairing again.
 | Conversation list, text, per-chat drafts | Yes | Yes | Yes | Yes |
 | Photos and captions | Yes | Yes | Yes | Yes |
 | Send GIF files | Yes | Yes (ffmpeg) | No dedicated GIF sending support | Yes |
-| Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
+| Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
 | GIPHY search | Optional personal API key | Optional personal API key + ffmpeg | Unavailable | Optional personal API key |
 | Reactions | Yes | Yes | Unavailable | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
@@ -155,8 +155,9 @@ background for readable contrast.
 
 Switch services with the header tabs, choose a conversation, and press Enter
 to send. Drafts stay with their service and conversation. Right-click a bubble
-to copy it. Middle-click the bar icon to refresh; the badge counts unread
-conversations across active services.
+to copy it. Middle-click the bar icon to refresh; its badge counts unread
+conversations across active services, and each service tab shows its own unread
+badge while the app is open.
 
 Pick an attachment from the composer. Google Messages sends captions separately
 after the attachment; check the conversation before retrying a caption reported
@@ -165,9 +166,9 @@ Messenger sends a document caption as a separate message. Failed media downloads
 can be retried. Incoming GIFs play inline;
 video opens in an external player.
 
-For Google Messages, Telegram, or Messenger voice notes, choose **Rec**, record, **Play**
+For voice notes, choose **Rec**, record, **Play**
 to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google
-and Messenger record M4A, and Telegram records OGG/Opus. Google, WhatsApp, and
+and Messenger record M4A, while WhatsApp and Telegram record OGG/Opus. Google, WhatsApp, and
 Messenger GIF search require your own GIPHY API key in Settings; sending a
 local GIF does not require a key. WhatsApp uses ffmpeg to convert GIF files to
 the MP4 playback format required by its protocol.
