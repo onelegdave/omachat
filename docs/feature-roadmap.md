@@ -18,13 +18,14 @@ dependencies does not add missing protocol support.
 - Messenger reactions, voice notes, and optional GIPHY search.
 - WhatsApp reactions, voice notes, saved contact-name resolution, and optional
   GIPHY search.
+- Telegram standard emoji reactions with live count updates and persisted
+  history state.
+- Animated helper build and connection states; Retry is unavailable while the
+  helper is actively starting or connecting.
 
 ## Next priorities
 
-1. **More service capabilities:** assess Telegram reactions. The current helper
-   explicitly rejects unsupported operations; add
-   backend behavior and isolated tests before enabling controls.
-2. **Device readiness:** distinguish missing tools from unavailable cameras,
+1. **Device readiness:** distinguish missing tools from unavailable cameras,
    microphone permissions, file portals, and locked keyrings. Never open a camera
    or record audio just because Settings was opened.
 

@@ -66,6 +66,10 @@ type incomingHandlerClient interface {
 	SetMessageHandler(func(Message))
 }
 
+type reactionHandlerClient interface {
+	SetReactionHandler(func(int64, int64, []wire.Reaction))
+}
+
 // New creates an unstarted Telegram backend.
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event), cfg ...*appStore.ConfigStore) *Backend {
 	var configStore *appStore.ConfigStore
@@ -425,6 +429,35 @@ func (b *Backend) bindIncomingLocked(cli Client) {
 		epoch := b.epoch
 		incoming.SetMessageHandler(func(msg Message) { _ = b.ingestMessageFor(msg, epoch) })
 	}
+	if reactions, ok := cli.(reactionHandlerClient); ok {
+		epoch := b.epoch
+		reactions.SetReactionHandler(func(conversationID, messageID int64, values []wire.Reaction) {
+			b.ingestReactionsFor(conversationID, messageID, values, epoch)
+		})
+	}
+}
+
+func (b *Backend) ingestReactionsFor(conversationID, messageID int64, reactions []wire.Reaction, epoch uint64) {
+	convID, msgID := fmt.Sprintf("tg:%d", conversationID), fmt.Sprintf("tg:%d", messageID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.epoch != epoch || b.stopping {
+		return
+	}
+	for i := range b.messages[convID] {
+		if b.messages[convID][i].ID != msgID {
+			continue
+		}
+		b.messages[convID][i].Reactions = append([]wire.Reaction(nil), reactions...)
+		updated := b.messages[convID][i]
+		if err := b.saveLocked(); err != nil {
+			b.log.Warn().Err(err).Msg("Could not save Telegram reactions")
+		}
+		if b.publish != nil {
+			b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkTelegram, Data: updated})
+		}
+		return
+	}
 }
 
 func (b *Backend) operation(ctx context.Context) (context.Context, func(), Client, uint64) {
@@ -699,6 +732,84 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, e
 		return nil, err
 	}
 	return &converted, nil
+}
+
+// React toggles the current user's Telegram reaction and immediately updates
+// the local cache. Telegram's later reaction update replaces this optimistic
+// value with the authoritative counts.
+func (b *Backend) React(ctx context.Context, p wire.ReactParams) error {
+	ctx, finish, cli, epoch := b.operation(ctx)
+	defer finish()
+	reactor, ok := cli.(ReactionClient)
+	if !ok {
+		return ErrNotConfigured
+	}
+	conversationID, err := parseTelegramID(p.ConversationID)
+	if err != nil {
+		return err
+	}
+	messageID, err := parseTelegramMessageID(p.MessageID)
+	if err != nil {
+		return err
+	}
+	emoji := strings.TrimSpace(p.Emoji)
+	if emoji == "" {
+		return errors.New("Telegram reaction cannot be empty")
+	}
+
+	b.mu.RLock()
+	var reactions []wire.Reaction
+	for _, message := range b.messages[p.ConversationID] {
+		if message.ID == p.MessageID {
+			reactions = append([]wire.Reaction(nil), message.Reactions...)
+			break
+		}
+	}
+	b.mu.RUnlock()
+	remove := false
+	for _, reaction := range reactions {
+		if reaction.Mine && reaction.Emoji == emoji {
+			remove = true
+			break
+		}
+	}
+	transportEmoji := emoji
+	if remove {
+		transportEmoji = ""
+	}
+	if err := reactor.React(ctx, conversationID, messageID, transportEmoji); err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	b.ingestReactionsFor(conversationID, messageID, toggleTelegramReaction(reactions, emoji, remove), epoch)
+	return nil
+}
+
+func toggleTelegramReaction(reactions []wire.Reaction, emoji string, remove bool) []wire.Reaction {
+	out := make([]wire.Reaction, 0, len(reactions)+1)
+	found := false
+	for _, reaction := range reactions {
+		if reaction.Mine {
+			reaction.Mine = false
+			reaction.Count--
+		}
+		if reaction.Emoji == emoji {
+			found = true
+			if !remove {
+				reaction.Mine = true
+				reaction.Count++
+			}
+		}
+		if reaction.Count > 0 {
+			out = append(out, reaction)
+		}
+	}
+	if !remove && !found {
+		out = append(out, wire.Reaction{Emoji: emoji, Count: 1, Mine: true})
+	}
+	return out
 }
 
 func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.SendMediaResult, error) {

@@ -20,6 +20,11 @@ ShellRoot {
  QtObject {
   id: fake
   property bool connected: true
+  property bool building: false
+  property bool goPresent: true
+  property bool helperPresent: true
+  property string helperState: "ready"
+  property string helperError: ""
   property string currentNetwork: "gmessages"
   property var enabledServices: ["gmessages","whatsapp","telegram"]
   property bool servicesConfigLoaded: true
@@ -302,9 +307,15 @@ ShellRoot {
     panel.settingsOpen=false
     root.check(loader.item === original && inspect.findChild(original,"composer").text === "Keep across settings", "Settings preserves selection and draft")
     fake.restartingServices=true
+    fake.helperState="starting"
     fake.connected=false
     root.check(loader.item === original && !loader.visible,"expected helper disconnect retains hidden draft storage")
+    var connectingActivity=inspect.findChild(panel,"buildActivityIndicator")
+    var helperRetry=inspect.findChild(panel,"helperRetryButton")
+    root.check(connectingActivity && connectingActivity.visible,"helper connecting screen shows animated activity")
+    root.check(helperRetry && !helperRetry.visible && !helperRetry.enabled,"helper connecting screen suppresses Retry")
     fake.connected=true
+    fake.helperState="ready"
     fake.restartingServices=false
     root.check(inspect.findChild(original,"composer").text === "Keep across settings","expected helper reconnect retains text draft")
     fake.enabledServices=[]
@@ -491,6 +502,12 @@ ShellRoot {
     panel.setActiveService("telegram")
     root.check(inspect.findChild(panel, "inboxLoader").visible, "connected Telegram shows the live inbox")
     root.check(fake.calls.length === beforeTelegram, "telegram tab does not issue chat RPCs")
+    var tgInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(tgInbox && tgInbox.reactionsSupported, "Telegram message bubbles enable the reaction action")
+    tgInbox.selectConversation("tg:7")
+    tgInbox.react("tg:12", "👍")
+    var tgReaction = fake.delayed.pop()
+    root.check(tgReaction.method === "react" && tgReaction.network === "telegram", "Telegram reaction is routed only to Telegram")
     fake.call("status", null, function() {}, "telegram")
     var tel = fake.calls[fake.calls.length-1]
     root.check(tel.network === "telegram", "explicit unknown network is not rewritten to google")

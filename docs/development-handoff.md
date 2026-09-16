@@ -80,9 +80,9 @@ restarted after the WhatsApp cross-platform audio fallback. The new shell-owned
 helper (PID `1556429`) reported source fingerprint
 `8eb78583b090ebf9d0b0269e41341efabdb3826067e53138f4a49365e1a87ab1`
 through the live owner-only socket, and WhatsApp reported connected. OneLegDave
-already live-confirmed the cross-service notification badges. Phone-side
-outbound voice playback remains the explicit live check rather than an assumed
-result.
+already live-confirmed the cross-service notification badges and subsequently
+confirmed that the cross-platform WhatsApp audio fallback plays successfully
+on the previously failing iPhone.
 
 The 2026-09-16 live parity pass confirmed that a video-backed Messenger GIF
 stays inline and loops, a new incoming reply appears without sending or
@@ -141,15 +141,28 @@ again, OneLegDave confirmed the failed receiver is an iPhone and that the same
 outbound build plays correctly on Android. OmaChat now records WhatsApp audio
 as AAC/M4A and sends it as a standard non-PTT audio clip, preserving the mic,
 preview, duration, and send workflow while avoiding the iPhone-incompatible
-linked-device OGG/Opus PTT path. The exact next work is live playback on both
-iPhone and Android after the compatible-audio helper is installed.
+linked-device OGG/Opus PTT path. OneLegDave confirmed the fallback plays on the
+previously failing iPhone, closing the reported failure; the earlier Android
+playback check had already passed on the native PTT path.
+
+Telegram reactions are now implemented through MTProto. Standard emoji
+reactions can be added, switched, and removed; history carries existing counts
+and current-user state, and live Telegram reaction updates replace the local
+optimistic result. The shared reaction action is enabled in the Telegram inbox.
+This backend and QML path has synthetic coverage and awaits a deliberate live
+phone check.
+
+The helper connection screen now shows the same rotating glyph and moving
+activity bar used during builds, changes its status text to "Connecting to
+helper...", and hides Retry while startup or reconnection is in progress. This
+prevents repeated starts during an ordinary transient connection.
 
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and
-`git diff --check`. A GIF chosen through search and the corrected reaction
-action passed live. Outbound WhatsApp voice playback still requires the repeat
-live check described above. No Messenger feature follow-up is currently
-selected.
+`git diff --check`. A GIF chosen through search, the corrected reaction action,
+and the compatible WhatsApp voice fallback passed live. Telegram reactions and
+the helper-connection animation are the current live checks. No Messenger
+feature follow-up is currently selected.
 
 ## Runtime and data safety
 

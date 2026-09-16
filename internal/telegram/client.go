@@ -24,6 +24,7 @@ import (
 	"github.com/rs/zerolog"
 
 	appStore "github.com/onelegdave/omachat/internal/store"
+	"github.com/onelegdave/omachat/internal/wire"
 )
 
 // QRChannelItem represents an event emitted during Telegram QR code pairing.
@@ -85,6 +86,7 @@ type GotdClient struct {
 	connected  bool
 	stopped    bool
 	onMessage  func(Message)
+	onReaction func(int64, int64, []wire.Reaction)
 	mediaRefs  map[string]tg.InputFileLocationClass
 	mediaExts  map[string]string
 	downloadWG sync.WaitGroup
@@ -95,6 +97,12 @@ type GotdClient struct {
 func (g *GotdClient) SetMessageHandler(handler func(Message)) {
 	g.mu.Lock()
 	g.onMessage = handler
+	g.mu.Unlock()
+}
+
+func (g *GotdClient) SetReactionHandler(handler func(int64, int64, []wire.Reaction)) {
+	g.mu.Lock()
+	g.onReaction = handler
 	g.mu.Unlock()
 }
 
@@ -141,6 +149,19 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 	})
 	dispatcher.OnNewChannelMessage(func(ctx context.Context, e tg.Entities, u *tg.UpdateNewChannelMessage) error {
 		return dispatch(ctx, e, u.Message)
+	})
+	dispatcher.OnMessageReactions(func(_ context.Context, _ tg.Entities, u *tg.UpdateMessageReactions) error {
+		conversationID := peerID(u.Peer)
+		if conversationID == 0 || u.MsgID <= 0 {
+			return nil
+		}
+		wrapper.mu.RLock()
+		handler := wrapper.onReaction
+		wrapper.mu.RUnlock()
+		if handler != nil {
+			handler(conversationID, int64(u.MsgID), telegramReactions(u.Reactions))
+		}
+		return nil
 	})
 	storage := NewFileSessionStorage(sessionPath)
 	client := telegram.NewClient(appID, appHash, telegram.Options{
@@ -514,6 +535,26 @@ func (g *GotdClient) MarkRead(ctx context.Context, conversationID int64, message
 	return err
 }
 
+func (g *GotdClient) React(ctx context.Context, conversationID, messageID int64, emoji string) error {
+	g.mu.RLock()
+	peer := g.peers[conversationID]
+	g.mu.RUnlock()
+	if peer == nil {
+		return fmt.Errorf("telegram peer %d is not available", conversationID)
+	}
+	if messageID <= 0 || messageID > 2147483647 {
+		return errors.New("invalid Telegram message ID")
+	}
+	request := &tg.MessagesSendReactionRequest{Peer: peer, MsgID: int(messageID), AddToRecent: emoji != ""}
+	if emoji != "" {
+		request.Reaction = []tg.ReactionClass{&tg.ReactionEmoji{Emoticon: emoji}}
+	} else {
+		request.Reaction = []tg.ReactionClass{}
+	}
+	_, err := g.client.API().MessagesSendReaction(ctx, request)
+	return err
+}
+
 func (g *GotdClient) SendText(ctx context.Context, conversationID int64, text string) (Message, error) {
 	if strings.TrimSpace(text) == "" {
 		return Message{}, errors.New("Telegram message cannot be empty")
@@ -675,6 +716,9 @@ func (g *GotdClient) SendVoice(ctx context.Context, conversationID int64, path, 
 
 func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 	out := Message{ID: int64(m.ID), ConversationID: conversationID, Text: m.Message, Timestamp: telegramTimestamp(m.Date), FromMe: m.Out}
+	if reactions, ok := m.GetReactions(); ok {
+		out.Reactions = telegramReactions(reactions)
+	}
 	if photo, ok := m.Media.(*tg.MessageMediaPhoto); ok {
 		if photo.TTLSeconds > 0 {
 			return out
@@ -721,6 +765,19 @@ func (g *GotdClient) mediaMessage(m *tg.Message, conversationID int64) Message {
 				out.MediaKey, out.MediaMime, out.MediaSticker = key, "image/webp", true
 			}
 		}
+	}
+	return out
+}
+
+func telegramReactions(reactions tg.MessageReactions) []wire.Reaction {
+	out := make([]wire.Reaction, 0, len(reactions.Results))
+	for _, count := range reactions.Results {
+		emoji, ok := count.Reaction.(*tg.ReactionEmoji)
+		if !ok || emoji.Emoticon == "" || count.Count <= 0 {
+			continue
+		}
+		_, mine := count.GetChosenOrder()
+		out = append(out, wire.Reaction{Emoji: emoji.Emoticon, Count: count.Count, Mine: mine})
 	}
 	return out
 }

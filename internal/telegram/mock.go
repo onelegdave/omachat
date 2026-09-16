@@ -27,6 +27,14 @@ type MockClient struct {
 	SendImageFunc     func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
 	SendVoiceFunc     func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
 	DownloadMediaFunc func(ctx context.Context, key, dir string) (string, error)
+	ReactFunc         func(ctx context.Context, conversationID, messageID int64, emoji string) error
+}
+
+func (m *MockClient) React(ctx context.Context, conversationID, messageID int64, emoji string) error {
+	if m.ReactFunc != nil {
+		return m.ReactFunc(ctx, conversationID, messageID, emoji)
+	}
+	return nil
 }
 
 func (m *MockClient) SendText(ctx context.Context, conversationID int64, text string) (Message, error) {

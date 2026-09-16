@@ -175,6 +175,10 @@ search require your own GIPHY API key in Settings; sending a local GIF does not
 require a key. WhatsApp uses ffmpeg to convert GIF files to the MP4 playback
 format required by its protocol.
 
+Message reactions are available on Google Messages, WhatsApp, Telegram, and
+Messenger. Telegram supports the standard emoji choices shown by OmaChat;
+individual chats or channels may restrict which reactions Telegram accepts.
+
 Use Tab to move between controls, arrow keys and Enter to open a conversation,
 and Space or Enter to activate focused buttons. Pending and failed text sends
 remain visible when you return to their conversation during the current shell session.

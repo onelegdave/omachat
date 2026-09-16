@@ -607,6 +607,54 @@ func TestTelegramSendTextRoutesAndCaches(t *testing.T) {
 	}
 }
 
+func TestTelegramReactionRoutesTogglesAndCaches(t *testing.T) {
+	b, _, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	b.SetTestMessages("tg:7", []wire.Message{{
+		ID: "tg:12", ConversationID: "tg:7", Text: "hello",
+		Reactions: []wire.Reaction{{Emoji: "👍", Count: 2}},
+	}})
+	var calls []string
+	mock.ReactFunc = func(_ context.Context, conversationID, messageID int64, emoji string) error {
+		if conversationID != 7 || messageID != 12 {
+			t.Fatalf("unexpected reaction target %d/%d", conversationID, messageID)
+		}
+		calls = append(calls, emoji)
+		return nil
+	}
+
+	params := wire.ReactParams{ConversationID: "tg:7", MessageID: "tg:12", Emoji: "👍"}
+	if err := b.React(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.React(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || calls[0] != "👍" || calls[1] != "" {
+		t.Fatalf("reaction transport calls = %#v", calls)
+	}
+	result, err := b.Messages(context.Background(), wire.MessagesParams{ConversationID: "tg:7"})
+	if err != nil || len(result.Messages) != 1 || len(result.Messages[0].Reactions) != 1 || result.Messages[0].Reactions[0].Count != 2 || result.Messages[0].Reactions[0].Mine {
+		t.Fatalf("reaction toggle cache = %+v, err=%v", result.Messages, err)
+	}
+}
+
+func TestTelegramReactionRejectsMalformedIDs(t *testing.T) {
+	b, _, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	called := false
+	mock.ReactFunc = func(context.Context, int64, int64, string) error { called = true; return nil }
+	if err := b.React(context.Background(), wire.ReactParams{ConversationID: "bad", MessageID: "tg:12", Emoji: "👍"}); err == nil {
+		t.Fatal("malformed conversation ID was accepted")
+	}
+	if err := b.React(context.Background(), wire.ReactParams{ConversationID: "tg:7", MessageID: "bad", Emoji: "👍"}); err == nil {
+		t.Fatal("malformed message ID was accepted")
+	}
+	if called {
+		t.Fatal("transport called for malformed reaction")
+	}
+}
+
 func TestTelegramSendMediaReturnsAttachmentMetadata(t *testing.T) {
 	b, paths, _, mock := setupTestTelegramWithMock(t)
 	b.SetClient(mock)

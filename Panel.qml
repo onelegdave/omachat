@@ -883,6 +883,8 @@ Panel {
     Item {
       readonly property bool needGo: !!(root.service && !root.service.goPresent && !root.service.helperPresent)
       readonly property bool canBuild: !!(root.service && root.service.goPresent && !root.service.helperPresent)
+      readonly property bool connecting: !!(root.service && !root.service.connected && !root.service.building
+        && (root.service.helperState === "starting" || root.service.helperState === "running" || root.service.helperState === "restarting"))
 
       Flickable {
         anchors.fill: parent
@@ -915,6 +917,8 @@ Panel {
               if (root.service && root.service.helperError) return root.service.helperError
               if (root.service && root.service.building)
                 return "Building OmaChat's messaging helper on this computer. The first build can take several minutes, depending on your hardware. Go may show no output while compiling; a quiet screen does not mean the build has stopped. Please wait and do not restart the Omarchy shell during the build. The helper starts automatically when compilation succeeds, or a build error appears here if it fails. This uses the included source without installing packages or downloading modules."
+              if (connecting)
+                return "OmaChat's messaging helper is starting and connecting. This normally takes only a moment. No action is needed while the activity indicator is moving."
               if (needGo)
                 return "OmaChat needs a small background program, the messaging helper (omachatd), to connect your chosen services. It is built on your computer from the included source. Building requires Go 1.27+, Python 3, and a C compiler (gcc or clang). Open Settings > Tools to check what is missing, review its source, and choose whether to install it. Then return here, choose Retry to recheck Go, and select Build helper."
               if (canBuild)
@@ -934,7 +938,7 @@ Panel {
                   anchors.centerIn: parent
                   implicitWidth: root.fs(Style.font.display)
                   implicitHeight: root.fs(Style.font.display)
-                  text: root.service && root.service.building ? "󰑐" : "󰭹"
+                  text: root.service && (root.service.building || connecting) ? "󰑐" : "󰭹"
                   color: root.accentInk
                   fontFamily: root.fontFamily
                   fontSize: root.fs(Style.font.display)
@@ -946,7 +950,7 @@ Panel {
                     to: 360
                     duration: 1200
                     loops: Animation.Infinite
-                    running: !!(root.service && root.service.building)
+                    running: !!(root.service && (root.service.building || connecting))
                   }
                 }
               }
@@ -956,7 +960,7 @@ Panel {
           Item {
             id: buildActivityTrack
             objectName: "buildActivityIndicator"
-            visible: !!(root.service && root.service.building)
+            visible: !!(root.service && (root.service.building || connecting))
             width: parent.width
             height: Style.space(4)
             clip: true
@@ -977,7 +981,7 @@ Panel {
               x: -width
 
               SequentialAnimation on x {
-                running: !!(root.service && root.service.building)
+                running: !!(root.service && (root.service.building || connecting))
                 loops: Animation.Infinite
 
                 NumberAnimation {
@@ -991,7 +995,7 @@ Panel {
           }
 
           Row {
-            visible: !!(root.service && root.service.building)
+            visible: !!(root.service && (root.service.building || connecting))
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Style.space(8)
 
@@ -1011,13 +1015,13 @@ Panel {
                 to: 360
                 duration: 900
                 loops: Animation.Infinite
-                running: !!(root.service && root.service.building)
+                running: !!(root.service && (root.service.building || connecting))
               }
             }
 
             Text {
               anchors.verticalCenter: parent.verticalCenter
-              text: "Compiling helper in background..."
+              text: connecting ? "Connecting to helper..." : "Compiling helper in background..."
               color: root.mutedInk
               font.family: root.fontFamily
               font.pixelSize: root.fs(Style.font.caption)
@@ -1073,6 +1077,9 @@ Panel {
               Accessible.role: Accessible.Button
               Accessible.name: text
               text: "Retry"
+              objectName: "helperRetryButton"
+              visible: !connecting && !!(root.service && !root.service.building)
+              enabled: visible
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: {

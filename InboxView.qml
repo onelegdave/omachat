@@ -20,7 +20,7 @@ Item {
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
   readonly property bool isMessenger: network === "messenger"
-  readonly property bool reactionsSupported: !isTelegram
+  readonly property bool reactionsSupported: true
   property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : "Google Messages"))
 
   readonly property color dim: Model.readableInk(panelBg, Color.muted)
