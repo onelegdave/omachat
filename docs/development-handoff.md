@@ -41,13 +41,15 @@ evidence, but neither is the source of truth for branch state.
 | --- | --- | --- |
 | `origin/main` | Public stable releases only | `c4dcafa`, release `v0.3.13` |
 | `private-dev/dev` | Private integration branch and source of truth for active development | Messenger implementation and the completed live parity pass; the current branch tip contains this handoff after it is pushed |
-| `public-beta/beta` | Public, opt-in builds for invited testers | `766bb84`, tagged and published as prerelease `v0.4.1`, with current `dev` ancestry plus beta onboarding |
+| `public-beta/beta` | Public, opt-in builds for invited testers | `cdada5b`, tagged and published as prerelease `v0.4.2`, with the Google pairing repair plus beta onboarding |
 
 Develop on `dev` and push it only to `private-dev/dev`. The public beta now
-contains the reviewed development series through `a9658b6`, merged as
-`766bb84` while preserving its beta-only branding, onboarding, and privacy-safe
-reporting links. Its manifest, README, About page, annotated `v0.4.1` tag, and
-public GitHub prerelease all agree on version 0.4.1. Promote later development
+contains the reviewed development series plus the restored Google Gaia pairing
+backport from dev commit `65bbf27`, released from `cdada5b` while preserving its
+beta-only branding, onboarding, and privacy-safe reporting links. Its manifest,
+README, About page, annotated `v0.4.2` tag, and public GitHub prerelease all
+agree on version 0.4.2. The historical `v0.4.1` tag remains unchanged. Promote
+later development
 work to `public-beta/beta` only when OneLegDave chooses it for beta testing.
 Stable promotion to `origin/main`, version changes, tags, releases, and
 marketplace updates are separate, explicit release work.
@@ -106,10 +108,12 @@ Google account pairing in the v0.4.1 beta regressed when commit `c23dcaf`
 re-vendored dependencies while adding Messenger and silently removed the
 v0.3.7 Gaia pairing backport. The `PrivateAPIConfirmation` finish-request
 field, error-code definitions 32 through 35, token/session synchronization,
-and the focused vendored regression test are restored on `dev`. The complete
-synthetic gate and independent Claude/agy reviews pass. A fresh-pair live check
-on oldsmaru and a corrected beta release are the next required steps; do not
-move the existing `v0.4.1` tag.
+and the focused vendored regression test are restored on `dev` in `65bbf27`.
+The complete synthetic gate and independent Claude/agy reviews pass. Fresh
+browser-profile pairing was then live-confirmed on oldsmaru, and corrected beta
+release `v0.4.2` was published from `cdada5b`. No Google pairing follow-up is
+currently selected. Continue new work on `dev`; do not move either published
+beta tag.
 
 Voice recording, GIF search, and reactions are implemented and live-confirmed
 by OneLegDave. The first reaction pass exposed a Messenger-only UI gate that hid
@@ -223,7 +227,12 @@ After restoring the Google Gaia pairing backport, the full gate passed again:
 `make test`, `make lint`, `make validate`, `make test-ui`,
 `go test -race -mod=vendor -count=1 ./...`, and `git diff --check`. The focused
 vendored test also fails against the regressed tree and passes with the restored
-request field. Live fresh-pair verification on oldsmaru remains pending.
+request field. On oldsmaru, beta commit `cdada5b` built and installed version
+0.4.2 with source ID
+`6ad22dc3952d328a779600a3b22054368c0ca33c15b8aff63b32aabf7339b8e9`.
+After restarting the shell, helper PID 30940 completed fresh Google
+browser-profile pairing from `gaiaPairing` through `connecting` to `connected`,
+with `phoneOK: true`. This is the live runtime proof for the repaired path.
 
 `make test-ui` uses synthetic content. Save screenshots only to a temporary
 artifact directory, inspect them, and remove them after review. A live
