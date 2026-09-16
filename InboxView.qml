@@ -539,7 +539,7 @@ Item {
   }
 
   function openGifPicker() {
-    if (root.isWhatsApp || root.isTelegram) {
+    if (root.isTelegram) {
       threadError = "GIF search is not supported for " + root.networkLabel + " in this version."
       return
     }
@@ -1986,7 +1986,7 @@ Item {
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Search GIFs"
-        visible: !root.isWhatsApp && !root.isTelegram
+        visible: !root.isTelegram
         anchors.left: micButton.visible ? micButton.right : attachButton.right
         anchors.leftMargin: visible ? Style.space(2) : 0
         anchors.verticalCenter: parent.verticalCenter

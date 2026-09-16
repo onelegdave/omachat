@@ -30,10 +30,10 @@ CGO and a standard C compiler such as gcc or clang.
 - View-once and ephemeral media are intentionally not cached or reopened.
 
 WhatsApp history is based on the initial phone sync and cached live messages.
-OmaChat does not currently request additional on-demand phone history. Calling,
-voice notes, GIF search, and reactions remain explicitly unavailable in the
-WhatsApp panel. The shared composer keeps those actions isolated from the
-Google Messages and Telegram services.
+OmaChat does not currently request additional on-demand phone history. GIPHY
+search uses the optional personal API key in Settings and sends the selected
+result through the existing local GIF attachment path. Calling, voice notes,
+and reactions remain explicitly unavailable in the WhatsApp panel.
 
 ## Storage and isolation
 

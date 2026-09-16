@@ -122,7 +122,7 @@ start pairing again.
 | Photos and captions | Yes | Yes | Yes | Yes |
 | Send GIF files | Yes | Yes | No dedicated GIF sending support | Yes |
 | Voice recording and playback | Optional ffmpeg/ffplay | Unavailable | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
-| GIPHY search | Optional personal API key | Unavailable | Unavailable | Optional personal API key |
+| GIPHY search | Optional personal API key | Optional personal API key | Unavailable | Optional personal API key |
 | Reactions | Yes | Unavailable | Unavailable | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
 | Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
@@ -167,9 +167,9 @@ video opens in an external player.
 
 For Google Messages, Telegram, or Messenger voice notes, choose **Rec**, record, **Play**
 to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google
-and Messenger record M4A, and Telegram records OGG/Opus. Google and Messenger
-GIF search require your own GIPHY API key in Settings; sending a local GIF does
-not require a key.
+and Messenger record M4A, and Telegram records OGG/Opus. Google, WhatsApp, and
+Messenger GIF search require your own GIPHY API key in Settings; sending a
+local GIF does not require a key.
 
 Use Tab to move between controls, arrow keys and Enter to open a conversation,
 and Space or Enter to activate focused buttons. Pending and failed text sends

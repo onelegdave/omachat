@@ -755,6 +755,28 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 		}
 		return ok(nil)
 
+	case wire.MethodGifSearch:
+		p, err := decodeParams[wire.GifSearchParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.GifSearch(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodGifFetch:
+		p, err := decodeParams[wire.GifFetchParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		path, err := d.GifFetch(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(map[string]string{"path": path})
+
 	case wire.MethodConfig:
 		return ok(d.PluginConfig())
 
@@ -786,9 +808,6 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 
 	case wire.MethodReact:
 		return fail(errors.New("reactions are not supported on WhatsApp"))
-
-	case wire.MethodGifSearch, wire.MethodGifFetch:
-		return fail(errors.New("GIF search is not supported on WhatsApp"))
 
 	default:
 		return fail(fmt.Errorf("unknown method %q for network whatsapp", req.Method))

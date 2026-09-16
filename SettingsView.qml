@@ -420,7 +420,7 @@ Flickable {
         Text {
           width: parent.width
           wrapMode: Text.Wrap
-          text: "• Setup: Select WhatsApp in OmaChat, choose Use a QR code, open WhatsApp on your phone > Linked devices > Link a device, and scan the displayed QR code. Keep your phone online during linking and initial sync.\n• Features: Real-time conversation sync, text, photos, captions, local GIF files, retryable media downloads, and incoming static WebP stickers.\n• Limitations: History reflects initial phone sync and live messages; additional history cannot be requested from the phone, but cached history can be paged. Ephemeral and view-once media are intentionally not saved or reopened. Reactions, voice notes, GIF search, and calling are currently unavailable."
+          text: "• Setup: Select WhatsApp in OmaChat, choose Use a QR code, open WhatsApp on your phone > Linked devices > Link a device, and scan the displayed QR code. Keep your phone online during linking and initial sync.\n• Features: Real-time conversation sync, text, photos, captions, local GIF files, optional GIPHY search, retryable media downloads, and incoming static WebP stickers.\n• Limitations: History reflects initial phone sync and live messages; additional history cannot be requested from the phone, but cached history can be paged. Ephemeral and view-once media are intentionally not saved or reopened. Reactions, voice notes, and calling are currently unavailable."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)
@@ -670,7 +670,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "Google Messages and Messenger GIF search (optional)"
+        text: "Google Messages, WhatsApp, and Messenger GIF search (optional)"
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.heading)

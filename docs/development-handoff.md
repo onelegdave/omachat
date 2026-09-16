@@ -101,6 +101,13 @@ indicators were subsequently removed end to end at OneLegDave's request because
 the app does not need a typing preview. Calling remains explicitly out of scope
 and unsupported.
 
+WhatsApp now exposes the shared optional GIPHY search and routes search and
+download requests through the existing hardened daemon implementation. Selected
+GIFs continue through WhatsApp's already-supported local attachment path. The
+synthetic suite confirms that the button is visible in a selected WhatsApp
+conversation and that search uses the WhatsApp route. A live WhatsApp search,
+selection, and send remains the next manual check.
+
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and
 `git diff --check`. Recorded voice-note delivery, a GIF chosen through search,

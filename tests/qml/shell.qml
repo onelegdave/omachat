@@ -370,15 +370,16 @@ ShellRoot {
     var waInbox = inspect.findChild(panel, "inboxLoader").item
     root.check(waInbox && waInbox.isWhatsApp === true, "switching to whatsapp activates WhatsApp inbox view")
     root.check(waInbox.network === "whatsapp", "inbox network property is whatsapp")
+    waInbox.selectConversation("wa-1@s.whatsapp.net")
     var waMic = inspect.findChild(waInbox, "micButton")
     var waGif = inspect.findChild(waInbox, "gifButton")
     root.check(waMic && !waMic.visible && waMic.width === 0, "voice recording button is hidden on WhatsApp")
-    root.check(waGif && !waGif.visible && waGif.width === 0, "GIF search button is hidden on WhatsApp")
+    root.check(waGif && waGif.visible && waGif.width > 0, "GIF search button is visible on WhatsApp")
 
     waInbox.react("wa-msg", "❤️")
     root.check(waInbox.threadError === "Reactions are not supported for WhatsApp in this version.", "reacting on WhatsApp displays unsupported error")
     waInbox.openGifPicker()
-    root.check(waInbox.threadError === "GIF search is not supported for WhatsApp in this version.", "GIF search on WhatsApp displays unsupported error")
+    root.check(fake.calls.some(function(c){ return c.method === "gifSearch" && c.network === "whatsapp" }), "WhatsApp GIF search uses the WhatsApp route")
     waInbox.startRecording()
     root.check(waInbox.threadError === "Voice messages are not supported for WhatsApp in this version.", "voice recording on WhatsApp displays unsupported error")
 
