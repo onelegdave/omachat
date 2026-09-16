@@ -27,6 +27,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waConsumerApplication"
+	waStore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waTypes "go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -224,9 +225,11 @@ func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 	if err != nil {
 		return fmt.Errorf("load E2EE device: %w", err)
 	}
-	newDevice := device == nil
+	newDevice := needsMessengerRegistration(device)
 	if newDevice {
-		device = b.waStore.NewDevice()
+		if device == nil {
+			device = b.waStore.NewDevice()
+		}
 	}
 	cli.SetDevice(device)
 	if newDevice {
@@ -255,6 +258,10 @@ func (b *Backend) connect(ctx context.Context, mc *cookies.Cookies) error {
 	b.mu.Unlock()
 	connected = true
 	return nil
+}
+
+func needsMessengerRegistration(device *waStore.Device) bool {
+	return device == nil || device.ID == nil
 }
 
 func (b *Backend) Stop() {

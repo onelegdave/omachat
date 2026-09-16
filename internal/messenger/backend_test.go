@@ -11,6 +11,8 @@ import (
 	"github.com/onelegdave/omachat/internal/wire"
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-meta/pkg/messagix"
+	waStore "go.mau.fi/whatsmeow/store"
+	waTypes "go.mau.fi/whatsmeow/types"
 )
 
 func TestBackendRequiresConnection(t *testing.T) {
@@ -91,5 +93,17 @@ func TestNilDisconnectEventsDoNotPanic(t *testing.T) {
 	b.handleMetaEvent(context.Background(), &messagix.PermanentErrorEvent{})
 	if got := b.Status(); got.State != wire.StateError || got.Error != "Messenger transport stopped" {
 		t.Fatalf("unexpected permanent disconnect status: %#v", got)
+	}
+}
+
+func TestMessengerDeviceRegistrationDetection(t *testing.T) {
+	if !needsMessengerRegistration(nil) {
+		t.Fatal("nil device must be registered")
+	}
+	if !needsMessengerRegistration(&waStore.Device{}) {
+		t.Fatal("new unsaved device without an ID must be registered")
+	}
+	if needsMessengerRegistration(&waStore.Device{ID: &waTypes.JID{User: "1", Device: 1, Server: waTypes.MessengerServer}}) {
+		t.Fatal("saved device with an ID must be reused")
 	}
 }
