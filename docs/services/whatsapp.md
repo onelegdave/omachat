@@ -28,7 +28,9 @@ CGO and a standard C compiler such as gcc or clang.
   WebP image attachments; there is no dedicated outgoing sticker picker.
 - Saved contact names are resolved from WhatsApp's synced contact data, and
   emoji reactions can be added, switched, removed, and received live.
-- Record and send OGG/Opus voice notes with optional ffmpeg/ffplay.
+- Record and send cross-platform M4A audio clips with optional ffmpeg/ffplay.
+  Standard audio clips are used instead of native PTT because linked-device
+  OGG/Opus notes fail to play on iPhone.
 - On-demand media downloads with bounded files and retry behavior.
 - View-once and ephemeral media are intentionally not cached or reopened.
 

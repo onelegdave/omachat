@@ -43,6 +43,7 @@ const (
 	maxConversations       = 50
 	maxInboundMediaBytes   = 25 * 1024 * 1024 // 25 MB
 	maxOutboundMediaBytes  = 16 * 1024 * 1024 // 16 MB
+	maxOutboundVoiceSecs   = 60
 	maxImageDimensionPixel = 8192
 )
 
@@ -1050,15 +1051,25 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 	}
 
 	ext := strings.ToLower(filepath.Ext(cleanPath))
-	isVoice := ext == ".ogg" || ext == ".opus"
+	isPTTVoice := ext == ".ogg" || ext == ".opus"
+	isAudioClip := ext == ".m4a"
+	isVoice := isPTTVoice || isAudioClip
 	var cfg image.Config
 	format := ""
 	var voiceSeconds uint32
-	if isVoice {
+	if isPTTVoice {
 		voiceSeconds, err = oggOpusVoiceDuration(data)
 		if err != nil {
 			return wire.SendMediaResult{}, err
 		}
+	} else if isAudioClip {
+		if len(data) < 12 || string(data[4:8]) != "ftyp" || !bytes.Contains(data, []byte("mp4a")) {
+			return wire.SendMediaResult{}, errors.New("WhatsApp audio clip must be an AAC M4A file")
+		}
+		if p.DurationSeconds == 0 || p.DurationSeconds > maxOutboundVoiceSecs {
+			return wire.SendMediaResult{}, errors.New("WhatsApp audio clip duration is invalid")
+		}
+		voiceSeconds = p.DurationSeconds
 	} else {
 		// Validate exact supported image types and dimensions.
 		cfg, format, err = image.DecodeConfig(bytes.NewReader(data))
@@ -1078,6 +1089,9 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 
 	mimeType := "audio/ogg; codecs=opus"
 	mediaType := whatsmeow.MediaAudio
+	if isAudioClip {
+		mimeType = "audio/mp4"
+	}
 	if !isVoice {
 		mimeType = "image/" + format
 		mediaType = whatsmeow.MediaImage
@@ -1113,7 +1127,7 @@ func (b *Backend) SendMedia(ctx context.Context, p wire.SendMediaParams) (wire.S
 		mediaKeyTimestamp := time.Now().Unix()
 		waMsg.AudioMessage = &waE2E.AudioMessage{
 			Mimetype:          proto.String(mimeType),
-			PTT:               proto.Bool(true),
+			PTT:               proto.Bool(isPTTVoice),
 			Seconds:           proto.Uint32(voiceSeconds),
 			URL:               &uploadResp.URL,
 			DirectPath:        &uploadResp.DirectPath,

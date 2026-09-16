@@ -168,10 +168,12 @@ video opens in an external player.
 
 For voice notes, choose **Rec**, record, **Play**
 to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google
-and Messenger record M4A, while WhatsApp and Telegram record OGG/Opus. Google, WhatsApp, and
-Messenger GIF search require your own GIPHY API key in Settings; sending a
-local GIF does not require a key. WhatsApp uses ffmpeg to convert GIF files to
-the MP4 playback format required by its protocol.
+Messages, WhatsApp, and Messenger record M4A; Telegram records OGG/Opus.
+WhatsApp uses a standard audio clip instead of native PTT because linked-device
+OGG/Opus notes fail to play on iPhone. Google, WhatsApp, and Messenger GIF
+search require your own GIPHY API key in Settings; sending a local GIF does not
+require a key. WhatsApp uses ffmpeg to convert GIF files to the MP4 playback
+format required by its protocol.
 
 Use Tab to move between controls, arrow keys and Enter to open a conversation,
 and Space or Enter to activate focused buttons. Pending and failed text sends

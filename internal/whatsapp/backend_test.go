@@ -468,6 +468,51 @@ func TestWhatsAppSendMediaVoiceAsPTTOpus(t *testing.T) {
 	}
 }
 
+func TestWhatsAppSendMediaM4AAsCompatibleAudioClip(t *testing.T) {
+	backend, mock, _ := setupTestBackend(t)
+	backend.SetClient(mock, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := backend.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	backend.setState(wire.StateConnected, "")
+
+	voicePath := filepath.Join(t.TempDir(), "voice-123.m4a")
+	voiceBytes := []byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'M', '4', 'A', ' ', 0, 0, 0, 0, 'm', 'p', '4', 'a'}
+	if err := os.WriteFile(voicePath, voiceBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var uploadedType whatsmeow.MediaType
+	var sent *waE2E.Message
+	mock.UploadFunc = func(_ context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error) {
+		uploadedType = appInfo
+		return whatsmeow.UploadResponse{URL: "https://mock.whatsapp.net/audio", DirectPath: "/direct/audio", FileLength: uint64(len(plaintext))}, nil
+	}
+	mock.SendMessageFunc = func(_ context.Context, _ types.JID, message *waE2E.Message, _ ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+		sent = message
+		return whatsmeow.SendResponse{ID: "server-audio-id", Timestamp: time.Now()}, nil
+	}
+
+	res, err := backend.SendMedia(ctx, wire.SendMediaParams{
+		TmpID: "tmp-audio-1", ConversationID: "15559876543@s.whatsapp.net",
+		Path: voicePath, DurationSeconds: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploadedType != whatsmeow.MediaAudio || sent.GetAudioMessage() == nil {
+		t.Fatalf("audio transport type=%v message=%+v", uploadedType, sent)
+	}
+	audio := sent.GetAudioMessage()
+	if audio.GetPTT() || audio.GetMimetype() != "audio/mp4" || audio.GetSeconds() != 3 {
+		t.Fatalf("WhatsApp compatible audio payload = %+v", audio)
+	}
+	if res.Message == nil || len(res.Message.Attachments) != 1 || !res.Message.Attachments[0].IsAudio {
+		t.Fatalf("audio result = %+v", res)
+	}
+}
+
 func TestOggOpusVoiceDurationRejectsIncompatibleAudio(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"not ogg":   []byte("not audio"),

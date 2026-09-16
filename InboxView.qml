@@ -635,7 +635,13 @@ Item {
     var token = ++root.mediaSendToken
     var tmpID = Model.transactionID()
     root.sendingMedia = true
-    root.service.call("sendMedia", { conversationID: convID, path: path, caption: caption || "", tmpID: tmpID },
+    root.service.call("sendMedia", {
+      conversationID: convID,
+      path: path,
+      caption: caption || "",
+      tmpID: tmpID,
+      durationSeconds: root.pendingIsVoice ? Math.max(1, root.pendingVoiceSeconds) : 0
+    },
       function(ok, res) {
         if (token !== root.mediaSendToken || generation !== root.selectionGeneration || targetNet !== root.network) return
         root.sendingMedia = false
@@ -687,7 +693,7 @@ Item {
     pendingAttachment = ""
     pendingVoiceSeconds = 0
     recordSeconds = 0
-    voicePath = captureDir + "/voice-" + Date.now() + ((root.isTelegram || root.isWhatsApp) ? ".ogg" : ".m4a")
+    voicePath = captureDir + "/voice-" + Date.now() + (root.isTelegram ? ".ogg" : ".m4a")
     mkdirCache.running = false
     mkdirCache.running = true
   }
@@ -701,7 +707,7 @@ Item {
     if (setting("normalizeVoice", true) !== false && setting("normalizeVoice", true) !== "false") {
       cmd.push("-af", "highpass=f=80,speechnorm=e=12.5:r=0.00025:l=1")
     }
-    if (root.isTelegram || root.isWhatsApp)
+    if (root.isTelegram)
       cmd.push("-c:a", "libopus", "-b:a", "32k", "-application", "voip", "-f", "ogg")
     else
       cmd.push("-c:a", "aac", "-b:a", "96k")

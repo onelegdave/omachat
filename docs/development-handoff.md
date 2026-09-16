@@ -133,9 +133,16 @@ The first live WhatsApp outbound voice check delivered the message shell, but
 the phone rejected playback as unavailable. The transport fix now validates
 the complete mono Ogg Opus page stream, derives the duration from its final
 48 kHz granule position, and includes both `seconds` and
-`mediaKeyTimestamp` alongside the encrypted upload metadata. The exact next
-work is a repeat outbound voice-note check on the phone after the corrected
-helper is installed; inbound phone-to-app voice already works.
+`mediaKeyTimestamp` alongside the encrypted upload metadata. A repeat live
+check showed the correct duration on the phone, proving that the corrected
+payload is active, but playback still failed with the same unavailable-media
+message. Inbound phone-to-app voice already works. Before changing transport
+again, OneLegDave confirmed the failed receiver is an iPhone and that the same
+outbound build plays correctly on Android. OmaChat now records WhatsApp audio
+as AAC/M4A and sends it as a standard non-PTT audio clip, preserving the mic,
+preview, duration, and send workflow while avoiding the iPhone-incompatible
+linked-device OGG/Opus PTT path. The exact next work is live playback on both
+iPhone and Android after the compatible-audio helper is installed.
 
 The synthetic gate passed `make test`, `make lint`, `make validate`,
 `make test-ui`, `go test -race -mod=vendor -count=1 ./...`, and

@@ -296,10 +296,11 @@ var RequiredGaiaCookies = []string{"SID", "HSID", "OSID", "SSID", "APISID", "SAP
 
 // SendMediaParams sends a local file to a conversation.
 type SendMediaParams struct {
-	TmpID          string `json:"tmpID,omitempty"`
-	ConversationID string `json:"conversationID"`
-	Path           string `json:"path"`
-	Caption        string `json:"caption,omitempty"`
+	TmpID           string `json:"tmpID,omitempty"`
+	ConversationID  string `json:"conversationID"`
+	Path            string `json:"path"`
+	Caption         string `json:"caption,omitempty"`
+	DurationSeconds uint32 `json:"durationSeconds,omitempty"`
 }
 
 // SendMediaResult reports the independently submitted attachment and caption.
