@@ -637,7 +637,7 @@ Flickable {
     }
 
 
-    // Section 5: Upstream Credits and Honest Attribution
+    // Section 6: Upstream Credits and Honest Attribution
     Column {
       id: creditsSection
       width: parent.width

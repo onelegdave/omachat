@@ -24,3 +24,4 @@ Use the [current documentation](../README.md) for setup and capabilities.
 - [v0.3.10 release notes](RELEASE-0.3.10.md)
 - [v0.3.11 release notes](RELEASE-0.3.11.md)
 - [v0.4.3 release notes](RELEASE-0.4.3.md)
+- [v0.4.4 release notes](RELEASE-0.4.4.md)

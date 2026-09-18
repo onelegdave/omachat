@@ -36,7 +36,7 @@ separate from messaging credentials. Daily checks are off by default.
 
 ## What is enforced
 
-- Incoming attachments, avatars, and GIF fetches are read or written through a bounded
+- Incoming attachments and avatars are read or written through a bounded
   stream. Telegram downloads stop at 32 MiB while transferring. Each service
   evicts old downloaded attachments above its 256 MiB cache budget. A declared
   `Content-Length` is never trusted as the allocation size.
