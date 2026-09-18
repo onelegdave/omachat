@@ -113,9 +113,13 @@ func (d *Daemon) GifSearch(ctx context.Context, p wire.GifSearchParams) (*wire.G
 	ctx, cancel := context.WithTimeout(ctx, giphyTimeout)
 	defer cancel()
 
+	// GIPHY accepts the key only as the api_key query parameter; there is no
+	// header form. The URL is built and sent inside this process, avatarHTTP
+	// uses no proxy, and nothing below logs or returns it: every error on this
+	// path is a fixed string, since url.Error would otherwise carry the URL.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+params.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("build GIPHY request")
 	}
 	resp, err := avatarHTTP.Do(req)
 	if err != nil {

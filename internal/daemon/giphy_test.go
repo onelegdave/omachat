@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -118,4 +120,82 @@ type mockTransport struct {
 func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// The standard library url.Error includes the URL which is what we want to test sanitization against
 	return nil, &url.Error{Op: "Get", URL: req.URL.String(), Err: m.err}
+}
+
+// recordingTransport serves a fixed JSON body and keeps the request it saw.
+type recordingTransport struct {
+	req *http.Request
+}
+
+func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.req = req
+	body := `{"data":[{"id":"abc","title":"cat","images":{` +
+		`"fixed_height":{"url":"https://media.giphy.com/p.gif","width":"200","height":"200"},` +
+		`"downsized":{"url":"https://media.giphy.com/s.gif"}}}],"meta":{"status":200}}`
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+		Request:    req,
+	}, nil
+}
+
+// TestGifSearchKeyStaysInsideTheProcess pins how the key travels: only as
+// GIPHY's api_key query parameter over HTTPS, never in a header, and never
+// in what the daemon logs or returns, on the success path and on failure.
+func TestGifSearchKeyStaysInsideTheProcess(t *testing.T) {
+	const key = "SECRET_KEY_456"
+	d := newGifDaemon(t)
+	var logs bytes.Buffer
+	d.log = zerolog.New(&logs).Level(zerolog.DebugLevel)
+	if err := d.config.SetGiphyAPIKey(key); err != nil {
+		t.Fatal(err)
+	}
+
+	originalTransport := avatarHTTP.Transport
+	defer func() { avatarHTTP.Transport = originalTransport }()
+
+	rec := &recordingTransport{}
+	avatarHTTP.Transport = rec
+	res, err := d.GifSearch(context.Background(), wire.GifSearchParams{Query: "cat"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Gifs) != 1 {
+		t.Fatalf("got %d gifs, want 1", len(res.Gifs))
+	}
+	if rec.req == nil {
+		t.Fatal("no request was sent")
+	}
+	if rec.req.URL.Scheme != "https" || rec.req.URL.Host != "api.giphy.com" {
+		t.Errorf("request went to %s://%s, want https://api.giphy.com", rec.req.URL.Scheme, rec.req.URL.Host)
+	}
+	if got := rec.req.URL.Query().Get("api_key"); got != key {
+		t.Errorf("api_key query parameter = %q, want the configured key", got)
+	}
+	for name, values := range rec.req.Header {
+		if strings.Contains(strings.Join(values, " "), key) {
+			t.Errorf("key leaked into %s header", name)
+		}
+	}
+	for i, g := range res.Gifs {
+		if strings.Contains(g.PreviewURL+g.SendURL+g.Title, key) {
+			t.Errorf("gif %d carries the key", i)
+		}
+	}
+
+	avatarHTTP.Transport = &mockTransport{err: errors.New("simulated transport error")}
+	if _, err := d.GifSearch(context.Background(), wire.GifSearchParams{Query: "cat"}); err == nil {
+		t.Fatal("expected a transport error")
+	} else if strings.Contains(err.Error(), key) {
+		t.Errorf("error contains the key: %v", err)
+	}
+
+	if strings.Contains(logs.String(), key) {
+		t.Errorf("daemon log contains the key:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "GIF search") {
+		t.Errorf("expected the search to be logged at debug level, got:\n%s", logs.String())
+	}
 }

@@ -58,6 +58,13 @@ separate from messaging credentials. Daily checks are off by default.
   sends the query and API key to GIPHY; the QML picker loads preview images
   directly from allowed GIPHY HTTPS hosts. No claim of offline-only operation
   or anonymity is made.
+- GIPHY accepts the API key only as the `api_key` query parameter of an HTTPS
+  request; it offers no header or token form. The helper builds and sends that
+  request in its own process with no proxy, never passes it to a child process,
+  and never writes it to a log or returns it in an error. This keeps the key
+  out of process arguments, the environment, and diagnostics, but it is a
+  mitigation, not a change to GIPHY's protocol: GIPHY's own servers still see
+  the key in the request line, as they must to authenticate it.
 - Manual update checks and optional daily checks request public release metadata
   from GitHub. They send no messaging credentials or message content; GitHub
   receives ordinary request metadata, including the client IP address. Updates
