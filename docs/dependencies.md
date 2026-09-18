@@ -56,7 +56,6 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 | File selection | Working desktop portal and its file-picker backend |
 | Copy message | `wl-copy` from wl-clipboard |
 | Open links or downloaded files | `xdg-open` and an appropriate installed browser/image/video application |
-| Google/WhatsApp/Messenger GIPHY search | Your own GIPHY API key entered in Settings |
 
 For example, if you want voice notes, you can run `omarchy pkg add ffmpeg`
 yourself. Text and photos do not need voice tools. Installing a tool does not

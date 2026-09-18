@@ -18,7 +18,7 @@ or working exploit details in a public issue.
 - WhatsApp chat cache: `~/.local/share/omachat/whatsapp_store.json` (0600)
 - Telegram session and chat cache: `~/.local/share/omachat/telegram.session` and `telegram_store.json` (0600)
 - Messenger session, encrypted-device state, and chat cache: `~/.local/share/omachat/messenger.db` and `messenger_store.json` (0600)
-- Config (browser profile, GIPHY key, Telegram API credentials): `~/.local/share/omachat/config.json` (0600)
+- Config (browser profile, Telegram API credentials): `~/.local/share/omachat/config.json` (0600)
 - Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, and `media_messenger/`
 - Telegram conversation caches from before typed peer IDs are ignored on upgrade;
   pairing credentials are retained and ambiguous attachment filenames are not reused.
@@ -54,17 +54,12 @@ separate from messaging credentials. Daily checks are off by default.
 - Community plugins and the helper run as your user without a security sandbox.
   Service separation prevents accidental cross-service state reuse, not access
   by a compromised helper or another process under the same account.
-- Enabled services contact their messaging providers. Optional GIPHY search
-  sends the query and API key to GIPHY; the QML picker loads preview images
-  directly from allowed GIPHY HTTPS hosts. No claim of offline-only operation
-  or anonymity is made.
-- GIPHY accepts the API key only as the `api_key` query parameter of an HTTPS
-  request; it offers no header or token form. The helper builds and sends that
-  request in its own process with no proxy, never passes it to a child process,
-  and never writes it to a log or returns it in an error. This keeps the key
-  out of process arguments, the environment, and diagnostics, but it is a
-  mitigation, not a change to GIPHY's protocol: GIPHY's own servers still see
-  the key in the request line, as they must to authenticate it.
+- Enabled services contact their messaging providers. No claim of offline-only
+  operation or anonymity is made.
+- OmaChat 0.4.4 removed GIPHY search. GIPHY accepts its API key only as a URL
+  query parameter, and the marketplace review does not accept credentials in
+  request URLs. On first start, the helper deletes a `giphyApiKey` left in
+  `config.json` by an earlier release; it stores no third-party search key.
 - Manual update checks and optional daily checks request public release metadata
   from GitHub. They send no messaging credentials or message content; GitHub
   receives ordinary request metadata, including the client IP address. Updates

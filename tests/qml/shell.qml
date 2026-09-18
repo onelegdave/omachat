@@ -79,10 +79,10 @@ ShellRoot {
    if (!callback) return
    if (method === "messages") callback(true, {messages:[]})
    else if (method === "media") callback(!failMedia, failMedia ? "temporary failure" : {path:root.testImage})
-   else if (method === "config") callback(true,{uiScale:1,giphyKeySet:false,telegramConfigured:false,telegramApiId:0})
+   else if (method === "config") callback(true,{uiScale:1,telegramConfigured:false,telegramApiId:0})
    else if (method === "setTelegramCredentials") {
      var isConfigured = params && params.apiId > 0 && !!params.apiHash
-     callback(true,{uiScale:1,giphyKeySet:false,telegramConfigured:isConfigured,telegramApiId:isConfigured ? params.apiId : 0})
+     callback(true,{uiScale:1,telegramConfigured:isConfigured,telegramApiId:isConfigured ? params.apiId : 0})
    }
    else callback(true, {})
   }
@@ -260,11 +260,12 @@ ShellRoot {
     inbox.pendingAttachment=""
     settings.parent=catcher
     settings.width=920; settings.height=580; settings.visible=true
-    var key=inspect.findChild(settings,"keyField")
+    var key=inspect.findChild(settings,"telegramApiHashField")
     key.forceActiveFocus()
     key.text=""
     for (var k=0;k<text.length;k++) keyboard.keyClickChar(text[k], Qt.NoModifier, 0)
-    root.check(key.text === text && catcher.shortcuts === 0, "real Settings key editor receives shortcut characters")
+    root.check(key.text === text && catcher.shortcuts === 0, "real Settings credential editor receives shortcut characters")
+    key.text=""
 
     var tgId = inspect.findChild(settings, "telegramApiIdField")
     var tgHash = inspect.findChild(settings, "telegramApiHashField")
@@ -388,16 +389,12 @@ ShellRoot {
     root.check(waInbox.network === "whatsapp", "inbox network property is whatsapp")
     waInbox.selectConversation("wa-1@s.whatsapp.net")
     var waMic = inspect.findChild(waInbox, "micButton")
-    var waGif = inspect.findChild(waInbox, "gifButton")
     root.check(waMic && waMic.visible && waMic.width > 0, "voice recording button is visible on WhatsApp")
-    root.check(waGif && waGif.visible && waGif.width > 0, "GIF search button is visible on WhatsApp")
     root.check(waInbox.reactionsSupported, "WhatsApp message bubbles enable the reaction action")
 
     waInbox.react("wa-msg", "❤️")
     var waReaction = fake.delayed.pop()
     root.check(waReaction.method === "react" && waReaction.network === "whatsapp", "WhatsApp reaction is routed only to WhatsApp")
-    waInbox.openGifPicker()
-    root.check(fake.calls.some(function(c){ return c.method === "gifSearch" && c.network === "whatsapp" }), "WhatsApp GIF search uses the WhatsApp route")
     fake.statusTG = {phoneOK:true, state:"connected", unread:2}
     root.check(panel.serviceTabs.some(function(tab){ return tab.value === "telegram" && tab.unread === 2 }), "Telegram unread count reaches the service tab model")
     var serviceTabs = inspect.findChild(panel, "serviceTabs")
@@ -520,14 +517,12 @@ ShellRoot {
     var fbInbox = inspect.findChild(panel, "inboxLoader").item
     root.check(fbInbox && fbInbox.isMessenger && fbInbox.network === "messenger", "Messenger tab opens an isolated native inbox")
     fbInbox.selectConversation("fb-1")
-    root.check(inspect.findChild(fbInbox, "attachButton").visible && inspect.findChild(fbInbox, "micButton").visible && inspect.findChild(fbInbox, "gifButton").visible,
-      "Messenger shows attachment, voice, and GIF actions")
+    root.check(inspect.findChild(fbInbox, "attachButton").visible && inspect.findChild(fbInbox, "micButton").visible,
+      "Messenger shows attachment and voice actions")
     root.check(fbInbox.reactionsSupported, "Messenger message bubbles enable the reaction action")
     fbInbox.react("fb-msg", "👍")
     var fbReaction = fake.delayed.pop()
     root.check(fbReaction.method === "react" && fbReaction.network === "messenger", "Messenger reaction is routed only to Messenger")
-    fbInbox.openGifPicker()
-    root.check(fake.calls.some(function(c){ return c.method === "gifSearch" && c.network === "messenger" }), "Messenger GIF search uses the Messenger route")
     fbInbox.sendMessage("Messenger pending")
     var fbPending = fake.delayed.pop()
     root.check(fbPending.method === "send" && fbPending.network === "messenger", "Messenger send is routed only to Messenger")

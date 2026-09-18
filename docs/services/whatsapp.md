@@ -35,10 +35,10 @@ CGO and a standard C compiler such as gcc or clang.
 - View-once and ephemeral media are intentionally not cached or reopened.
 
 WhatsApp history is based on the initial phone sync and cached live messages.
-OmaChat does not currently request additional on-demand phone history. GIPHY
-search uses the optional personal API key in Settings and sends the selected
-result through the local attachment path. WhatsApp requires GIFs to be MP4
-playback messages, so outbound local and searched GIFs require ffmpeg. Incoming
+OmaChat does not currently request additional on-demand phone history. GIF files
+are sent from your computer through the attachment picker; there is no in-app
+GIF search. WhatsApp requires GIFs to be MP4 playback messages, so outbound
+GIFs require ffmpeg. Incoming
 GIF-playback videos render inline and loop. Calling remains explicitly
 unavailable in the WhatsApp panel.
 

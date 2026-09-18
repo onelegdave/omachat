@@ -28,9 +28,9 @@ is available, use browser pairing.
 ## Supported behavior and limits
 
 Read conversations, page older messages, and send text, photos, GIF files,
-captions, and reactions. Voice notes require optional ffmpeg/ffplay; GIPHY
-search requires your own API key in Settings. Local GIF attachments need no
-API key. Calling is unavailable.
+captions, and reactions. Voice notes require optional ffmpeg/ffplay. GIF files
+are sent from your computer; there is no in-app GIF search. Calling is
+unavailable.
 
 The inbox is limited to 50 conversations. Threads begin with 60 messages and
 load earlier pages on request. Captions are sent separately from attachments.

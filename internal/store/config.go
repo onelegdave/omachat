@@ -28,10 +28,6 @@ type Config struct {
 	// choose automatically.
 	BrowserProfile string `json:"browserProfile,omitempty"`
 
-	// GiphyAPIKey enables GIF search. GIPHY issues free keys; without one the
-	// GIF picker explains how to get it rather than failing silently.
-	GiphyAPIKey string `json:"giphyApiKey,omitempty"`
-
 	// UiScale multiplies panel type. 1 is the theme default. 0 means unset
 	// and is treated as 1 when read.
 	UiScale float64 `json:"uiScale,omitempty"`
@@ -90,7 +86,40 @@ func NewConfigStore(path string) *ConfigStore {
 	}
 	defer f.Close()
 	_ = json.NewDecoder(f).Decode(&cs.loaded)
+	cs.forgetRetiredKeys(path)
 	return cs
+}
+
+// retiredConfigKeys were written by earlier releases and hold credentials the
+// daemon no longer uses. They are deleted on startup so a removed feature does
+// not leave its secret behind on disk.
+var retiredConfigKeys = []string{"giphyApiKey"}
+
+// forgetRetiredKeys removes retired keys from the config file if any are
+// present. Failure is ignored: a stale key must never stop the daemon.
+func (c *ConfigStore) forgetRetiredKeys(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(data, &raw) != nil {
+		return
+	}
+	stale := false
+	for _, key := range retiredConfigKeys {
+		if _, ok := raw[key]; ok {
+			stale = true
+		}
+	}
+	if !stale {
+		return
+	}
+	_ = c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		for _, key := range retiredConfigKeys {
+			delete(cfg, key)
+		}
+	})
 }
 
 // Get returns a copy of the current config.
@@ -239,14 +268,6 @@ func (c *ConfigStore) SetBrowserProfile(name string) error {
 	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
 		cfg["browserProfile"] = name
 		loaded.BrowserProfile = name
-	})
-}
-
-// SetGiphyAPIKey stores the GIF search key.
-func (c *ConfigStore) SetGiphyAPIKey(key string) error {
-	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
-		cfg["giphyApiKey"] = key
-		loaded.GiphyAPIKey = key
 	})
 }
 

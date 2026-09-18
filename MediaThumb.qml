@@ -10,7 +10,6 @@ Item {
   property string path: ""
   property string mimeType: ""
   property string fileName: ""
-  property string remoteUrl: ""
   property bool playing: false
   property int maxEdge: Style.space(280)
   property bool clickable: path !== ""
@@ -18,15 +17,8 @@ Item {
   signal clicked()
   signal loadFailed()
 
-  readonly property bool gif: Model.isGif(mimeType, fileName, path) || Model.isGif("", "", remoteUrl)
-  readonly property string localSource: path !== "" ? "file://" + path : ""
-  readonly property string source: localSource !== "" ? localSource : root.safeRemote
-  readonly property string safeRemote: {
-    var u = String(remoteUrl || "")
-    if (u.indexOf("https://") !== 0) return ""
-    if (u.indexOf("giphy.com") === -1) return ""
-    return u
-  }
+  readonly property bool gif: Model.isGif(mimeType, fileName, path)
+  readonly property string source: path !== "" ? "file://" + path : ""
 
   readonly property bool hasItemSize: loader.item && loader.item.implicitWidth > 0 && loader.item.implicitHeight > 0
   readonly property bool hasError: !!(loader.item && loader.item.status === (root.gif ? AnimatedImage.Error : Image.Error))

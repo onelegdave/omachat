@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messeng
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.4.3**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.4.3).
+Current stable release: **0.4.4**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.4.4).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -123,7 +123,6 @@ start pairing again.
 | Photos and captions | Yes | Yes | Yes | Yes |
 | Send GIF files | Yes | Yes (ffmpeg) | No dedicated GIF sending support | Yes |
 | Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
-| GIPHY search | Optional personal API key | Optional personal API key + ffmpeg | Unavailable | Optional personal API key |
 | Reactions | Yes | Yes | Yes (chat-dependent) | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
 | Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
@@ -171,10 +170,11 @@ For voice notes, choose **Rec**, record, **Play**
 to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google
 Messages, WhatsApp, and Messenger record M4A; Telegram records OGG/Opus.
 WhatsApp uses a standard audio clip instead of native PTT because linked-device
-OGG/Opus notes fail to play on iPhone. Google, WhatsApp, and Messenger GIF
-search require your own GIPHY API key in Settings; sending a local GIF does not
-require a key. WhatsApp uses ffmpeg to convert GIF files to the MP4 playback
-format required by its protocol.
+OGG/Opus notes fail to play on iPhone. Google Messages, WhatsApp, and Messenger
+send GIF files from your computer through the attachment picker. OmaChat has no
+in-app GIF search and sends no search terms or API keys to a third-party GIF
+service. WhatsApp uses ffmpeg to convert GIF files to the MP4 playback format
+required by its protocol.
 
 Message reactions are available on Google Messages, WhatsApp, Telegram, and
 Messenger. Telegram supports the standard emoji choices shown by OmaChat;
@@ -199,7 +199,7 @@ files as new downloads complete.
 | `~/.local/share/omachat/whatsapp.db` and `whatsapp_store.json` | WhatsApp credentials and chat cache |
 | `~/.local/share/omachat/telegram.session` and `telegram_store.json` | Telegram credentials and chat cache |
 | `~/.local/share/omachat/messenger_session.json` and `messenger.db` | Messenger session cookies and encrypted-device state |
-| `~/.local/share/omachat/config.json` | Service choices, text size, browser selection, GIPHY key, Telegram API credentials |
+| `~/.local/share/omachat/config.json` | Service choices, text size, browser selection, Telegram API credentials |
 | `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, `media_messenger/` | Service-specific media caches |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Private plugin/helper control socket |
 

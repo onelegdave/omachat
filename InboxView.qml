@@ -110,13 +110,6 @@ Item {
   onPendingAttachmentChanged: attachCaption.text = ""
   property bool emojiPickerOpen: false
   property bool emojiPickerForReact: false
-  property bool gifPickerOpen: false
-  property var gifList: []
-  property bool gifNeedsKey: false
-  property string gifError: ""
-  property string gifQuery: ""
-  property string gifAttribution: "Powered by GIPHY"
-  property string gifKeyDraft: ""
   property string reactingTo: ""
   property bool copied: false
   property bool composerFocus: false
@@ -157,9 +150,6 @@ Item {
   }
 
 
-  onSettingsChanged: syncGiphyKey()
-  onServiceChanged: syncGiphyKey()
-
   property var _selectedByNet: ({})
   property string _previousNetwork: network
   onNetworkChanged: {
@@ -193,7 +183,6 @@ Item {
     pendingAttachment = ""
     attachCaption.text = ""
     emojiPickerOpen = false
-    gifPickerOpen = false
     reactingTo = ""
     threadError = ""
 
@@ -247,7 +236,6 @@ Item {
     if (recording) stopRecording(false)
     discardPendingCapture()
     emojiPickerOpen = false
-    gifPickerOpen = false
     reactingTo = ""
     pendingAttachment = ""
     selectedConvID = id
@@ -533,61 +521,6 @@ Item {
     }, root.network)
   }
 
-  function syncGiphyKey() {
-    var k = settings && settings.giphyApiKey ? String(settings.giphyApiKey).trim() : ""
-    if (k && service) service.call("setGiphyKey", { key: k }, null, root.network)
-  }
-
-  function openGifPicker() {
-    if (root.isTelegram) {
-      threadError = "GIF search is not supported for " + root.networkLabel + " in this version."
-      return
-    }
-    if (!service) return
-    emojiPickerOpen = false
-    gifPickerOpen = !gifPickerOpen
-    if (gifPickerOpen) searchGifs(gifQuery)
-  }
-
-  function searchGifs(q) {
-    if (!service) return
-    gifQuery = q || ""
-    gifError = ""
-    service.call("gifSearch", { query: gifQuery, limit: 24 }, function(ok, res) {
-      if (!ok) {
-        gifNeedsKey = false
-        gifList = []
-        gifError = String(res)
-        return
-      }
-      gifNeedsKey = res && res.needsKey === true
-      gifList = res && res.gifs ? res.gifs : []
-      gifAttribution = res && res.attribution ? res.attribution : "Powered by GIPHY"
-    }, root.network)
-  }
-
-  function saveGiphyKey() {
-    var k = gifKeyDraft.trim()
-    if (!k || !service) return
-    service.call("setGiphyKey", { key: k }, function(ok, res) {
-      if (!ok) { gifError = String(res); return }
-      gifNeedsKey = false
-      gifKeyDraft = ""
-      searchGifs(gifQuery)
-    }, root.network)
-  }
-
-  function pickGif(item) {
-    if (!service || !item || !item.sendURL) return
-    gifError = ""
-    var generation = selectionGeneration
-    service.call("gifFetch", { url: item.sendURL, id: item.id || "" }, function(ok, res) {
-      if (generation !== selectionGeneration) return
-      if (!ok) { gifError = String(res); return }
-      gifPickerOpen = false
-      if (res && res.path) pendingAttachment = res.path
-    }, root.network)
-  }
 
   function requestOpenUrl(raw) {
     var u = Model.safeHttpUrl(raw)
@@ -687,7 +620,6 @@ Item {
   function startRecording() {
     if (recording || selectedConvID === "") return
     emojiPickerOpen = false
-    gifPickerOpen = false
     threadError = ""
     discardPendingCapture()
     pendingAttachment = ""
@@ -1761,7 +1693,6 @@ Item {
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: {
-                root.gifPickerOpen = false
                 root.emojiPickerForReact = true
                 root.emojiPickerOpen = true
               }
@@ -1982,32 +1913,13 @@ Item {
         onClicked: root.recording ? root.stopRecording(true) : root.startRecording()
       }
 
-      PanelActionButton {
-        id: gifButton
-        objectName: "gifButton"
-        focusable: true
-        Accessible.role: Accessible.Button
-        Accessible.name: "Search GIFs"
-        visible: !root.isTelegram
-        anchors.left: micButton.visible ? micButton.right : attachButton.right
-        anchors.leftMargin: visible ? Style.space(2) : 0
-        anchors.verticalCenter: parent.verticalCenter
-        size: visible ? fs(Style.space(28)) : 0
-        iconText: "GIF"
-        fontSize: fs(Style.space(10))
-        tooltipText: "Search GIFs"
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        enabled: visible && composer.enabled && !root.sendingMedia
-        onClicked: root.openGifPicker()
-      }
 
       PanelActionButton {
         id: emojiButton
         focusable: true
         Accessible.role: Accessible.Button
         Accessible.name: "Insert emoji"
-        anchors.left: gifButton.visible ? gifButton.right : (micButton.visible ? micButton.right : attachButton.right)
+        anchors.left: micButton.visible ? micButton.right : attachButton.right
         anchors.leftMargin: Style.space(2)
         anchors.verticalCenter: parent.verticalCenter
         size: fs(Style.space(28))
@@ -2018,7 +1930,6 @@ Item {
         fontFamily: root.fontFamily
         enabled: composer.enabled
         onClicked: {
-          root.gifPickerOpen = false
           root.emojiPickerForReact = false
           root.emojiPickerOpen = !root.emojiPickerOpen
         }
@@ -2049,125 +1960,6 @@ Item {
       }
     }
 
-    Rectangle {
-      id: gifPicker
-      visible: root.gifPickerOpen && root.selectedConvID !== ""
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.bottom: composerRow.top
-      anchors.bottomMargin: Style.space(6)
-      height: visible ? Style.space(220) : 0
-      radius: Style.space(8)
-      color: Color.popups.background
-      border.width: 1
-      border.color: Color.popups.border
-      clip: true
-
-      Column {
-        anchors.fill: parent
-        anchors.margins: Style.space(8)
-        spacing: Style.space(6)
-
-        TextField {
-          id: gifSearchField
-        objectName: "gifSearchField"
-          width: parent.width
-          visible: !root.gifNeedsKey
-          placeholderText: "Search GIPHY"
-          placeholderTextColor: root.dim
-          foreground: root.foreground
-          onAccepted: root.searchGifs(text)
-          onTextChanged: gifDebounce.restart()
-          onActiveFocusChanged: root.composerFocus = activeFocus
-        }
-
-        Text {
-          width: parent.width
-          visible: root.gifNeedsKey
-          wrapMode: Text.WordWrap
-          text: "Add your own GIPHY API key in Settings to search GIFs. You can attach a local GIF without a key."
-          color: root.theirsInk
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.caption)
-        }
-
-        Button {
-          focusable: true
-          Accessible.role: Accessible.Button
-          Accessible.name: "Open settings"
-          visible: root.gifNeedsKey
-          text: "Open settings"
-          bordered: true
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          onClicked: {
-            root.gifPickerOpen = false
-            if (root.host) root.host.settingsOpen = true
-          }
-        }
-
-        Text {
-          width: parent.width
-          visible: root.gifError !== ""
-          wrapMode: Text.WordWrap
-          text: root.gifError
-          color: root.errorInk
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.caption)
-        }
-
-        GridView {
-          id: gifGrid
-          activeFocusOnTab: true
-          keyNavigationEnabled: true
-          Keys.onReturnPressed: if (currentItem) root.pickGif(currentItem.modelData)
-          Keys.onEnterPressed: if (currentItem) root.pickGif(currentItem.modelData)
-          Keys.onEscapePressed: { root.gifPickerOpen = false; composer.forceActiveFocus() }
-          highlight: Rectangle { color: "transparent"; border.width: 2; border.color: Color.accent }
-          highlightFollowsCurrentItem: true
-          width: parent.width
-          height: Style.space(128)
-          visible: !root.gifNeedsKey
-          cellWidth: Style.space(88)
-          cellHeight: Style.space(72)
-          clip: true
-          model: root.gifList
-          delegate: Item {
-            required property var modelData
-            width: Style.space(84)
-            height: Style.space(68)
-
-            MediaThumb {
-              anchors.fill: parent
-              remoteUrl: modelData ? (modelData.previewURL || "") : ""
-              playing: root.panelOpen && root.gifPickerOpen
-              maxEdge: Style.space(84)
-            }
-
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.pickGif(modelData)
-            }
-          }
-        }
-
-        Text {
-          width: parent.width
-          visible: !root.gifNeedsKey
-          text: root.gifAttribution
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.caption)
-        }
-      }
-
-      Timer {
-        id: gifDebounce
-        interval: 280
-        onTriggered: if (root.gifPickerOpen) root.searchGifs(gifSearchField.text)
-      }
-    }
 
     Rectangle {
       visible: root.emojiPickerOpen && root.selectedConvID !== ""

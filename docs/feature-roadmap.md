@@ -15,9 +15,8 @@ dependencies does not add missing protocol support.
   without requiring a shell restart. The API hash is never exposed in logs or status.
 - Existing text, photo, history, and supported voice features remain available
   according to the [service guides](README.md).
-- Messenger reactions, voice notes, and optional GIPHY search.
-- WhatsApp reactions, voice notes, saved contact-name resolution, and optional
-  GIPHY search.
+- Messenger reactions and voice notes.
+- WhatsApp reactions, voice notes, and saved contact-name resolution.
 - Telegram standard emoji reactions with live count updates and persisted
   history state.
 - Animated helper build and connection states; Retry is unavailable while the

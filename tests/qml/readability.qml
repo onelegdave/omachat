@@ -23,7 +23,7 @@ ShellRoot {
     function statusFor(net) { return status }
     function stateFor(net) { return state }
     function call(method, params, callback, network) {
-      if(callback) callback(true,{uiScale:1.3,giphyKeySet:false})
+      if(callback) callback(true,{uiScale:1.3})
     }
   }
   FloatingWindow {

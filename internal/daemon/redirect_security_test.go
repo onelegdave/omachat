@@ -6,7 +6,7 @@ import (
 )
 
 func TestPublicMediaRedirectPolicy(t *testing.T) {
-	for _, target := range []string{"http://media.giphy.com/test.gif", "file:///etc/passwd"} {
+	for _, target := range []string{"http://media.example.com/test.gif", "file:///etc/passwd"} {
 		req, err := http.NewRequest(http.MethodGet, target, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -15,7 +15,7 @@ func TestPublicMediaRedirectPolicy(t *testing.T) {
 			t.Fatalf("accepted non-HTTPS redirect %q", target)
 		}
 	}
-	req, err := http.NewRequest(http.MethodGet, "https://media.giphy.com/test.gif", nil)
+	req, err := http.NewRequest(http.MethodGet, "https://media.example.com/test.gif", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

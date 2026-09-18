@@ -385,26 +385,6 @@ func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(nil)
-	case wire.MethodGifSearch:
-		p, err := decodeParams[wire.GifSearchParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		res, err := d.GifSearch(ctx, p)
-		if err != nil {
-			return fail(err)
-		}
-		return ok(res)
-	case wire.MethodGifFetch:
-		p, err := decodeParams[wire.GifFetchParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		path, err := d.GifFetch(ctx, p)
-		if err != nil {
-			return fail(err)
-		}
-		return ok(map[string]string{"path": path})
 	case wire.MethodStartPairing, wire.MethodGaiaPairing:
 		return fail(errors.New("use browser pairing for Messenger"))
 	default:
@@ -574,38 +554,6 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 		}
 		return ok(nil)
 
-	case wire.MethodGifSearch:
-		p, err := decodeParams[wire.GifSearchParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		res, err := d.GifSearch(ctx, p)
-		if err != nil {
-			return fail(err)
-		}
-		return ok(res)
-
-	case wire.MethodGifFetch:
-		p, err := decodeParams[wire.GifFetchParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		path, err := d.GifFetch(ctx, p)
-		if err != nil {
-			return fail(err)
-		}
-		return ok(map[string]string{"path": path})
-
-	case wire.MethodSetGiphyKey:
-		p, err := decodeParams[wire.SetGiphyKeyParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		if err := d.SetGiphyKey(p.Key); err != nil {
-			return fail(err)
-		}
-		return ok(d.PluginConfig())
-
 	case wire.MethodSetUiScale:
 		p, err := decodeParams[wire.SetUiScaleParams](req.Params)
 		if err != nil {
@@ -755,28 +703,6 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 		}
 		return ok(nil)
 
-	case wire.MethodGifSearch:
-		p, err := decodeParams[wire.GifSearchParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		res, err := d.GifSearch(ctx, p)
-		if err != nil {
-			return fail(err)
-		}
-		return ok(res)
-
-	case wire.MethodGifFetch:
-		p, err := decodeParams[wire.GifFetchParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		path, err := d.GifFetch(ctx, p)
-		if err != nil {
-			return fail(err)
-		}
-		return ok(map[string]string{"path": path})
-
 	case wire.MethodConfig:
 		return ok(d.PluginConfig())
 
@@ -786,16 +712,6 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 			return fail(err)
 		}
 		if err := d.SetUiScale(p.Scale); err != nil {
-			return fail(err)
-		}
-		return ok(d.PluginConfig())
-
-	case wire.MethodSetGiphyKey:
-		p, err := decodeParams[wire.SetGiphyKeyParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		if err := d.SetGiphyKey(p.Key); err != nil {
 			return fail(err)
 		}
 		return ok(d.PluginConfig())
@@ -949,16 +865,6 @@ func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Re
 		}
 		return ok(d.PluginConfig())
 
-	case wire.MethodSetGiphyKey:
-		p, err := decodeParams[wire.SetGiphyKeyParams](req.Params)
-		if err != nil {
-			return fail(err)
-		}
-		if err := d.SetGiphyKey(p.Key); err != nil {
-			return fail(err)
-		}
-		return ok(d.PluginConfig())
-
 	case wire.MethodGaiaPairing, wire.MethodPairFromBrowser:
 		return fail(errors.New("Google account pairing is not supported on Telegram"))
 
@@ -974,9 +880,6 @@ func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Re
 			return fail(err)
 		}
 		return ok(nil)
-
-	case wire.MethodGifSearch, wire.MethodGifFetch:
-		return fail(errors.New("GIF search is not supported on Telegram"))
 
 	default:
 		return fail(fmt.Errorf("unknown method %q for network telegram", req.Method))

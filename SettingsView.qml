@@ -32,10 +32,7 @@ Flickable {
   readonly property string xProfileUrl: "https://x.com/OneLegDavePDX"
   readonly property string coffeeUrl: "https://buymeacoffee.com/onelegdave"
 
-  property bool giphyKeySet: false
-  property string keyDraft: ""
   property string statusText: ""
-  property bool saving: false
 
   property bool telegramConfigured: false
   property int telegramApiId: 0
@@ -60,7 +57,6 @@ Flickable {
     if (!service) return
     service.call("config", null, function(ok, res) {
       if (!ok || !res) return
-      root.giphyKeySet = res.giphyKeySet === true
       root.telegramConfigured = res.telegramConfigured === true
       root.telegramApiId = Number(res.telegramApiId) || 0
       var s = Number(res.uiScale)
@@ -120,37 +116,6 @@ Flickable {
     }, "telegram")
   }
 
-  function saveKey() {
-    var k = keyDraft.trim()
-    if (!k || !service) return
-    saving = true
-    statusText = ""
-    service.call("setGiphyKey", { key: k }, function(ok, res) {
-      root.saving = false
-      if (!ok) {
-        root.statusText = String(res)
-        return
-      }
-      root.giphyKeySet = res && res.giphyKeySet === true
-      root.keyDraft = ""
-      root.statusText = "GIPHY API key saved."
-    }, "gmessages")
-  }
-
-  function clearKey() {
-    if (!service) return
-    saving = true
-    service.call("setGiphyKey", { key: "" }, function(ok, res) {
-      root.saving = false
-      if (!ok) {
-        root.statusText = String(res)
-        return
-      }
-      root.giphyKeySet = false
-      root.keyDraft = ""
-      root.statusText = "GIPHY API key removed."
-    }, "gmessages")
-  }
 
   function openUrl(url) {
     Util.execArgv(["xdg-open", url])
@@ -206,7 +171,6 @@ Flickable {
           {label:"Service guides", section:servicesSection},
           {label:"Tools", section:toolsSection},
           {label:"Telegram API", section:telegramSection},
-          {label:"GIF search", section:gifSection},
           {label:"Credits", section:creditsSection},
           {label:"About", section:aboutSection}
         ]
@@ -302,6 +266,17 @@ Flickable {
             root.scaleSaved(s)
           }, "gmessages")
         }
+      }
+
+      Text {
+        width: parent.width
+        visible: root.statusText !== ""
+        wrapMode: Text.Wrap
+        text: root.statusText
+        color: root.statusText.indexOf("fail") >= 0 || root.statusText.indexOf("error") >= 0
+          ? root.urgentColor : root.accentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
       }
     }
 
@@ -420,7 +395,7 @@ Flickable {
         Text {
           width: parent.width
           wrapMode: Text.Wrap
-          text: "• Setup: Select WhatsApp in OmaChat, choose Use a QR code, open WhatsApp on your phone > Linked devices > Link a device, and scan the displayed QR code. Keep your phone online during linking and initial sync.\n• Features: Real-time conversation sync with saved contact names, text, photos, captions, reactions, M4A audio clips (with ffmpeg/ffplay), local GIF files and optional GIPHY search (with ffmpeg), retryable media downloads, and incoming static WebP stickers.\n• Limitations: History reflects initial phone sync and live messages; additional history cannot be requested from the phone, but cached history can be paged. Ephemeral and view-once media are intentionally not saved or reopened. Audio uses standard clips rather than native PTT to avoid the linked-device iPhone playback failure. Calling is currently unavailable."
+          text: "• Setup: Select WhatsApp in OmaChat, choose Use a QR code, open WhatsApp on your phone > Linked devices > Link a device, and scan the displayed QR code. Keep your phone online during linking and initial sync.\n• Features: Real-time conversation sync with saved contact names, text, photos, captions, reactions, M4A audio clips (with ffmpeg/ffplay), local GIF files (with ffmpeg), retryable media downloads, and incoming static WebP stickers.\n• Limitations: History reflects initial phone sync and live messages; additional history cannot be requested from the phone, but cached history can be paged. Ephemeral and view-once media are intentionally not saved or reopened. Audio uses standard clips rather than native PTT to avoid the linked-device iPhone playback failure. Calling is currently unavailable."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)
@@ -443,7 +418,7 @@ Flickable {
         Text {
           width: parent.width
           wrapMode: Text.Wrap
-          text: "• Setup: Obtain your api_id and api_hash from my.telegram.org. These are application credentials, not your Telegram login password.\n1. Configure credentials directly in Settings > Telegram API credentials below, or in a terminal run:\npython3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py\n2. In OmaChat, select Telegram > Pair with Telegram. On your phone, open Telegram > Settings > Devices > Link Desktop Device and scan the QR code. Saving credentials alone does not pair your account.\n• Features: Dialog synchronization, older history paging, text, photos, captions, static WebP stickers, mark-as-read, standard emoji reactions (when allowed by the chat), and voice notes (with ffmpeg/ffplay).\n• Limitations: GIF sending and search, animated TGS and video stickers, and calling are unsupported. Self-destructing/TTL media is not saved."
+          text: "• Setup: Obtain your api_id and api_hash from my.telegram.org. These are application credentials, not your Telegram login password.\n1. Configure credentials directly in Settings > Telegram API credentials below, or in a terminal run:\npython3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py\n2. In OmaChat, select Telegram > Pair with Telegram. On your phone, open Telegram > Settings > Devices > Link Desktop Device and scan the QR code. Saving credentials alone does not pair your account.\n• Features: Dialog synchronization, older history paging, text, photos, captions, static WebP stickers, mark-as-read, standard emoji reactions (when allowed by the chat), and voice notes (with ffmpeg/ffplay).\n• Limitations: GIF sending, animated TGS and video stickers, and calling are unsupported. Self-destructing/TTL media is not saved."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)
@@ -466,7 +441,7 @@ Flickable {
         Text {
           width: parent.width
           wrapMode: Text.Wrap
-          text: "• Setup: Sign in to facebook.com or messenger.com in Chrome, Chromium, or Brave, unlock the desktop keyring, then select Pair from browser in the Messenger tab. Pairing copies only the required session cookies into Messenger's private session store.\n• Features: Encrypted personal and group conversations, recent history, text, image and file sending, mark-as-read, reactions, voice notes (with ffmpeg/ffplay), and optional GIPHY search.\n• Limitations: Older encrypted history may be unavailable even when recent chats work. Meta does not provide a personal-inbox API, so this uses an unofficial protocol client that may break or require re-pairing when Meta changes its service. Calling is unavailable."
+          text: "• Setup: Sign in to facebook.com or messenger.com in Chrome, Chromium, or Brave, unlock the desktop keyring, then select Pair from browser in the Messenger tab. Pairing copies only the required session cookies into Messenger's private session store.\n• Features: Encrypted personal and group conversations, recent history, text, image and file sending, mark-as-read, reactions, and voice notes (with ffmpeg/ffplay).\n• Limitations: Older encrypted history may be unavailable even when recent chats work. Meta does not provide a personal-inbox API, so this uses an unofficial protocol client that may break or require re-pairing when Meta changes its service. Calling is unavailable."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)
@@ -661,134 +636,8 @@ Flickable {
       color: Color.popups.border
     }
 
-    // Section 6: GIPHY GIF Search
-    Column {
-      id: gifSection
-      width: parent.width
-      spacing: Style.space(10)
 
-      Text {
-        width: parent.width
-        wrapMode: Text.Wrap
-        text: "Google Messages, WhatsApp, and Messenger GIF search (optional)"
-        color: root.copyColor
-        font.family: root.fontFamily
-        font.pixelSize: fs(Style.font.heading)
-        font.bold: true
-      }
-
-      Text {
-        width: parent.width
-        wrapMode: Text.Wrap
-        text: root.giphyKeySet
-          ? "A personal GIPHY API key is currently configured in ~/.local/share/omachat/config.json. Enter a new key below to update it, or choose Delete key to remove it."
-          : "In-app GIF search requires a personal GIPHY API key. On the supported services listed above, sending local GIF files from your computer works without an API key."
-        color: root.copyColor
-        font.family: root.fontFamily
-        font.pixelSize: fs(Style.font.body)
-        lineHeight: 1.25
-      }
-
-      Column {
-        width: parent.width
-        spacing: Style.space(4)
-
-        Text {
-          width: parent.width
-          wrapMode: Text.Wrap
-          text: "1. Open the GIPHY Developer Dashboard and create a free account."
-          color: root.mutedColor
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.body)
-        }
-        Text {
-          width: parent.width
-          wrapMode: Text.Wrap
-          text: "2. Create a new app to generate an API key."
-          color: root.mutedColor
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.body)
-        }
-        Text {
-          width: parent.width
-          wrapMode: Text.Wrap
-          text: "3. Copy the API key, paste it below, and choose Save. OmaChat stores the key in your local configuration and sends it to GIPHY when you search. Search terms are also sent to GIPHY."
-          color: root.mutedColor
-          font.family: root.fontFamily
-          font.pixelSize: fs(Style.font.body)
-        }
-      }
-
-      Button {
-        focusable: true
-        Accessible.role: Accessible.Button
-        Accessible.name: text
-        text: "Open GIPHY Dashboard"
-        bordered: true
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: root.openUrl("https://developers.giphy.com/dashboard/")
-      }
-
-      Row {
-        spacing: Style.space(6)
-        width: parent.width
-        TextField {
-          id: keyField
-          objectName: "keyField"
-          width: parent.width - saveBtn.implicitWidth - Style.space(6)
-          placeholderText: root.giphyKeySet ? "Replacement API key" : "Paste GIPHY API key"
-          placeholderTextColor: root.mutedColor
-          font.pixelSize: fs(Style.font.body)
-          foreground: root.foreground
-          password: true
-          onAccepted: root.saveKey()
-          onTextChanged: root.keyDraft = text
-        }
-        Button {
-          focusable: true
-          Accessible.role: Accessible.Button
-          Accessible.name: text
-          id: saveBtn
-          text: root.saving ? "Saving" : "Save"
-          bordered: true
-          enabled: !root.saving && root.keyDraft.trim() !== ""
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          onClicked: root.saveKey()
-        }
-      }
-
-      Button {
-        focusable: true
-        Accessible.role: Accessible.Button
-        Accessible.name: text
-        visible: root.giphyKeySet
-        text: "Delete key"
-        foreground: root.urgentColor
-        fontFamily: root.fontFamily
-        onClicked: root.clearKey()
-      }
-
-      Text {
-        width: parent.width
-        visible: root.statusText !== ""
-        wrapMode: Text.Wrap
-        text: root.statusText
-        color: root.statusText.indexOf("fail") >= 0 || root.statusText.indexOf("error") >= 0
-          ? root.urgentColor : root.accentColor
-        font.family: root.fontFamily
-        font.pixelSize: fs(Style.font.body)
-      }
-    }
-
-    Rectangle {
-      width: parent.width
-      height: 1
-      color: Color.popups.border
-    }
-
-    // Section 6: Upstream Credits and Honest Attribution
+    // Section 5: Upstream Credits and Honest Attribution
     Column {
       id: creditsSection
       width: parent.width

@@ -92,9 +92,6 @@ const (
 	MethodSetProfile             = "setProfile"
 	MethodReact                  = "react"
 	MethodDiscardCapture         = "discardCapture"
-	MethodGifSearch              = "gifSearch"
-	MethodGifFetch               = "gifFetch"
-	MethodSetGiphyKey            = "setGiphyKey"
 	MethodSetUiScale             = "setUiScale"
 	MethodConfig                 = "config"
 	MethodUnpair                 = "unpair"
@@ -329,40 +326,6 @@ type SetProfileParams struct {
 	Name string `json:"name"`
 }
 
-// Gif is one search result. PreviewURL is a small looping rendition for the
-// grid; SendURL is the one actually sent, kept under a few megabytes so
-// carriers do not reject it.
-type Gif struct {
-	ID            string `json:"id"`
-	Title         string `json:"title,omitempty"`
-	PreviewURL    string `json:"previewURL"`
-	PreviewWidth  int    `json:"previewWidth"`
-	PreviewHeight int    `json:"previewHeight"`
-	SendURL       string `json:"sendURL"`
-}
-
-type GifSearchParams struct {
-	Query string `json:"query"`
-	Limit int    `json:"limit,omitempty"`
-}
-
-// GifSearchResult reports whether a key is configured, so the picker can
-// explain what to do instead of showing an empty grid.
-type GifSearchResult struct {
-	Gifs        []Gif  `json:"gifs"`
-	NeedsKey    bool   `json:"needsKey"`
-	Attribution string `json:"attribution"`
-}
-
-type GifFetchParams struct {
-	URL string `json:"url"`
-	ID  string `json:"id"`
-}
-
-type SetGiphyKeyParams struct {
-	Key string `json:"key"`
-}
-
 type SetTelegramCredentialsParams struct {
 	APIID   int    `json:"apiId"`
 	APIHash string `json:"apiHash"`
@@ -416,13 +379,12 @@ func (p *SetTelegramCredentialsParams) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ConfigResult is safe to show in the panel. The GIPHY key and Telegram API hash
-// stay in the daemon config file and are never sent to QML.
+// ConfigResult is safe to show in the panel. The Telegram API hash stays in
+// the daemon config file and is never sent to QML.
 type ConfigResult struct {
 	EnabledServices          []string `json:"enabledServices"`
 	ServiceSelectionRequired bool     `json:"serviceSelectionRequired"`
 	RestartRequired          bool     `json:"restartRequired"`
-	GiphyKeySet              bool     `json:"giphyKeySet"`
 	UiScale                  float64  `json:"uiScale"`
 	TelegramConfigured       bool     `json:"telegramConfigured"`
 	TelegramAPIID            int      `json:"telegramApiId,omitempty"`

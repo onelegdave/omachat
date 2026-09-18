@@ -37,7 +37,6 @@ on the official site and pair again.
 - Outbound image and file attachments from the system file chooser.
 - Emoji reactions.
 - M4A voice recording and playback with optional ffmpeg/ffplay.
-- In-app GIF search with an optional personal GIPHY API key.
 - Contact and group avatars cached privately in the background.
 - Mark-as-read support.
 

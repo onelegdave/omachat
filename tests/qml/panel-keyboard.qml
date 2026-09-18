@@ -42,7 +42,7 @@ ShellRoot {
     function refreshConversations(net) {}
     function call(method, params, callback, network) {
       if (!callback) return
-      if (method === "config") callback(true,{uiScale:1.1,giphyKeySet:false,enabledServices:enabledServices})
+      if (method === "config") callback(true,{uiScale:1.1,enabledServices:enabledServices})
       else if (method === "messages") callback(true,{hasMore:false,messages:[
         {id:"demo-1",conversationID:"demo-alex",text:"Ready for a walk this weekend?",fromMe:false,timestamp:root.now-600000000,attachments:[],reactions:[]},
         {id:"demo-2",conversationID:"demo-alex",text:"Absolutely. Saturday morning works for me.",fromMe:true,timestamp:root.now-480000000,delivery:"delivered",attachments:[],reactions:[]},
