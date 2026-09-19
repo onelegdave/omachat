@@ -207,7 +207,7 @@ func TestUnknownNetworkRejection(t *testing.T) {
 	d, _ := setupTestDaemonWithMockWhatsApp(t)
 	ctx := context.Background()
 
-	for _, badNetwork := range []string{"signal", "discord", "unknown", "slack"} {
+	for _, badNetwork := range []string{"matrix", "discord", "unknown", "slack"} {
 		req := wire.Request{
 			ID:      "bad-net",
 			Network: badNetwork,

@@ -1,6 +1,7 @@
 # Security
 
-This Native Omarchy Plugin talks to Google Messages, WhatsApp, Telegram, and Messenger. It
+This Native Omarchy Plugin talks to Google Messages, WhatsApp, Telegram,
+Messenger, and—when explicitly enabled—the external `signal-cli` process. It
 reads browser cookies while checking pairing profiles, pairing, changing the
 selected profile, and recovering from authentication failures. WhatsApp and
 Telegram use their QR flows. Message content and credentials are cached locally.
@@ -19,6 +20,7 @@ or working exploit details in a public issue.
 - WhatsApp paged history cache: `~/.local/share/omachat/whatsapp_history.sqlite` (0600)
 - Telegram session and chat cache: `~/.local/share/omachat/telegram.session` and `telegram_store.json` (0600)
 - Messenger session, encrypted-device state, and chat cache: `~/.local/share/omachat/messenger.db` and `messenger_store.json` (0600)
+- Signal linked-device keys and local text cache: `~/.local/share/omachat/signal-cli/` and `signal_store.json` (0600 files inside 0700 directories)
 - Config (browser profile, Telegram API credentials, notification and pop-out preferences, sidebar layout, last service and per-service conversation IDs): `~/.local/share/omachat/config.json` (0600)
 - Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, and `media_messenger/`
 - Telegram conversation caches from before typed peer IDs are ignored on upgrade;
@@ -67,7 +69,7 @@ programs it starts. The pairing link reaches `qrencode` on standard input.
 - Cookie values are not logged. Errors name which cookie is missing.
 - View-once and ephemeral WhatsApp media are omitted from disk persistence and cannot be reopened or redownloaded.
 - Telegram self-destructing media is omitted from disk persistence and cannot be reopened or redownloaded.
-- Google Messages, WhatsApp, Telegram, and Messenger maintain separate credential stores, databases, sessions, and cache directories. Unpairing one network never deletes or exposes files belonging to another.
+- Google Messages, WhatsApp, Telegram, Messenger, and Signal maintain separate credential stores, databases, sessions, and cache directories. Unpairing one network never deletes or exposes files belonging to another.
 
 ## Accepted
 
@@ -94,6 +96,11 @@ programs it starts. The pairing link reaches `qrencode` on standard input.
   break or detect it, invalidate sessions, or restrict an account. Messenger
   pairing imports the minimum required browser cookies into a separate private
   store; cookie values are never exposed to QML or logs.
+- Signal support launches the separately installed, unofficial `signal-cli`
+  client as an OmaChat child process. It decrypts messages and stores linked-
+  device keys locally. Keep it current, revoke OmaChat from Signal's phone-side
+  Linked devices screen before deleting local keys, and do not treat the local
+  text cache as an encrypted archive.
 - Links in messages open only after a confirm dialog, and only `http`/`https`
   URLs. Images open locally with `xdg-open` after they are already in the cache.
 - Pairing copies the browser cookie database to a 0600 tempfile so it can

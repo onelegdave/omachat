@@ -25,6 +25,9 @@ TOOLS = [
     tool("clipboard", "Wayland clipboard", "Copy and safely paste text.", ["wl-copy", "wl-paste"], "wl-clipboard"),
     tool("xdg", "Desktop link opener", "Open links, source pages, and downloaded files.", ["xdg-open"], "xdg-utils"),
     tool("python", "Python 3", "Build and verify the helper, check releases, and run setup tools.", ["python3"], "python"),
+    dict(id="signalcli", name="signal-cli", purpose="Optional Signal linked-device service. It runs only while Signal is enabled.",
+         commands=["signal-cli"], packages=[], installable=False,
+         sourceUrl="https://github.com/AsamK/signal-cli"),
 ]
 
 
@@ -50,6 +53,9 @@ def install(key):
     entry = next((t for t in TOOLS if t["id"] == key), None)
     if entry is None:
         print("Unknown dependency. No command was run.", file=sys.stderr)
+        return 2
+    if not entry.get("installable", True):
+        print("This optional tool is not installed automatically. Review its upstream source and the dependency guide.", file=sys.stderr)
         return 2
     if not sys.stdin.isatty():
         print("Installation requires an interactive terminal. No command was run.", file=sys.stderr)

@@ -20,7 +20,7 @@ the app reports a check failure and you can install Python manually.
 ## Shared requirements
 
 An Omarchy desktop with its Quickshell plugin system provides the native UI.
-All four services share a locally compiled helper:
+All five services share a locally compiled helper:
 
 | Requirement | Purpose | Your choice |
 | --- | --- | --- |
@@ -51,6 +51,7 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 | Google browser pairing | Supported Chromium-family browser signed in at Messages for web; `sqlite3` and `secret-tool` (libsecret) for cookie access; unlocked desktop keyring |
 | WhatsApp pairing | WhatsApp phone app with Linked devices; `qrencode` |
 | Telegram setup | Personal `api_id` and `api_hash`; Python 3 for `scripts/configure-telegram.py`; Telegram phone app and `qrencode` |
+| Signal | Current `signal-cli` executable; Signal phone app and `qrencode` for linked-device pairing |
 | Voice notes on all services | `ffmpeg` to record and `ffplay` to play audio |
 | WhatsApp GIF sending | `ffmpeg` to convert GIF files to WhatsApp's MP4 playback format |
 | Inline GIF-style clips from WhatsApp and Messenger | `ffmpeg`, run by the helper through `prlimit` (util-linux) to make an animated preview; without them the clips open in a video player |
@@ -61,6 +62,27 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 For example, if you want voice notes, you can run `omarchy pkg add ffmpeg`
 yourself. Text and photos do not need voice tools. Installing a tool does not
 enable an unsupported service feature.
+
+### Signal's optional service
+
+Signal support uses the independent [signal-cli](https://github.com/AsamK/signal-cli)
+project through its JSON-RPC interface. It is not an official Signal client and
+is not downloaded or installed by OmaChat. Its checklist entry is review-only,
+with no Install button. Install a current release using the upstream
+instructions (or review and use `yay -S signal-cli` on Arch/Omarchy), confirm
+`signal-cli --version` works, then enable Signal
+under Settings > Services. OmaChat starts `signal-cli` as its own child process;
+disabling Signal stops that process while retaining the linked-device keys.
+
+Select **Link Signal**, then scan the QR code from Signal on your phone under
+Settings > Linked devices > Link a new device. The first milestone stores chat
+history locally from the time OmaChat is linked; it does not promise an import
+of the phone's earlier history. Remove the OmaChat device from the phone before
+deleting `~/.local/share/omachat/signal-cli/`.
+
+Keep `signal-cli` updated. Its maintainers warn that older releases can stop
+working when Signal's service changes. Signal's own linked-device limits and
+inactivity rules also apply.
 
 Desktop packages vary. Accounts, API credentials, pairing, and optional features
 are always the user's choice. A missing tool is not a reason to install every

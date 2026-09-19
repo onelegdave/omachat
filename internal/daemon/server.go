@@ -166,6 +166,9 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	if d.fb != nil {
 		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkMessenger, Data: d.fb.Status()})
 	}
+	if d.sg != nil {
+		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkSignal, Data: d.sg.Status()})
+	}
 
 	go func() {
 		for {
@@ -307,6 +310,8 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		resp = d.dispatchTelegram(ctx, req)
 	case wire.NetworkMessenger:
 		resp = d.dispatchMessenger(ctx, req)
+	case wire.NetworkSignal:
+		resp = d.dispatchSignal(ctx, req)
 	case "", wire.NetworkGMessages:
 		resp = d.dispatchGMessages(ctx, req)
 	default:
@@ -321,6 +326,77 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		}
 	}
 	return resp
+}
+
+func (d *Daemon) dispatchSignal(ctx context.Context, req wire.Request) wire.Response {
+	fail := func(err error) wire.Response { return wire.Response{ID: req.ID, Error: err.Error()} }
+	ok := func(result any) wire.Response { return wire.Response{ID: req.ID, OK: true, Result: result} }
+	if d.sg == nil {
+		return fail(errors.New("Signal backend not initialized"))
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	switch req.Method {
+	case wire.MethodStatus:
+		return ok(d.sg.Status())
+	case wire.MethodConversations:
+		p, err := decodeParams[wire.ConversationsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(d.sg.Conversations(p.Count))
+	case wire.MethodMessages:
+		p, err := decodeParams[wire.MessagesParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.Messages(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodSend:
+		p, err := decodeParams[wire.SendParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.Send(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodMarkRead:
+		p, err := decodeParams[wire.MarkReadParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.sg.MarkRead(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodStartPairing:
+		qr, err := d.sg.StartPairing(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(map[string]string{"url": qr})
+	case wire.MethodRefresh:
+		if err := d.sg.Refresh(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodUnpair:
+		if err := d.sg.Unpair(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodConfig:
+		return ok(d.PluginConfig())
+	case wire.MethodPickImage, wire.MethodSendMedia, wire.MethodMedia, wire.MethodReact:
+		return fail(errors.New("this Signal feature is not implemented yet"))
+	default:
+		return fail(fmt.Errorf("unknown method %q for network signal", req.Method))
+	}
 }
 
 func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.Response {

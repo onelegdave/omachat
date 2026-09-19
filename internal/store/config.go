@@ -291,7 +291,7 @@ func (c *ConfigStore) SetEnabledServices(services []string) error {
 	}
 	seen := make(map[string]bool)
 	for _, service := range services {
-		if service != "gmessages" && service != "whatsapp" && service != "telegram" && service != "messenger" {
+		if service != "gmessages" && service != "whatsapp" && service != "telegram" && service != "messenger" && service != "signal" {
 			return fmt.Errorf("unknown service %q", service)
 		}
 		if seen[service] {
@@ -300,7 +300,7 @@ func (c *ConfigStore) SetEnabledServices(services []string) error {
 		seen[service] = true
 	}
 	canonical := []string{}
-	for _, service := range []string{"gmessages", "whatsapp", "telegram", "messenger"} {
+	for _, service := range []string{"gmessages", "whatsapp", "telegram", "messenger", "signal"} {
 		if seen[service] {
 			canonical = append(canonical, service)
 		}

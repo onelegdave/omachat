@@ -41,6 +41,7 @@ ShellRoot {
   property var statusWA: ({phoneOK:true, state:"connected"})
   property var statusTG: ({phoneOK:true, state:"unpaired"})
   property var statusFB: ({phoneOK:true, state:"unpaired"})
+  property var statusSG: ({phoneOK:true, state:"unpaired"})
   property int unread: 0
   property string refreshError: ""
   property var browserProfiles: []
@@ -54,15 +55,18 @@ ShellRoot {
   property var conversationsFB: [
    {id:"fb-1",name:"Demo Messenger",preview:"",timestamp:4000000,unread:true}
   ]
+  property var conversationsSG: [
+   {id:"signal:user:alice",name:"Demo Signal",preview:"Signal test",timestamp:5000000}
+  ]
   property var calls: []
   property var delayed: []
   property bool failMedia: true
   signal messageReceived(var message, var net)
   signal conversationUpdated(var conversation, var net)
   signal paired(var net)
-  function statusFor(net) { return net === "whatsapp" ? statusWA : (net === "messenger" ? statusFB : status) }
+  function statusFor(net) { return net === "whatsapp" ? statusWA : (net === "telegram" ? statusTG : (net === "messenger" ? statusFB : (net === "signal" ? statusSG : status))) }
   function stateFor(net) { var s = statusFor(net); return s && s.state ? s.state : state }
-  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : (net === "messenger" ? conversationsFB : conversations) }
+  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : (net === "messenger" ? conversationsFB : (net === "signal" ? conversationsSG : conversations)) }
   function unreadFor(net) {
     var s = net === "telegram" ? statusTG : statusFor(net)
     return s && s.unread ? s.unread : 0
@@ -393,13 +397,14 @@ ShellRoot {
     fake.status={state:"unpaired",error:warning}
     unpairCall.callback(false,warning)
     root.check(loader.item === null, "unpair destroys account UI state")
-    var warningLabel=inspect.findChild(panel,"unpairWarningText")
+    var pairingItem = inspect.findChild(panel,"bodyLoader").item
+    var warningLabel=inspect.findChild(pairingItem,"unpairWarningText")
     root.check(warningLabel && warningLabel.text === warning && warningLabel.wrapMode !== Text.NoWrap, "unpaired screen retains remote revocation warning and phone instructions")
     root.check(!panel.unpairing, "failed unpair releases pending state")
-    var qrProcess=inspect.findChild(panel,"qrProcess")
+    var qrProcess=inspect.findChild(pairingItem,"qrProcess")
     root.check(!!qrProcess,"pairing QR process exists")
     qrProcess.exited(1,0)
-    root.check(inspect.findChild(panel,"qrErrorText").text.indexOf("Settings > Tools") >= 0,"QR failure gives dependency guidance")
+    root.check(inspect.findChild(pairingItem,"qrErrorText").text.indexOf("Settings > Tools") >= 0,"QR failure gives dependency guidance")
 
     fake.state="connected"
     fake.status={phoneOK:true}
@@ -528,17 +533,19 @@ ShellRoot {
     gmInbox.selectConversation("same-id")
     root.check(inspect.findChild(gmInbox, "composer").text === "Google specific draft", "clearing WhatsApp drafts via onPaired does not affect Google drafts")
 
-    // 4. if both unpaired, prior account-view destruction still valid
+    // 4. if every enabled account is unpaired, prior account-view destruction still valid
     fake.statusWA = {phoneOK:true, state:"unpaired"}
+    fake.statusTG = {phoneOK:true, state:"unpaired"}
     fake.status = {phoneOK:true, state:"unpaired"}
-    // Both unpaired, anyAccountReady should be false, and inboxLoader should be destroyed
+    // All enabled services are unpaired, so inboxLoader should be destroyed.
     // need to trigger connState change update if needed, but changing status should do it.
     // wait for qml to process bindings
     panel.activeService = "gmessages" // trigger update
-    root.check(inspect.findChild(panel, "inboxLoader").item === null, "if both accounts are unpaired, the inboxLoader item is destroyed")
+    root.check(inspect.findChild(panel, "inboxLoader").item === null, "if all enabled accounts are unpaired, the inboxLoader item is destroyed")
 
     // Restore states for later tests
     fake.statusWA = {phoneOK:true, state:"connected"}
+    fake.statusTG = {phoneOK:true, state:"connected"}
     fake.status = {phoneOK:true, state:"connected"}
     panel.activeService = "gmessages"
     var beforeTelegram = fake.calls.length
@@ -572,6 +579,18 @@ ShellRoot {
     fbInbox.sendMessage("Messenger pending")
     var fbPending = fake.delayed.pop()
     root.check(fbPending.method === "send" && fbPending.network === "messenger", "Messenger send is routed only to Messenger")
+    fake.enabledServices = ["gmessages","whatsapp","telegram","messenger","signal"]
+    fake.statusSG = {phoneOK:true, state:"connected", unread:3}
+    panel.syncActiveService()
+    serviceTabs = inspect.findChild(panel, "serviceTabs")
+    root.check(serviceTabs && serviceTabs.options.some(function(tab){ return tab.value === "signal" && tab.unread === 3 }), "inactive Signal service tab receives its unread badge")
+    panel.setActiveService("signal")
+    var sgInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(sgInbox && sgInbox.isSignal && sgInbox.network === "signal", "Signal tab opens an isolated native inbox")
+    sgInbox.selectConversation("signal:user:alice")
+    sgInbox.sendMessage("Signal pending")
+    var sgPending = fake.delayed.pop()
+    root.check(sgPending.method === "send" && sgPending.network === "signal", "Signal send is routed only to Signal")
     panel.setActiveService("gmessages")
     var screenshot=Quickshell.env("OMACHAT_TEST_SCREENSHOT")
     if (screenshot) {

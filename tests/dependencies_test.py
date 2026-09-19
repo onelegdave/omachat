@@ -38,6 +38,11 @@ class DependenciesTest(unittest.TestCase):
             self.assertEqual(deps.install("qrencode"), 2)
             run.assert_not_called()
 
+    def test_signal_cli_is_check_only(self):
+        with patch.object(deps.subprocess, "run") as run:
+            self.assertEqual(deps.install("signalcli"), 2)
+            run.assert_not_called()
+
     def test_cancel_never_launches(self):
         with patch.object(deps.sys.stdin, "isatty", return_value=True), patch.object(deps, "check", return_value={"installed": False}), patch.object(deps.shutil, "which", return_value="/bin/tool"), patch("builtins.input", return_value=""), patch.object(deps.subprocess, "run") as run:
             self.assertEqual(deps.install("qrencode"), 0)

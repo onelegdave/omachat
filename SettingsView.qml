@@ -1348,6 +1348,28 @@ Flickable {
             textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
+            text: "Signal"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Experimental Signal support invokes the separately installed signal-cli project (GPL-3.0) over JSON-RPC. It is not bundled with OmaChat and is not an official Signal client."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
             text: "Desktop Environment"
             color: root.copyColor
             font.family: root.fontFamily

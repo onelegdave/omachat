@@ -41,6 +41,11 @@ the exceptions retained in vendor/go.mau.fi/mautrix-meta/LICENSE.exceptions.
 OmaChat uses its unofficial Messenger and encrypted-chat protocol code; the
 root AGPL license is consistent with the dependency's copyleft terms.
 
+Optional Signal support invokes the separately installed signal-cli executable
+over its JSON-RPC interface. signal-cli is an independent GPL-3.0 project by
+AsamK and contributors; it is not bundled, downloaded, or presented as an
+official Signal client. See https://github.com/AsamK/signal-cli.
+
 OmaChat releases published before v0.4.3 retain the original MIT grant in
 LICENSE-MIT. That prior permission is not withdrawn. Marc Ford's adapted code
 also retains its MIT terms. Other third-party files retain the licenses shipped

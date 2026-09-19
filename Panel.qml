@@ -73,7 +73,8 @@ Panel {
     { value: "gmessages", label: "Google", icon: "󰭹", tooltip: "Google Messages" },
     { value: "whatsapp", label: "WhatsApp", icon: "󰖣", tooltip: "WhatsApp" },
     { value: "telegram", label: "Telegram", icon: "\uf2c6", tooltip: "Telegram" },
-    { value: "messenger", label: "Messenger", icon: "󰈎", tooltip: "Facebook Messenger" }
+    { value: "messenger", label: "Messenger", icon: "󰈎", tooltip: "Facebook Messenger" },
+    { value: "signal", label: "Signal", icon: "󰍡", tooltip: "Signal (unofficial integration)" }
   ]
   property int unreadRevision: 0
   readonly property var providerTabs: {
@@ -104,10 +105,12 @@ Panel {
     function onStatusWAChanged() { root.unreadRevision++ }
     function onStatusTGChanged() { root.unreadRevision++ }
     function onStatusFBChanged() { root.unreadRevision++ }
+    function onStatusSGChanged() { root.unreadRevision++ }
     function onConversationsChanged() { root.unreadRevision++; root.selectPendingConversation() }
     function onConversationsWAChanged() { root.unreadRevision++; root.selectPendingConversation() }
     function onConversationsTGChanged() { root.unreadRevision++; root.selectPendingConversation() }
     function onConversationsFBChanged() { root.unreadRevision++; root.selectPendingConversation() }
+    function onConversationsSGChanged() { root.unreadRevision++; root.selectPendingConversation() }
     function onPaired(network) { root.rememberConversation(network, "") }
   }
   readonly property var serviceTabs: unifiedInboxEnabled
@@ -129,7 +132,7 @@ Panel {
   }
   property real uiScale: 1
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
-  readonly property bool serviceLive: activeService === "gmessages" || activeService === "whatsapp" || activeService === "messenger"
+  readonly property bool serviceLive: activeService === "gmessages" || activeService === "whatsapp" || activeService === "messenger" || activeService === "signal"
   readonly property bool telegramLive: activeService === "telegram"
 
   readonly property var chat: service
@@ -902,7 +905,9 @@ Panel {
             ? " Check Telegram on your phone or desktop."
             : (currentNet === "messenger"
               ? " Check Facebook or Messenger for active sessions."
-              : " Check Google Messages on your phone under Device pairing."))
+              : (currentNet === "signal"
+                ? " Remove OmaChat from Signal on your phone under Linked devices."
+                : " Check Google Messages on your phone under Device pairing.")))
         root.unpairError = "Unpair did not complete successfully: " + String(res) + advice
       }
     }, currentNet)
@@ -977,7 +982,7 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             width: Style.space(22)
             height: Style.space(22)
-            text: root.activeService === "whatsapp" ? "󰖣" : (root.activeService === "telegram" ? "\uf2c6" : (root.activeService === "messenger" ? "󰈎" : "󰭹"))
+            text: root.activeService === "whatsapp" ? "󰖣" : (root.activeService === "telegram" ? "\uf2c6" : (root.activeService === "messenger" ? "󰈎" : (root.activeService === "signal" ? "󰍡" : "󰭹")))
             color: root.accentInk
             fontFamily: root.fontFamily
             fontSize: root.fs(Style.font.heading)
@@ -1230,8 +1235,14 @@ Panel {
         var w = typeof root.service.stateFor === "function" ? root.service.stateFor("whatsapp") : ""
         var t = typeof root.service.stateFor === "function" ? root.service.stateFor("telegram") : ""
         var m = typeof root.service.stateFor === "function" ? root.service.stateFor("messenger") : ""
-        var isReady = function(st) { return st !== "unpaired" && st !== "pairing" && st !== "gaiaPairing" && st !== "error" && st !== "" }
-        return isReady(g) || isReady(w) || isReady(t) || isReady(m)
+        var s = typeof root.service.stateFor === "function" ? root.service.stateFor("signal") : ""
+        var enabled = function(net) {
+          return !Array.isArray(root.service.enabledServices) || root.service.enabledServices.indexOf(net) >= 0
+        }
+        var isReady = function(net, st) {
+          return enabled(net) && st !== "disabled" && st !== "unpaired" && st !== "pairing" && st !== "gaiaPairing" && st !== "error" && st !== ""
+        }
+        return isReady("gmessages", g) || isReady("whatsapp", w) || isReady("telegram", t) || isReady("messenger", m) || isReady("signal", s)
       }
 
       // Retain drafts and selection while Settings or another tab is shown.
@@ -1671,7 +1682,7 @@ Panel {
       lastConversations: root.lastConversations
       onConversationSelected: function(network, id) { root.rememberConversation(network, id) }
       onSendingMediaChanged: if (!sendingMedia) Qt.callLater(root.selectPendingConversation)
-      networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : (root.activeService === "telegram" ? "Telegram" : (root.activeService === "messenger" ? "Messenger" : "Google Messages"))
+      networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : (root.activeService === "telegram" ? "Telegram" : (root.activeService === "messenger" ? "Messenger" : (root.activeService === "signal" ? "Signal" : "Google Messages")))
       keepPreviousEmojiSearchText: root.keepPreviousEmojiSearchText
       uiScale: root.uiScale
     }
