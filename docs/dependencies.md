@@ -3,14 +3,17 @@
 [OmaChat](../README.md) never installs dependencies automatically. Settings
 includes read-only availability checks with **Review source**, **Install**, and **Recheck**
 actions. Install is offered for missing tools and opens a terminal, showing the
-exact command before asking for confirmation. Pacman then shows its transaction
-and asks for confirmation too. Cancelling either prompt installs nothing.
+exact command before asking for confirmation. Pacman—or Yay for the optional
+Signal AUR package—then shows its transaction and asks for confirmation too.
+Cancelling either prompt installs nothing.
 
 Only fixed, known Arch package names can be passed to this action. It does not
-run install hooks, download scripts, use AUR helpers, refresh package databases,
-or upgrade your system. You can always install tools manually instead. Source
-buttons open the [Arch packaging repositories](https://wiki.archlinux.org/title/Arch_Build_System),
-where PKGBUILDs link to upstream source. No package source is executed by reviewing it.
+run arbitrary commands, accept user-supplied package names, refresh package
+databases, or upgrade your system. The Signal action uses Yay for the fixed
+`signal-cli` AUR package; all other actions use Pacman with fixed official Arch
+package names. You can always install tools manually instead. Source buttons
+open the Arch or AUR package page, where the packaging recipe and upstream
+source can be reviewed. No package source is executed by reviewing it.
 
 Choose **Recheck** after installation. Available means the required executable
 was found (and Go meets the minimum version), not that accounts, devices, portals,
@@ -67,9 +70,12 @@ enable an unsupported service feature.
 
 Signal support uses the independent [signal-cli](https://github.com/AsamK/signal-cli)
 project through its JSON-RPC interface. It is not an official Signal client and
-is not downloaded or installed by OmaChat. Its checklist entry is review-only,
-with no Install button. Install a current release using the upstream
-instructions (or review and use `yay -S signal-cli` on Arch/Omarchy), confirm
+is not bundled with OmaChat. When Signal is enabled and `signal-cli` is missing,
+OmaChat first asks whether to install it. Choosing **Cancel** leaves Signal
+disabled and runs nothing. Choosing **Install and enable** opens a terminal;
+review and confirm the fixed `yay -S --needed signal-cli` command there. The
+package manager still asks before changing the system. You may instead install
+a current release using the upstream instructions, confirm
 `signal-cli --version` works, then enable Signal
 under Settings > Services. OmaChat starts `signal-cli` as its own child process;
 disabling Signal stops that process while retaining the linked-device keys.

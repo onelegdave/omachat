@@ -9,9 +9,11 @@ does not start a process until Signal is enabled in Settings > Services.
 
 1. Install a current `signal-cli` release by following its upstream README. On
    Arch/Omarchy, the community AUR package can be installed with
-   `yay -S signal-cli`; review its PKGBUILD and transaction before confirming.
+   `yay -S --needed signal-cli`; review its PKGBUILD and transaction before confirming.
 2. Verify `signal-cli --version` succeeds in a terminal.
 3. In OmaChat, open Settings > Services, enable Signal, and apply the change.
+   If `signal-cli` is missing, OmaChat asks before opening a terminal installer.
+   Canceling that prompt leaves Signal disabled and installs nothing.
 4. Open the Signal tab and select **Link Signal**.
 5. On the primary phone, open Signal > Settings > Linked devices > Link a new
    device and scan OmaChat's QR code.

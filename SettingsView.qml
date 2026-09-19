@@ -815,7 +815,7 @@ Flickable {
         textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
-        text: "OmaChat never installs packages automatically. Check the tools below, review their source, and choose Install only for tools you want. The terminal asks for confirmation before invoking sudo; the package manager asks again before making changes. Accounts and API credentials remain your choice."
+        text: "OmaChat never installs packages automatically. Check the tools below, review their source, and choose Install only for tools you want. The terminal asks for confirmation before invoking the package manager; the package manager asks again before making changes. Accounts and API credentials remain your choice."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)

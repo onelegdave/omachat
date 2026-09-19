@@ -51,7 +51,7 @@ Column {
             || typeof row.name !== "string" || typeof row.purpose !== "string"
             || typeof row.detail !== "string" || typeof row.sourceUrl !== "string"
             || !(row.sourceUrl.startsWith("https://gitlab.archlinux.org/archlinux/packaging/packages/")
-                 || (row.id === "signalcli" && row.sourceUrl === "https://github.com/AsamK/signal-cli")))
+                 || (row.id === "signalcli" && row.sourceUrl === "https://aur.archlinux.org/packages/signal-cli")))
           throw new Error("invalid row")
       }
       dependencies = rows

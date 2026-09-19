@@ -10,6 +10,7 @@ ShellRoot {
  id: root
  property bool passed: false
  property string testImage: Quickshell.env("OMACHAT_TEST_IMAGE")
+ property var serviceInstallLaunches: []
  function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
  function named(item, name) {
   if (item.objectName === name) return item
@@ -128,7 +129,15 @@ ShellRoot {
  Chat.Panel { id: delayedPanel }
  Chat.Panel { id: disconnectedPanel }
  Chat.SettingsView { id: settings; visible: false; service: fake }
- Chat.ServiceOptions { id: serviceOptions; parent:window.contentItem; width:600; visible:false; service:fake }
+ Chat.ServiceOptions {
+  id: serviceOptions
+  parent:window.contentItem
+  width:600
+  visible:false
+  service:fake
+  launch:function(argv) { root.serviceInstallLaunches=root.serviceInstallLaunches.concat([argv]) }
+  probeSignalCLI:function() { serviceOptions.acceptSignalProbe(1) }
+ }
  Chat.DependencyChecklist {
   id: dependencies
   parent: window.contentItem
@@ -158,6 +167,27 @@ ShellRoot {
     fake.savingServices=false
     opt.callback(false,"Could not save")
     root.check(fake.enabledServices.length === 3 && serviceOptions.resultText === "Could not save","failed selection does not hide services")
+    serviceOptions.reload()
+    serviceOptions.choose("whatsapp",false)
+    serviceOptions.choose("signal",true)
+    serviceOptions.save()
+    root.check(serviceOptions.signalInstallPromptOpen,"missing signal-cli asks before installation")
+    root.check(root.serviceInstallLaunches.length === 0 && fake.delayed.length === 0,"Signal prompt does not install or save before consent")
+    serviceOptions.cancelSignalInstall()
+    root.check(serviceOptions.selected.join(",") === fake.enabledServices.join(",") && root.serviceInstallLaunches.length === 0,"cancel restores saved services and launches nothing")
+    serviceOptions.choose("signal",true)
+    serviceOptions.save()
+    root.check(serviceOptions.signalInstallPromptOpen,"Signal install prompt can be reopened")
+    serviceOptions.confirmSignalInstall()
+    root.check(root.serviceInstallLaunches.length === 1,"confirm launches the Signal dependency installer")
+    var signalArgv=root.serviceInstallLaunches[0]
+    root.check(signalArgv[0] === "omarchy" && signalArgv[1] === "launch" && signalArgv[2] === "terminal" && signalArgv[3] === "python3" && signalArgv[4].endsWith("/scripts/dependencies.py") && signalArgv[5] === "--install" && signalArgv[6] === "signalcli","Signal installer uses fixed terminal argv")
+    var signalSave=fake.delayed.pop()
+    root.check(signalSave.method === "setEnabledServices" && signalSave.selected.indexOf("signal")>=0,"confirmed Signal installation applies the requested service choice")
+    fake.enabledServices=signalSave.selected.slice()
+    fake.savingServices=false
+    signalSave.callback(true,{})
+    fake.enabledServices=["gmessages","whatsapp","telegram"]
     serviceOptions.reload()
     fake.enabledServices=["telegram"]
     panel.syncActiveService()
