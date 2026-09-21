@@ -9,15 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProductClaimsTest(unittest.TestCase):
-    def test_telegram_reactions_are_documented_consistently(self):
+    def test_reactions_are_documented_consistently(self):
         readme = (ROOT / "README.md").read_text()
         settings = (ROOT / "SettingsView.qml").read_text()
-        self.assertIn("| Reactions | Yes | Yes | Yes (chat-dependent) | Yes |", readme)
+        self.assertIn("| Reactions | Yes | Yes | Yes (chat-dependent) | Yes | Yes |", readme)
         self.assertIn("standard emoji reactions (when allowed by the chat)", settings)
 
     def test_visible_credits_include_every_protocol_client(self):
         settings = (ROOT / "SettingsView.qml").read_text()
-        for project in ("libgm", "whatsmeow", "gotd/td", "mautrix-meta"):
+        for project in ("libgm", "whatsmeow", "gotd/td", "mautrix-meta", "signal-cli"):
             self.assertIn(project, settings)
 
     def test_settings_do_not_advertise_unimplemented_webcam_capture(self):

@@ -15,6 +15,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
 	"github.com/onelegdave/omachat/internal/messenger"
+	signalbackend "github.com/onelegdave/omachat/internal/signal"
 	"github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/telegram"
 	"github.com/onelegdave/omachat/internal/whatsapp"
@@ -94,6 +95,7 @@ type Daemon struct {
 	wa *whatsapp.Backend
 	tg *telegram.Backend
 	fb *messenger.Backend
+	sg *signalbackend.Backend
 }
 
 // New builds a daemon around already-resolved paths.
@@ -119,6 +121,7 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 	d.wa = whatsapp.New(log, paths, d.PublishEvent)
 	d.tg = telegram.New(log, paths, d.PublishEvent, d.config)
 	d.fb = messenger.New(log, paths, d.PublishEvent)
+	d.sg = signalbackend.New(log, paths, d.PublishEvent)
 	d.fb.SetConfig(d.config)
 	services, _ := d.config.EnabledServices(paths)
 	d.activeServices = make(map[string]bool)
@@ -150,6 +153,7 @@ func (d *Daemon) Telegram() *telegram.Backend {
 
 func (d *Daemon) SetMessenger(fb *messenger.Backend) { d.fb = fb }
 func (d *Daemon) Messenger() *messenger.Backend      { return d.fb }
+func (d *Daemon) Signal() *signalbackend.Backend     { return d.sg }
 
 // Start loads any stored session and connects, or parks in the unpaired state
 // waiting for the plugin to ask for a QR code.
@@ -183,6 +187,14 @@ func (d *Daemon) Start(ctx context.Context) error {
 		}
 	} else if d.fb != nil {
 		d.fb.SetState(wire.StateDisabled, "")
+	}
+	if d.sg != nil && d.serviceEnabled(wire.NetworkSignal) {
+		if err := d.sg.Start(ctx); err != nil {
+			d.log.Error().Err(err).Msg("Signal backend initialization failed")
+			d.sg.SetState(wire.StateDisconnected, "Signal initialization error: "+err.Error())
+		}
+	} else if d.sg != nil {
+		d.sg.SetState(wire.StateDisabled, "")
 	}
 	if !d.serviceEnabled(wire.NetworkGMessages) {
 		d.setState(wire.StateDisabled, "")
@@ -316,6 +328,9 @@ func (d *Daemon) Stop() {
 	}
 	if d.fb != nil {
 		d.fb.Stop()
+	}
+	if d.sg != nil {
+		d.sg.Stop()
 	}
 }
 

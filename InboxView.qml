@@ -20,8 +20,9 @@ Item {
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
   readonly property bool isMessenger: network === "messenger"
+  readonly property bool isSignal: network === "signal"
   readonly property bool reactionsSupported: true
-  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : "Google Messages"))
+  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : (isSignal ? "Signal" : "Google Messages")))
 
   readonly property color dim: Model.readableInk(panelBg, Color.muted)
   readonly property color errorInk: Model.readableInk(panelBg, Color.urgent)
@@ -769,6 +770,8 @@ Item {
   onStatusTGChanged: if (statusTG && statusTG.state === "unpaired") root.clearNetwork("telegram")
   readonly property var statusFB: service && typeof service.statusFor === "function" ? service.statusFor("messenger") : (service ? service.statusFB : null)
   onStatusFBChanged: if (statusFB && statusFB.state === "unpaired") root.clearNetwork("messenger")
+  readonly property var statusSG: service && typeof service.statusFor === "function" ? service.statusFor("signal") : (service ? service.statusSG : null)
+  onStatusSGChanged: if (statusSG && statusSG.state === "unpaired") root.clearNetwork("signal")
   readonly property var statusGM: service && typeof service.statusFor === "function" ? service.statusFor("gmessages") : (service ? service.status : null)
   onStatusGMChanged: if (statusGM && statusGM.state === "unpaired") root.clearNetwork("gmessages")
 

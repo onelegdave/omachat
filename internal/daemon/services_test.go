@@ -42,7 +42,7 @@ func TestDisabledStartupAndRouting(t *testing.T) {
 	if _, err := os.Stat(d.paths.WhatsAppDBFile()); !os.IsNotExist(err) {
 		t.Fatal("disabled WhatsApp initialized its store")
 	}
-	for _, service := range []string{"gmessages", "whatsapp", "telegram"} {
+	for _, service := range wire.KnownNetworks {
 		resp := d.dispatch(context.Background(), wire.Request{Network: service, Method: wire.MethodStatus})
 		if !resp.OK {
 			t.Fatal(resp.Error)
@@ -128,7 +128,7 @@ func TestServiceRestartOnlyAfterSocketWrite(t *testing.T) {
 	defer cancel()
 	go d.handleConn(ctx, server)
 	reader := bufio.NewReader(client)
-	for i := 0; i < 4; i++ {
+	for range wire.KnownNetworks {
 		if _, err := reader.ReadBytes('\n'); err != nil {
 			t.Fatal(err)
 		}

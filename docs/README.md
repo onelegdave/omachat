@@ -14,6 +14,7 @@ release.
 - [WhatsApp setup and recovery](services/whatsapp.md)
 - [Telegram setup and recovery](services/telegram.md)
 - [Messenger setup, limitations, and recovery](services/messenger.md)
+- [Signal setup and experimental scope](services/signal.md)
 - [Development and release workflow](../CONTRIBUTING.md)
 - [Security and local data](../SECURITY.md)
 - [Credits and third-party notices](../CREDITS.md)

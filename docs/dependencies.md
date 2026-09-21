@@ -3,14 +3,17 @@
 [OmaChat](../README.md) never installs dependencies automatically. Settings
 includes read-only availability checks with **Review source**, **Install**, and **Recheck**
 actions. Install is offered for missing tools and opens a terminal, showing the
-exact command before asking for confirmation. Pacman then shows its transaction
-and asks for confirmation too. Cancelling either prompt installs nothing.
+exact command before asking for confirmation. Pacman—or Yay for the optional
+Signal AUR package—then shows its transaction and asks for confirmation too.
+Cancelling either prompt installs nothing.
 
 Only fixed, known Arch package names can be passed to this action. It does not
-run install hooks, download scripts, use AUR helpers, refresh package databases,
-or upgrade your system. You can always install tools manually instead. Source
-buttons open the [Arch packaging repositories](https://wiki.archlinux.org/title/Arch_Build_System),
-where PKGBUILDs link to upstream source. No package source is executed by reviewing it.
+run arbitrary commands, accept user-supplied package names, refresh package
+databases, or upgrade your system. The Signal action uses Yay for the fixed
+`signal-cli` AUR package; all other actions use Pacman with fixed official Arch
+package names. You can always install tools manually instead. Source buttons
+open the Arch or AUR package page, where the packaging recipe and upstream
+source can be reviewed. No package source is executed by reviewing it.
 
 Choose **Recheck** after installation. Available means the required executable
 was found (and Go meets the minimum version), not that accounts, devices, portals,
@@ -20,7 +23,7 @@ the app reports a check failure and you can install Python manually.
 ## Shared requirements
 
 An Omarchy desktop with its Quickshell plugin system provides the native UI.
-All four services share a locally compiled helper:
+All five services share a locally compiled helper:
 
 | Requirement | Purpose | Your choice |
 | --- | --- | --- |
@@ -51,6 +54,7 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 | Google browser pairing | Supported Chromium-family browser signed in at Messages for web; `sqlite3` and `secret-tool` (libsecret) for cookie access; unlocked desktop keyring |
 | WhatsApp pairing | WhatsApp phone app with Linked devices; `qrencode` |
 | Telegram setup | Personal `api_id` and `api_hash`; Python 3 for `scripts/configure-telegram.py`; Telegram phone app and `qrencode` |
+| Signal | Current `signal-cli` executable; Signal phone app and `qrencode` for linked-device pairing |
 | Voice notes on all services | `ffmpeg` to record and `ffplay` to play audio |
 | WhatsApp GIF sending | `ffmpeg` to convert GIF files to WhatsApp's MP4 playback format |
 | File selection | Working desktop portal and its file-picker backend |
@@ -60,6 +64,30 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 For example, if you want voice notes, you can run `omarchy pkg add ffmpeg`
 yourself. Text and photos do not need voice tools. Installing a tool does not
 enable an unsupported service feature.
+
+### Signal's optional service
+
+Signal support uses the independent [signal-cli](https://github.com/AsamK/signal-cli)
+project through its JSON-RPC interface. It is not an official Signal client and
+is not bundled with OmaChat. When Signal is enabled and `signal-cli` is missing,
+OmaChat first asks whether to install it. Choosing **Cancel** leaves Signal
+disabled and runs nothing. Choosing **Install and enable** opens a terminal;
+review and confirm the fixed `yay -S --needed signal-cli` command there. The
+package manager still asks before changing the system. You may instead install
+a current release using the upstream instructions, confirm
+`signal-cli --version` works, then enable Signal
+under Settings > Services. OmaChat starts `signal-cli` as its own child process;
+disabling Signal stops that process while retaining the linked-device keys.
+
+Select **Link Signal**, then scan the QR code from Signal on your phone under
+Settings > Linked devices > Link a new device. OmaChat stores chat history
+locally from the time it is linked; it does not promise an import of the
+phone's earlier history. Remove the OmaChat device from the phone before
+deleting `~/.local/share/omachat/signal-cli/`.
+
+Keep `signal-cli` updated. Its maintainers warn that older releases can stop
+working when Signal's service changes. Signal's own linked-device limits and
+inactivity rules also apply.
 
 Desktop packages vary. Accounts, API credentials, pairing, and optional features
 are always the user's choice. A missing tool is not a reason to install every
