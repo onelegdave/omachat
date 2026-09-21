@@ -24,12 +24,17 @@ the child and hides the tab without deleting keys or local messages.
 
 ## Current features
 
-Implemented: optional service lifecycle, QR provisioning, direct and group text
-send/receive, contact discovery, a locally accumulated conversation store,
+Implemented: optional service lifecycle, QR provisioning, direct and existing-group
+text send/receive, contact discovery, a locally accumulated conversation store,
 incoming and outgoing attachments with captions, voice notes, and emoji
 reactions including add, replace, remove, and phone-synced updates. Attachments
 download lazily into `~/.cache/omachat/media_signal/` and are subject to the
 shared 256 MiB cache budget.
+
+The current shared OmaChat UI opens conversations after message activity has
+been observed. Starting a previously unseen direct conversation or selecting an
+otherwise empty group requires the planned cross-service new-conversation UI;
+Signal discovery does not fill the inbox with empty contact or group rows.
 
 OmaChat honors remote deletions and removes the content of expired disappearing
 messages from its local store and media cache. View-once attachments are not
