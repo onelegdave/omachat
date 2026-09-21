@@ -365,6 +365,41 @@ func (d *Daemon) dispatchSignal(ctx context.Context, req wire.Request) wire.Resp
 			return fail(err)
 		}
 		return ok(res)
+	case wire.MethodSendMedia:
+		p, err := decodeParams[wire.SendMediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.SendMedia(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodMedia:
+		p, err := decodeParams[wire.MediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.Media(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodPickImage:
+		path, err := d.PickFile(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(wire.PickImageResult{Path: path})
+	case wire.MethodReact:
+		p, err := decodeParams[wire.ReactParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.sg.React(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
 	case wire.MethodMarkRead:
 		p, err := decodeParams[wire.MarkReadParams](req.Params)
 		if err != nil {
@@ -392,8 +427,6 @@ func (d *Daemon) dispatchSignal(ctx context.Context, req wire.Request) wire.Resp
 		return ok(nil)
 	case wire.MethodConfig:
 		return ok(d.PluginConfig())
-	case wire.MethodPickImage, wire.MethodSendMedia, wire.MethodMedia, wire.MethodReact:
-		return fail(errors.New("this Signal feature is not implemented yet"))
 	default:
 		return fail(fmt.Errorf("unknown method %q for network signal", req.Method))
 	}

@@ -81,9 +81,9 @@ under Settings > Services. OmaChat starts `signal-cli` as its own child process;
 disabling Signal stops that process while retaining the linked-device keys.
 
 Select **Link Signal**, then scan the QR code from Signal on your phone under
-Settings > Linked devices > Link a new device. The first milestone stores chat
-history locally from the time OmaChat is linked; it does not promise an import
-of the phone's earlier history. Remove the OmaChat device from the phone before
+Settings > Linked devices > Link a new device. OmaChat stores chat history
+locally from the time it is linked; it does not promise an import of the
+phone's earlier history. Remove the OmaChat device from the phone before
 deleting `~/.local/share/omachat/signal-cli/`.
 
 Keep `signal-cli` updated. Its maintainers warn that older releases can stop

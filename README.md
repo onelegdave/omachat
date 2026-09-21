@@ -147,10 +147,10 @@ start pairing again.
 | Feature | Google Messages | WhatsApp | Telegram | Messenger | Signal (experimental) |
 | --- | --- | --- | --- | --- | --- |
 | Conversation list, text, per-chat drafts | Yes | Yes | Yes | Yes | Yes, accumulated locally after linking |
-| Photos and captions | Yes | Yes | Yes | Yes | Not yet |
-| Send GIF files | Yes | Yes (ffmpeg) | No dedicated GIF sending support | Yes | Not yet |
-| Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Not yet |
-| Reactions | Yes | Yes | Yes (chat-dependent) | Yes | Not yet |
+| Photos and captions | Yes | Yes | Yes | Yes | Yes |
+| Send GIF files | Yes | Yes (ffmpeg) | No dedicated GIF sending support | Yes | Yes |
+| Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
+| Reactions | Yes | Yes | Yes (chat-dependent) | Yes | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes | Not yet |
 | Older history | Fetch older pages | Page cached history and request an older phone page | Fetch older pages | Fetch older pages | No phone-history import |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable | Unavailable |
@@ -307,8 +307,8 @@ in-app GIF search and sends no search terms or API keys to a third-party GIF
 service. WhatsApp uses ffmpeg to convert GIF files to the MP4 playback format
 required by its protocol.
 
-Message reactions are available on Google Messages, WhatsApp, Telegram, and
-Messenger. Telegram supports the standard emoji choices shown by OmaChat;
+Message reactions are available on Google Messages, WhatsApp, Telegram,
+Messenger, and Signal. Telegram supports the standard emoji choices shown by OmaChat;
 individual chats or channels may restrict which reactions Telegram accepts.
 
 Use Tab to move between controls, arrow keys and Enter to open a conversation,
@@ -332,9 +332,9 @@ files as new downloads complete.
 | `~/.local/share/omachat/whatsapp_history.sqlite` | WhatsApp paged message history |
 | `~/.local/share/omachat/telegram.session` and `telegram_store.json` | Telegram credentials and chat cache |
 | `~/.local/share/omachat/messenger_session.json` and `messenger.db` | Messenger session cookies and encrypted-device state |
-| `~/.local/share/omachat/signal-cli/` and `signal_store.json` | Signal linked-device keys and the locally accumulated text-message cache |
+| `~/.local/share/omachat/signal-cli/` and `signal_store.json` | Signal linked-device keys and the locally accumulated message cache |
 | `~/.local/share/omachat/config.json` | Service choices, notification preferences, text size, sidebar layout, last service and conversation IDs, browser selection, Telegram API credentials |
-| `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, `media_messenger/` | Service-specific media caches |
+| `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, `media_messenger/`, `media_signal/` | Service-specific media caches |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Private plugin/helper control socket |
 
 Before uninstalling, select **Unpair this desktop** on each connected service

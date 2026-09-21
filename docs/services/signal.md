@@ -22,14 +22,22 @@ OmaChat launches `signal-cli --data-dir ~/.local/share/omachat/signal-cli
 --output=json jsonRpc` as a child of the shared helper. Disabling Signal stops
 the child and hides the tab without deleting keys or local messages.
 
-## First milestone
+## Current features
 
 Implemented: optional service lifecycle, QR provisioning, direct and group text
-send/receive, contact discovery, and a locally accumulated conversation store.
+send/receive, contact discovery, a locally accumulated conversation store,
+incoming and outgoing attachments with captions, voice notes, and emoji
+reactions including add, replace, remove, and phone-synced updates. Attachments
+download lazily into `~/.cache/omachat/media_signal/` and are subject to the
+shared 256 MiB cache budget.
 
-Not implemented yet: phone-history import, attachments, reactions, upstream
-read receipts, typing indicators, calls, disappearing-message expiry,
-safety-number UI, complete group metadata, or in-app device revocation.
+OmaChat honors remote deletions and removes the content of expired disappearing
+messages from its local store and media cache. View-once attachments are not
+listed or cached by OmaChat.
+
+Not implemented yet: phone-history import, upstream read receipts, typing
+indicators, calls, safety-number UI, complete group administration, static
+sticker presentation, or in-app device revocation.
 
 Use the phone's Linked devices screen to revoke OmaChat. Only after revocation,
 remove `~/.local/share/omachat/signal-cli/` if you also want to delete the local

@@ -9,10 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProductClaimsTest(unittest.TestCase):
-    def test_telegram_reactions_are_documented_consistently(self):
+    def test_reactions_are_documented_consistently(self):
         readme = (ROOT / "README.md").read_text()
         settings = (ROOT / "SettingsView.qml").read_text()
-        self.assertIn("| Reactions | Yes | Yes | Yes (chat-dependent) | Yes | Not yet |", readme)
+        self.assertIn("| Reactions | Yes | Yes | Yes (chat-dependent) | Yes | Yes |", readme)
         self.assertIn("standard emoji reactions (when allowed by the chat)", settings)
 
     def test_visible_credits_include_every_protocol_client(self):

@@ -16,7 +16,7 @@ func TestRPCClientWithInstalledSignalCLI(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	client := NewRPCClient()
-	if err := client.Start(ctx, t.TempDir(), nil); err != nil {
+	if err := client.Start(ctx, t.TempDir(), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	defer client.Close()

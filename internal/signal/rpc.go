@@ -16,7 +16,7 @@ import (
 // Caller is the small signal-cli seam used by Backend. Tests provide an
 // in-memory implementation; production uses RPCClient below.
 type Caller interface {
-	Start(context.Context, string, func(json.RawMessage)) error
+	Start(context.Context, string, func(json.RawMessage), func(error)) error
 	Call(context.Context, string, any, any) error
 	Close() error
 }
@@ -52,13 +52,14 @@ type RPCClient struct {
 	nextID  atomic.Uint64
 	done    chan struct{}
 	waitErr error
+	onExit  func(error)
 }
 
 func NewRPCClient() *RPCClient {
 	return &RPCClient{pending: make(map[string]chan rpcReply)}
 }
 
-func (c *RPCClient) Start(parent context.Context, dataDir string, notify func(json.RawMessage)) error {
+func (c *RPCClient) Start(parent context.Context, dataDir string, notify func(json.RawMessage), onExit func(error)) error {
 	if _, err := exec.LookPath("signal-cli"); err != nil {
 		return errors.New("signal-cli is not installed; see the Signal setup guide, then retry")
 	}
@@ -88,7 +89,7 @@ func (c *RPCClient) Start(parent context.Context, dataDir string, notify func(js
 		c.mu.Unlock()
 		return fmt.Errorf("start signal-cli: %w", err)
 	}
-	c.cmd, c.stdin, c.cancel, c.done = cmd, stdin, cancel, make(chan struct{})
+	c.cmd, c.stdin, c.cancel, c.done, c.onExit = cmd, stdin, cancel, make(chan struct{}), onExit
 	c.mu.Unlock()
 	go c.readLoop(stdout, notify)
 	go c.waitLoop()
@@ -97,7 +98,9 @@ func (c *RPCClient) Start(parent context.Context, dataDir string, notify func(js
 
 func (c *RPCClient) readLoop(stdout io.Reader, notify func(json.RawMessage)) {
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 8192), 16<<20)
+	// getAttachment returns base64 in a single JSON-RPC line. Keep the bound
+	// above OmaChat's attachment limit while still rejecting unbounded output.
+	scanner.Buffer(make([]byte, 8192), 144<<20)
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		var frame rpcFrame
@@ -129,6 +132,14 @@ func (c *RPCClient) readLoop(stdout io.Reader, notify func(json.RawMessage)) {
 			ch <- rpcReply{result: frame.Result}
 		}
 	}
+	if scanner.Err() != nil {
+		c.mu.Lock()
+		cancel := c.cancel
+		c.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	}
 }
 
 func (c *RPCClient) waitLoop() {
@@ -146,7 +157,11 @@ func (c *RPCClient) waitLoop() {
 		ch <- rpcReply{err: fmt.Errorf("signal-cli stopped: %w", err)}
 	}
 	close(done)
+	onExit := c.onExit
 	c.mu.Unlock()
+	if onExit != nil {
+		onExit(err)
+	}
 }
 
 func (c *RPCClient) Call(ctx context.Context, method string, params any, out any) error {
@@ -208,7 +223,7 @@ func (c *RPCClient) Close() error {
 	<-done
 	c.mu.Lock()
 	err := c.waitErr
-	c.cmd, c.stdin, c.cancel, c.done = nil, nil, nil, nil
+	c.cmd, c.stdin, c.cancel, c.done, c.onExit = nil, nil, nil, nil, nil
 	c.mu.Unlock()
 	return err
 }

@@ -3,6 +3,7 @@ package signal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,12 +23,13 @@ type fakeCaller struct {
 	closed  bool
 	calls   []string
 	params  map[string]any
+	onExit  func(error)
 }
 
-func (f *fakeCaller) Start(_ context.Context, _ string, notify func(json.RawMessage)) error {
+func (f *fakeCaller) Start(_ context.Context, _ string, notify func(json.RawMessage), onExit func(error)) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.started, f.notify = true, notify
+	f.started, f.notify, f.onExit = true, notify, onExit
 	return nil
 }
 func (f *fakeCaller) Close() error { f.mu.Lock(); defer f.mu.Unlock(); f.closed = true; return nil }
@@ -53,6 +55,8 @@ func (f *fakeCaller) Call(_ context.Context, method string, params any, out any)
 		raw = `{"number":"+15550001111"}`
 	case "send":
 		raw = `{"timestamp":1700000000000}`
+	case "getAttachment":
+		raw = `{"data":"aGVsbG8="}`
 	default:
 		raw = `{}`
 	}
@@ -79,11 +83,15 @@ func TestSendUsesSignalCLIParameterNames(t *testing.T) {
 	if _, ok := direct["recipients"]; ok {
 		t.Fatalf("deprecated plural recipient param present: %#v", direct)
 	}
+	conversations := b.Conversations(0)
+	if len(conversations) != 1 || conversations[0].ID != directPrefix+"+15550002222" {
+		t.Fatalf("direct conversation was not created: %#v", conversations)
+	}
 	if _, err := b.Send(context.Background(), wire.SendParams{ConversationID: groupPrefix + "base64-group", Text: "hello group"}); err != nil {
 		t.Fatal(err)
 	}
 	group := fake.params["send"].(map[string]any)
-	if _, ok := group["groupId"]; !ok {
+	if got, ok := group["groupId"].(string); !ok || got != "base64-group" {
 		t.Fatalf("group send params = %#v", group)
 	}
 }
@@ -113,6 +121,19 @@ func TestBackendStartsAndStopsOptionalClient(t *testing.T) {
 	b.Stop()
 	if !fake.started || !fake.closed {
 		t.Fatalf("lifecycle: started=%v closed=%v", fake.started, fake.closed)
+	}
+}
+
+func TestUnexpectedSignalCLIExitUpdatesConnectionState(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.onExit(errors.New("process failed"))
+	if status := b.Status(); status.State != wire.StateDisconnected || status.Error == "" {
+		t.Fatalf("status = %#v", status)
 	}
 }
 
@@ -160,5 +181,196 @@ func TestPairingPublishesQRAndCompletes(t *testing.T) {
 		case <-deadline:
 			t.Fatal("pairing did not complete")
 		}
+	}
+}
+
+func TestReactionsUpdateTargetWithoutBlankMessages(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	convID := directPrefix + "+15550002222"
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"timestamp":1700000000000,"message":"hello"}}}`))
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"reaction":{"emoji":"👍","targetSentTimestamp":1700000000000}}}}`))
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: convID})
+	if len(result.Messages) != 1 || len(result.Messages[0].Reactions) != 1 || result.Messages[0].Reactions[0].Emoji != "👍" {
+		t.Fatalf("reaction messages = %#v", result.Messages)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"reaction":{"emoji":"❤️","targetSentTimestamp":1700000000000}}}}`))
+	result, _ = b.Messages(context.Background(), wire.MessagesParams{ConversationID: convID})
+	if got := result.Messages[0].Reactions; len(got) != 1 || got[0].Emoji != "❤️" {
+		t.Fatalf("replacement = %#v", got)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"reaction":{"emoji":"❤️","targetSentTimestamp":1700000000000,"isRemove":true}}}}`))
+	result, _ = b.Messages(context.Background(), wire.MessagesParams{ConversationID: convID})
+	if len(result.Messages[0].Reactions) != 0 {
+		t.Fatalf("removal = %#v", result.Messages[0].Reactions)
+	}
+}
+
+func TestOutgoingReactionTogglesAndUsesSignalCLIParameters(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"timestamp":1700000000000,"message":"hello"}}}`))
+	p := wire.ReactParams{ConversationID: directPrefix + "+15550002222", MessageID: messageID(1700000000000, "+15550002222"), Emoji: "👍"}
+	if err := b.React(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	params := fake.params["sendReaction"].(map[string]any)
+	if params["targetAuthor"] != "+15550002222" || params["targetTimestamp"] != int64(1700000000000) || params["remove"] != false {
+		t.Fatalf("params = %#v", params)
+	}
+	if err := b.React(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if params = fake.params["sendReaction"].(map[string]any); params["remove"] != true {
+		t.Fatalf("toggle params = %#v", params)
+	}
+}
+
+func TestPhoneSyncedReactionIsMarkedMine(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	convID := directPrefix + "+15550002222"
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"timestamp":1700000000000,"message":"hello"}}}`))
+	fake.notify(json.RawMessage(`{"envelope":{"syncMessage":{"sentMessage":{"destinationNumber":"+15550002222","dataMessage":{"reaction":{"emoji":"👍","targetSentTimestamp":1700000000000}}}}}}`))
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: convID})
+	if got := result.Messages[0].Reactions; len(got) != 1 || !got[0].Mine || got[0].Emoji != "👍" {
+		t.Fatalf("synced reaction = %#v", got)
+	}
+}
+
+func TestIncomingAttachmentDownloadsLazily(t *testing.T) {
+	fake := &fakeCaller{}
+	paths := testPaths(t)
+	b := New(zerolog.Nop(), paths, nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	convID := directPrefix + "+15550002222"
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"timestamp":1700000000000,"attachments":[{"id":"attachment-1","contentType":"image/png","filename":"photo.png","size":5,"width":10,"height":20}]}}}`))
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: convID})
+	if len(result.Messages) != 1 || len(result.Messages[0].Attachments) != 1 || result.Messages[0].Attachments[0].Path != "" {
+		t.Fatalf("messages = %#v", result.Messages)
+	}
+	media, err := b.Media(context.Background(), wire.MediaParams{Key: mediaPrefix + "attachment-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(media.Path)
+	if err != nil || string(data) != "hello" {
+		t.Fatalf("media = %q, %v", data, err)
+	}
+	params := fake.params["getAttachment"].(map[string]any)
+	if params["id"] != "attachment-1" {
+		t.Fatalf("params = %#v", params)
+	}
+}
+
+func TestSendMediaUsesAttachmentAndVoiceNoteParameters(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "voice.ogg")
+	if err := os.WriteFile(path, []byte("audio"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := b.SendMedia(context.Background(), wire.SendMediaParams{ConversationID: groupPrefix + "group-id", Path: path, Caption: "listen"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Message == nil || len(result.Message.Attachments) != 1 || !result.Message.Attachments[0].IsAudio {
+		t.Fatalf("result = %#v", result)
+	}
+	params := fake.params["send"].(map[string]any)
+	if params["groupId"] != "group-id" || params["voiceNote"] != true || params["message"] != "listen" {
+		t.Fatalf("params = %#v", params)
+	}
+}
+
+func TestControlMessagesAreSkippedAndRemoteDeleteRedacts(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	convID := directPrefix + "+15550002222"
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"timestamp":1700000000000}}}`))
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: convID})
+	if len(result.Messages) != 0 {
+		t.Fatalf("control envelope created %#v", result.Messages)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"timestamp":1700000000000,"message":"secret"}}}`))
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"remoteDelete":{"timestamp":1700000000000}}}}`))
+	result, _ = b.Messages(context.Background(), wire.MessagesParams{ConversationID: convID})
+	if len(result.Messages) != 1 || !result.Messages[0].Deleted || result.Messages[0].Text != "" {
+		t.Fatalf("deleted = %#v", result.Messages)
+	}
+}
+
+func TestViewOnceAttachmentIsNotPersisted(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	convID := directPrefix + "+15550002222"
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"timestamp":1700000000000,"viewOnce":true,"attachments":[{"id":"secret","contentType":"image/jpeg"}]}}}`))
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: convID})
+	if len(result.Messages) != 0 {
+		t.Fatalf("view-once persisted = %#v", result.Messages)
+	}
+}
+
+func TestVersionOneStoreDropsControlBubblesAndTheirUnreadFlag(t *testing.T) {
+	paths := testPaths(t)
+	conversationID := directPrefix + "+15550002222"
+	legacy := `{"version":1,"conversations":{"` + conversationID + `":{"id":"` + conversationID + `","name":"Taylor","preview":"","timestamp":1700000001000000,"unread":true}},"order":["` + conversationID + `"],"messages":{"` + conversationID + `":[{"id":"signal:1700000000000:+15550002222","conversationID":"` + conversationID + `","text":"hello","timestamp":1700000000000000},{"id":"signal:1700000001000:+15550002222","conversationID":"` + conversationID + `","text":"","timestamp":1700000001000000}]}}`
+	if err := os.WriteFile(paths.SignalStoreFile(), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := New(zerolog.Nop(), paths, nil)
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: conversationID})
+	if len(result.Messages) != 1 || result.Messages[0].Text != "hello" {
+		t.Fatalf("messages = %#v", result.Messages)
+	}
+	conversations := b.Conversations(1)
+	if len(conversations) != 1 || conversations[0].Unread || conversations[0].Preview != "hello" {
+		t.Fatalf("conversations = %#v", conversations)
+	}
+}
+
+func TestStoreRepairsSuccessfulSendToUndiscoveredSelfConversation(t *testing.T) {
+	paths := testPaths(t)
+	account := "+15550001111"
+	conversationID := directPrefix + account
+	legacy := `{"version":2,"account":"` + account + `","conversations":{"` + conversationID + `":{"id":"","preview":"test","timestamp":1700000000000000}},"order":[],"messages":{"` + conversationID + `":[{"id":"signal:1700000000000:` + account + `","conversationID":"` + conversationID + `","text":"test","timestamp":1700000000000000,"fromMe":true}]}}`
+	if err := os.WriteFile(paths.SignalStoreFile(), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := New(zerolog.Nop(), paths, nil)
+	conversations := b.Conversations(0)
+	if len(conversations) != 1 || conversations[0].ID != conversationID || conversations[0].Name != "Note to Self" {
+		t.Fatalf("repaired conversations = %#v", conversations)
+	}
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: conversationID})
+	if len(result.Messages) != 1 || result.Messages[0].Text != "test" {
+		t.Fatalf("repaired messages = %#v", result.Messages)
 	}
 }
