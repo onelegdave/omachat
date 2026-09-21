@@ -208,6 +208,54 @@ func TestIncomingAndSyncedGroupMessagesPreserveDirectionAndSender(t *testing.T) 
 	}
 }
 
+func TestPhoneSyncedNoteToSelfUsesCanonicalConversation(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceUuid":"self-uuid","sourceNumber":"+15550001111","syncMessage":{"sentMessage":{"destinationUuid":"self-uuid","destinationNumber":"+15550001111","dataMessage":{"timestamp":1700000000000,"message":"phone note","attachments":[{"id":"phone-photo","contentType":"image/jpeg","filename":"photo.jpg"}]}}}}}`))
+	canonicalID := directPrefix + "+15550001111"
+	result, err := b.Messages(context.Background(), wire.MessagesParams{ConversationID: canonicalID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) != 1 || result.Messages[0].Text != "phone note" || len(result.Messages[0].Attachments) != 1 {
+		t.Fatalf("note to self messages = %#v", result.Messages)
+	}
+	conversations := b.Conversations(0)
+	if len(conversations) != 1 || conversations[0].ID != canonicalID || conversations[0].Name != "Note to Self" {
+		t.Fatalf("note to self conversations = %#v", conversations)
+	}
+}
+
+func TestRefreshMergesLegacyUUIDSelfConversation(t *testing.T) {
+	paths := testPaths(t)
+	uuidID := directPrefix + "self-uuid"
+	legacy := `{"version":2,"account":"+15550001111","conversations":{"` + uuidID + `":{"id":"` + uuidID + `","name":"My Username","preview":"photo","timestamp":1700000000000000}},"order":["` + uuidID + `"],"messages":{"` + uuidID + `":[{"id":"signal:1700000000000:+15550001111","conversationID":"` + uuidID + `","text":"photo","timestamp":1700000000000000,"fromMe":true}]}}`
+	if err := os.WriteFile(paths.SignalStoreFile(), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeCaller{responses: map[string]string{
+		"listContacts": `[{"number":"+15550001111","uuid":"self-uuid","name":"My Username"}]`,
+	}}
+	b := New(zerolog.Nop(), paths, nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	canonicalID := directPrefix + "+15550001111"
+	conversations := b.Conversations(0)
+	if len(conversations) != 1 || conversations[0].ID != canonicalID || conversations[0].Name != "Note to Self" {
+		t.Fatalf("canonical conversations = %#v", conversations)
+	}
+	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: canonicalID})
+	if len(result.Messages) != 1 || result.Messages[0].ConversationID != canonicalID {
+		t.Fatalf("canonical messages = %#v", result.Messages)
+	}
+}
+
 func TestPairingPublishesQRAndCompletes(t *testing.T) {
 	fake := &fakeCaller{}
 	events := make(chan wire.Event, 8)

@@ -38,6 +38,7 @@ type Backend struct {
 	mu             sync.RWMutex
 	status         wire.Status
 	account        string
+	selfUUID       string
 	convs          map[string]wire.Conversation
 	order          []string
 	messages       map[string][]wire.Message
@@ -216,6 +217,13 @@ func (b *Backend) Refresh(ctx context.Context) error {
 		return err
 	}
 	b.mu.Lock()
+	for _, contact := range contacts {
+		if contact.Number == account && contact.UUID != "" {
+			b.selfUUID = contact.UUID
+			b.canonicalizeSelfConversationLocked()
+			break
+		}
+	}
 	for _, c := range contacts {
 		if c.Unregistered {
 			continue
@@ -546,8 +554,7 @@ func (b *Backend) handleNotification(raw json.RawMessage) {
 	if n.Envelope.DataMessage != nil {
 		d := n.Envelope.DataMessage
 		peer, actorName, group := first(n.Envelope.SourceUUID, n.Envelope.SourceNumber, n.Envelope.Source), first(n.Envelope.SourceName, n.Envelope.SourceNumber, n.Envelope.SourceUUID), false
-		convID := directPrefix + peer
-		conversationName := actorName
+		convID, conversationName := b.directConversation(peer, actorName)
 		if d.GroupInfo != nil && d.GroupInfo.GroupID != "" {
 			convID, conversationName, group = groupPrefix+d.GroupInfo.GroupID, first(d.GroupInfo.GroupName, "Signal group"), true
 		}
@@ -557,14 +564,14 @@ func (b *Backend) handleNotification(raw json.RawMessage) {
 		b.handleDataMessage(convID, peer, actorName, conversationName, false, d)
 	}
 	if n.Envelope.SyncMessage != nil && n.Envelope.SyncMessage.SentMessage != nil {
+		b.rememberSelfUUID(n.Envelope.SourceUUID)
 		s := n.Envelope.SyncMessage.SentMessage
 		d := &dataMessage{Timestamp: s.Timestamp, Message: s.Message, GroupInfo: s.GroupInfo, Attachments: s.Attachments, Reaction: s.Reaction, RemoteDelete: s.RemoteDelete, ExpiresInSeconds: s.ExpiresInSeconds, ViewOnce: s.ViewOnce}
 		if s.DataMessage != nil {
 			d = s.DataMessage
 		}
 		peer, actorName, group := first(s.DestinationUUID, s.DestinationNumber, s.Destination), first(s.DestinationNumber, s.DestinationUUID), false
-		convID := directPrefix + peer
-		conversationName := actorName
+		convID, conversationName := b.directConversation(peer, actorName)
 		if d.GroupInfo != nil && d.GroupInfo.GroupID != "" {
 			convID, conversationName, group = groupPrefix+d.GroupInfo.GroupID, first(d.GroupInfo.GroupName, "Signal group"), true
 		}
@@ -573,6 +580,90 @@ func (b *Backend) handleNotification(raw json.RawMessage) {
 		}
 		b.handleDataMessage(convID, b.account, actorName, conversationName, true, d)
 	}
+}
+
+func (b *Backend) directConversation(peer, name string) (string, string) {
+	b.mu.RLock()
+	account, selfUUID := b.account, b.selfUUID
+	b.mu.RUnlock()
+	if peer != "" && (peer == account || peer == selfUUID) {
+		return directPrefix + account, "Note to Self"
+	}
+	return directPrefix + peer, name
+}
+
+func (b *Backend) rememberSelfUUID(uuid string) {
+	if uuid == "" {
+		return
+	}
+	b.mu.Lock()
+	b.selfUUID = uuid
+	if b.canonicalizeSelfConversationLocked() {
+		_ = b.saveLocked()
+	}
+	b.mu.Unlock()
+}
+
+// canonicalizeSelfConversationLocked merges the UUID-addressed form emitted by
+// phone sync messages into the number-addressed Note to Self thread.
+func (b *Backend) canonicalizeSelfConversationLocked() bool {
+	if b.account == "" || b.selfUUID == "" {
+		return false
+	}
+	fromID, toID := directPrefix+b.selfUUID, directPrefix+b.account
+	if fromID == toID {
+		return false
+	}
+	fromConversation, hasConversation := b.convs[fromID]
+	fromMessages, hasMessages := b.messages[fromID]
+	if !hasConversation && !hasMessages {
+		return false
+	}
+
+	merged := append([]wire.Message(nil), b.messages[toID]...)
+	seen := make(map[string]bool, len(merged)+len(fromMessages))
+	for _, message := range merged {
+		seen[message.ID] = true
+	}
+	for _, message := range fromMessages {
+		if seen[message.ID] {
+			continue
+		}
+		message.ConversationID = toID
+		merged = append(merged, message)
+		seen[message.ID] = true
+	}
+	sort.SliceStable(merged, func(i, j int) bool { return merged[i].Timestamp < merged[j].Timestamp })
+	if len(merged) != 0 {
+		b.messages[toID] = merged
+	}
+	delete(b.messages, fromID)
+
+	conversation, exists := b.convs[toID]
+	if !exists || fromConversation.Timestamp > conversation.Timestamp {
+		conversation = fromConversation
+	}
+	conversation.ID, conversation.Name, conversation.IsGroup = toID, "Note to Self", false
+	conversation.Initials = conversationInitials(conversation.Name)
+	if conversation.AvatarColor == "" {
+		conversation.AvatarColor = "#3a76f0"
+	}
+	if len(merged) != 0 {
+		last := merged[len(merged)-1]
+		conversation.Preview, conversation.PreviewMine, conversation.Timestamp = messagePreview(last), last.FromMe, last.Timestamp
+	}
+	conversation.Unread = false
+	b.convs[toID] = conversation
+	delete(b.convs, fromID)
+
+	order := b.order[:0]
+	for _, id := range b.order {
+		if id != fromID && id != toID {
+			order = append(order, id)
+		}
+	}
+	b.order = append([]string{toID}, order...)
+	return true
 }
 
 func (b *Backend) handleDataMessage(conversationID, actor, actorName, conversationName string, fromMe bool, data *dataMessage) {
