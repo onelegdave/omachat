@@ -50,7 +50,8 @@ Column {
         if (!row || typeof row.installed !== "boolean" || !/^[a-z]+$/.test(row.id)
             || typeof row.name !== "string" || typeof row.purpose !== "string"
             || typeof row.detail !== "string" || typeof row.sourceUrl !== "string"
-            || !row.sourceUrl.startsWith("https://gitlab.archlinux.org/archlinux/packaging/packages/"))
+            || !(row.sourceUrl.startsWith("https://gitlab.archlinux.org/archlinux/packaging/packages/")
+                 || (row.id === "signalcli" && row.sourceUrl === "https://aur.archlinux.org/packages/signal-cli")))
           throw new Error("invalid row")
       }
       dependencies = rows
@@ -234,7 +235,7 @@ Column {
             Accessible.role: Accessible.Button
             Accessible.name: text
             objectName: "dependencyInstall-" + modelData.id
-            visible: !modelData.installed
+            visible: !modelData.installed && modelData.installable !== false
             enabled: !checklist.loading && checklist.pendingInstall === ""
             text: "Install"
             bordered: true

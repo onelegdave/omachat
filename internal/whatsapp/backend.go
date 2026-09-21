@@ -763,7 +763,7 @@ func (b *Backend) Conversations(count int) []wire.Conversation {
 		}
 		// Companion history can include contact stubs with no messages. Keep
 		// those out of the inbox until a real message creates the chat.
-		if len(b.messages[id]) == 0 {
+		if len(b.messages[id]) == 0 && b.convs[id].Timestamp == 0 {
 			continue
 		}
 		out = append(out, b.convs[id])

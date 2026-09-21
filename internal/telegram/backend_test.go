@@ -75,6 +75,38 @@ func TestBackendInitialState(t *testing.T) {
 	}
 }
 
+func TestCreateConversationPublishesAndCachesNativeResult(t *testing.T) {
+	b, _, events, mock := setupTestTelegramWithMock(t)
+	mock.ConversationTargetsFunc = func(context.Context) ([]wire.ConversationTarget, error) {
+		return []wire.ConversationTarget{{ID: "42", Name: "Taylor"}}, nil
+	}
+	mock.CreateConversationFunc = func(_ context.Context, p wire.CreateConversationParams) (Dialog, error) {
+		if len(p.TargetIDs) != 1 || p.TargetIDs[0] != "42" {
+			t.Fatalf("params = %#v", p)
+		}
+		return Dialog{ID: 42, Name: "Taylor"}, nil
+	}
+	b.SetClient(mock)
+	conversation, err := b.CreateConversation(context.Background(), wire.CreateConversationParams{TargetIDs: []string{"42"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.ID != "tg:42" || conversation.Name != "Taylor" {
+		t.Fatalf("conversation = %#v", conversation)
+	}
+	if cached := b.Conversations(0); len(cached) != 1 || cached[0].ID != conversation.ID {
+		t.Fatalf("cached conversations = %#v", cached)
+	}
+	select {
+	case event := <-events:
+		if event.Event != wire.EventConversation {
+			t.Fatalf("event = %#v", event)
+		}
+	default:
+		t.Fatal("conversation event was not published")
+	}
+}
+
 func TestBackendStartWithoutSession(t *testing.T) {
 	b, paths, _ := setupTestTelegram(t)
 	ctx := context.Background()

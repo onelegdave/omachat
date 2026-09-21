@@ -11,6 +11,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -453,6 +455,98 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 	}
 	g.mu.Unlock()
 	return out, nil
+}
+
+func (g *GotdClient) ConversationTargets(ctx context.Context) ([]wire.ConversationTarget, error) {
+	result, err := g.client.API().ContactsGetContacts(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	contacts, ok := result.(*tg.ContactsContacts)
+	if !ok {
+		return []wire.ConversationTarget{}, nil
+	}
+	targets := make([]wire.ConversationTarget, 0, len(contacts.Users))
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, raw := range contacts.Users {
+		user, ok := raw.(*tg.User)
+		if !ok || user.Self || user.Deleted || user.AccessHash == 0 {
+			continue
+		}
+		id := userPeerID(user.ID)
+		g.peers[id] = &tg.InputPeerUser{UserID: user.ID, AccessHash: user.AccessHash}
+		name := strings.TrimSpace(user.FirstName + " " + user.LastName)
+		if name == "" {
+			name = user.Username
+		}
+		detail := user.Phone
+		if user.Username != "" {
+			detail = "@" + user.Username
+		}
+		targets = append(targets, wire.ConversationTarget{ID: fmt.Sprintf("%d", id), Name: name, Detail: detail})
+	}
+	sort.Slice(targets, func(i, j int) bool { return strings.ToLower(targets[i].Name) < strings.ToLower(targets[j].Name) })
+	return targets, nil
+}
+
+func (g *GotdClient) CreateConversation(ctx context.Context, p wire.CreateConversationParams) (Dialog, error) {
+	if len(p.TargetIDs) == 0 {
+		return Dialog{}, errors.New("select at least one contact")
+	}
+	g.mu.RLock()
+	peers := make([]tg.InputPeerClass, 0, len(p.TargetIDs))
+	for _, rawID := range p.TargetIDs {
+		id, err := strconv.ParseInt(rawID, 10, 64)
+		if err != nil {
+			g.mu.RUnlock()
+			return Dialog{}, err
+		}
+		peer := g.peers[id]
+		if peer == nil {
+			g.mu.RUnlock()
+			return Dialog{}, errors.New("Telegram contact is no longer available")
+		}
+		peers = append(peers, peer)
+	}
+	g.mu.RUnlock()
+	if len(peers) == 1 {
+		user, ok := peers[0].(*tg.InputPeerUser)
+		if !ok {
+			return Dialog{}, errors.New("invalid Telegram contact")
+		}
+		return Dialog{ID: userPeerID(user.UserID)}, nil
+	}
+	title := strings.TrimSpace(p.Name)
+	if title == "" {
+		return Dialog{}, errors.New("group name is required")
+	}
+	users := make([]tg.InputUserClass, 0, len(peers))
+	for _, peer := range peers {
+		user, ok := peer.(*tg.InputPeerUser)
+		if !ok {
+			return Dialog{}, errors.New("invalid Telegram contact")
+		}
+		users = append(users, &tg.InputUser{UserID: user.UserID, AccessHash: user.AccessHash})
+	}
+	created, err := g.client.API().MessagesCreateChat(ctx, &tg.MessagesCreateChatRequest{Users: users, Title: title})
+	if err != nil {
+		return Dialog{}, err
+	}
+	withChats, ok := created.Updates.(interface{ GetChats() []tg.ChatClass })
+	if !ok {
+		return Dialog{}, errors.New("Telegram did not return the new group")
+	}
+	for _, raw := range withChats.GetChats() {
+		if chat, ok := raw.(*tg.Chat); ok {
+			id := chatPeerID(chat.ID)
+			g.mu.Lock()
+			g.peers[id] = &tg.InputPeerChat{ChatID: chat.ID}
+			g.mu.Unlock()
+			return Dialog{ID: id, Name: chat.Title, IsGroup: true}, nil
+		}
+	}
+	return Dialog{}, errors.New("Telegram did not return the new group")
 }
 
 // Messages fetches the most recent text messages for a peer. It delegates to

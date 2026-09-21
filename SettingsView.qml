@@ -305,7 +305,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "OmaChat never installs packages automatically. Check the tools below, review their source, and choose Install only for tools you want. The terminal asks for confirmation before invoking sudo; the package manager asks again before making changes. Accounts and API credentials remain your choice."
+        text: "OmaChat never installs packages automatically. Check the tools below, review their source, and choose Install only for tools you want. The terminal asks for confirmation before invoking the package manager; the package manager asks again before making changes. Accounts and API credentials remain your choice."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
@@ -771,6 +771,28 @@ Flickable {
             width: parent.width
             wrapMode: Text.Wrap
             text: "Messenger support vendors go.mau.fi/mautrix-meta under the GNU AGPL version 3. Upstream copyright and exceptions are retained in the vendor directory."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Signal"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Experimental Signal support invokes the separately installed signal-cli project (GPL-3.0) over JSON-RPC. It is not bundled with OmaChat and is not an official Signal client."
             color: root.mutedColor
             font.family: root.fontFamily
             font.pixelSize: fs(Style.font.body)

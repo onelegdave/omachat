@@ -78,6 +78,11 @@ type ReactionClient interface {
 	React(ctx context.Context, conversationID, messageID int64, emoji string) error
 }
 
+type ConversationClient interface {
+	ConversationTargets(context.Context) ([]wire.ConversationTarget, error)
+	CreateConversation(context.Context, wire.CreateConversationParams) (Dialog, error)
+}
+
 func mapDialog(d Dialog) wire.Conversation {
 	name := d.Name
 	if name == "" {

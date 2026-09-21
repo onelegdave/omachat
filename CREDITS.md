@@ -14,6 +14,7 @@ It builds on the work of the following projects and their contributors.
 | [Omarchy](https://github.com/basecamp/omarchy) | Shell lifecycle, native UI components, and theme system | Supplied by the user's Omarchy installation |
 | [Quickshell](https://quickshell.org/) and [Qt](https://www.qt.io/) | QML rendering and desktop integration | Supplied by the user's desktop installation |
 | [FFmpeg](https://ffmpeg.org/) | Optional external recording and playback | Supplied and installed separately by the user |
+| [signal-cli](https://github.com/AsamK/signal-cli) | Optional external Signal linked-device client, accessed over JSON-RPC | GPL-3.0; installed separately by the user and not bundled with OmaChat |
 
 OmaChat v0.4.3 and later is offered under [AGPL-3.0-or-later](LICENSE) so the
 combined helper follows the copyleft terms of its Google Messages and Messenger
