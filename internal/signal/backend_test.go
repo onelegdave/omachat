@@ -345,6 +345,30 @@ func TestIncomingAttachmentDownloadsLazily(t *testing.T) {
 	}
 }
 
+func TestIncomingGroupAttachmentDownloadsWithGroupTarget(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceUuid":"sender-uuid","sourceName":"Taylor","dataMessage":{"timestamp":1700000000000,"groupInfo":{"groupId":"group-id","groupName":"Book Club"},"attachments":[{"id":"group-photo","contentType":"image/png","filename":"photo.png","size":5}]}}}`))
+	media, err := b.Media(context.Background(), wire.MediaParams{Key: mediaPrefix + "group-photo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(media.Path); err != nil || string(data) != "hello" {
+		t.Fatalf("group media = %q, %v", data, err)
+	}
+	params := fake.params["getAttachment"].(map[string]any)
+	if params["groupId"] != "group-id" || params["id"] != "group-photo" {
+		t.Fatalf("group attachment params = %#v", params)
+	}
+	if _, exists := params["recipient"]; exists {
+		t.Fatalf("group attachment used direct recipient: %#v", params)
+	}
+}
+
 func TestSendMediaUsesAttachmentAndVoiceNoteParameters(t *testing.T) {
 	fake := &fakeCaller{}
 	b := New(zerolog.Nop(), testPaths(t), nil)
