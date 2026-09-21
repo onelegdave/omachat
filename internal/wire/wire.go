@@ -92,14 +92,16 @@ const (
 
 // Method names.
 const (
-	MethodSetEnabledServices = "setEnabledServices"
-	MethodStatus             = "status"
-	MethodConversations      = "conversations"
-	MethodMessages           = "messages"
-	MethodSend               = "send"
-	MethodMarkRead           = "markRead"
-	MethodStartPairing       = "startPairing"
-	MethodGaiaPairing        = "gaiaPairing"
+	MethodSetEnabledServices  = "setEnabledServices"
+	MethodStatus              = "status"
+	MethodConversations       = "conversations"
+	MethodConversationTargets = "conversationTargets"
+	MethodCreateConversation  = "createConversation"
+	MethodMessages            = "messages"
+	MethodSend                = "send"
+	MethodMarkRead            = "markRead"
+	MethodStartPairing        = "startPairing"
+	MethodGaiaPairing         = "gaiaPairing"
 	// MethodPairFromBrowser lets the widget pair on its own: the daemon finds
 	// the browser profile and reads the cookies itself, so pairing never
 	// requires dropping to a terminal.
@@ -291,6 +293,18 @@ var SupportedReactions = []string{
 
 type ConversationsParams struct {
 	Count int `json:"count"`
+}
+
+// ConversationTarget is a contact that can be selected when starting a chat.
+type ConversationTarget struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type CreateConversationParams struct {
+	TargetIDs []string `json:"targetIDs"`
+	Name      string   `json:"name,omitempty"`
 }
 
 type MessagesParams struct {

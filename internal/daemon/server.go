@@ -345,6 +345,22 @@ func (d *Daemon) dispatchSignal(ctx context.Context, req wire.Request) wire.Resp
 			return fail(err)
 		}
 		return ok(d.sg.Conversations(p.Count))
+	case wire.MethodConversationTargets:
+		res, err := d.sg.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)
 		if err != nil {
@@ -449,6 +465,22 @@ func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(d.fb.Conversations(p.Count))
+	case wire.MethodConversationTargets:
+		res, err := d.fb.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.fb.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)
 		if err != nil {
@@ -604,6 +636,24 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(d.Conversations(p.Count))
+
+	case wire.MethodConversationTargets:
+		res, err := d.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
 
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)
@@ -827,6 +877,24 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 		}
 		return ok(d.wa.Conversations(p.Count))
 
+	case wire.MethodConversationTargets:
+		res, err := d.wa.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.wa.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)
 		if err != nil {
@@ -975,6 +1043,24 @@ func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Re
 			return fail(err)
 		}
 		return ok(d.tg.Conversations(p.Count))
+
+	case wire.MethodConversationTargets:
+		res, err := d.tg.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.tg.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
 
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)

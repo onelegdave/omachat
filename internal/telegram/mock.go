@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gotd/td/telegram"
+	"github.com/onelegdave/omachat/internal/wire"
 )
 
 // MockClient provides a synthetic test seam for Telegram unit and regression tests.
@@ -13,21 +14,37 @@ type MockClient struct {
 	connected  atomic.Bool
 	authorized atomic.Bool
 
-	StartFunc         func(ctx context.Context) error
-	StopFunc          func() error
-	IsConnectedFunc   func() bool
-	IsAuthorizedFunc  func(ctx context.Context) (bool, error)
-	GetQRChannelFunc  func(ctx context.Context) (<-chan QRChannelItem, error)
-	PingFunc          func(ctx context.Context) error
-	UnderlyingFunc    func() *telegram.Client
-	DialogsFunc       func(ctx context.Context, limit int) ([]Dialog, error)
-	MessagesFunc      func(ctx context.Context, conversationID int64, limit int) ([]Message, error)
-	MarkReadFunc      func(ctx context.Context, conversationID int64, messageID int64) error
-	SendTextFunc      func(ctx context.Context, conversationID int64, text string) (Message, error)
-	SendImageFunc     func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
-	SendVoiceFunc     func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
-	DownloadMediaFunc func(ctx context.Context, key, dir string) (string, error)
-	ReactFunc         func(ctx context.Context, conversationID, messageID int64, emoji string) error
+	StartFunc               func(ctx context.Context) error
+	StopFunc                func() error
+	IsConnectedFunc         func() bool
+	IsAuthorizedFunc        func(ctx context.Context) (bool, error)
+	GetQRChannelFunc        func(ctx context.Context) (<-chan QRChannelItem, error)
+	PingFunc                func(ctx context.Context) error
+	UnderlyingFunc          func() *telegram.Client
+	DialogsFunc             func(ctx context.Context, limit int) ([]Dialog, error)
+	MessagesFunc            func(ctx context.Context, conversationID int64, limit int) ([]Message, error)
+	MarkReadFunc            func(ctx context.Context, conversationID int64, messageID int64) error
+	SendTextFunc            func(ctx context.Context, conversationID int64, text string) (Message, error)
+	SendImageFunc           func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
+	SendVoiceFunc           func(ctx context.Context, conversationID int64, path, caption string) (Message, error)
+	DownloadMediaFunc       func(ctx context.Context, key, dir string) (string, error)
+	ReactFunc               func(ctx context.Context, conversationID, messageID int64, emoji string) error
+	ConversationTargetsFunc func(context.Context) ([]wire.ConversationTarget, error)
+	CreateConversationFunc  func(context.Context, wire.CreateConversationParams) (Dialog, error)
+}
+
+func (m *MockClient) ConversationTargets(ctx context.Context) ([]wire.ConversationTarget, error) {
+	if m.ConversationTargetsFunc != nil {
+		return m.ConversationTargetsFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) CreateConversation(ctx context.Context, p wire.CreateConversationParams) (Dialog, error) {
+	if m.CreateConversationFunc != nil {
+		return m.CreateConversationFunc(ctx, p)
+	}
+	return Dialog{}, errors.New("mock conversation creation not configured")
 }
 
 func (m *MockClient) React(ctx context.Context, conversationID, messageID int64, emoji string) error {

@@ -83,6 +83,8 @@ ShellRoot {
    }
    if (!callback) return
    if (method === "messages") callback(true, {messages:[]})
+   else if (method === "conversationTargets") callback(true, [{id:"alice",name:"Alice",detail:"+15550001"},{id:"bob",name:"Bob",detail:"+15550002"}])
+   else if (method === "createConversation") callback(true, {id:"new-chat",name:params.name || "Alice"})
    else if (method === "media") callback(!failMedia, failMedia ? "temporary failure" : {path:root.testImage, preview:root.testImage})
    else if (method === "config") callback(connected,connected ? {uiScale:1,alwaysPopout:false,popoutMode:"floating",telegramConfigured:false,telegramApiId:0} : "not connected")
    else if (method === "setWindowPreferences") callback(true,{uiScale:1,alwaysPopout:params.alwaysPopout,popoutMode:params.popoutMode,telegramConfigured:false,telegramApiId:0})
@@ -117,7 +119,7 @@ ShellRoot {
   PanelKeyCatcher {
    id: catcher
    anchors.fill: parent
-   blocked: inbox.composerFocus === true || inbox.linkConfirmOpen === true
+   blocked: inbox.composerFocus === true || inbox.linkConfirmOpen === true || inbox.newChatOpen === true
    property int shortcuts: 0
    onTextKey: shortcuts++
    Chat.InboxView { id: inbox; anchors.fill: parent; service: fake; host: host }
@@ -225,6 +227,17 @@ ShellRoot {
     var caption = inspect.findChild(inbox,"attachCaption")
     var search = inspect.findChild(inbox,"searchField")
     root.check(composer && caption && search,"real inbox editors load")
+    inbox.openNewChat()
+    root.check(inbox.newChatOpen && inbox.newChatTargets.length === 2,"new conversation picker loads service contacts")
+    inbox.toggleNewChatTarget("alice")
+    inbox.createNewChat()
+    root.check(!inbox.newChatOpen && fake.calls.some(function(c){return c.method === "createConversation" && c.params.targetIDs[0] === "alice"}),"direct conversation creation uses the selected service contact")
+    inbox.openNewChat()
+    inbox.newChatGroup=true
+    inbox.toggleNewChatTarget("alice")
+    inbox.createNewChat()
+    root.check(inbox.newChatOpen && inbox.newChatError.indexOf("two contacts") >= 0,"group creation requires multiple participants")
+    inbox.newChatOpen=false
     inbox.network = "messenger"
     inbox.selectConversation("fb-1")
     root.check(fake.calls.some(function(c) {

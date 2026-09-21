@@ -183,6 +183,34 @@ func TestRefreshDoesNotExposeEmptyContactsOrGroups(t *testing.T) {
 	}
 }
 
+func TestCreateConversationUsesContactsAndNativeGroupCreation(t *testing.T) {
+	fake := &fakeCaller{responses: map[string]string{
+		"listContacts": `[{"number":"+15550002222","uuid":"contact-uuid","name":"Taylor"}]`,
+		"updateGroup":  `{"groupId":"group-id"}`,
+	}}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	targets, err := b.ConversationTargets(context.Background())
+	if err != nil || len(targets) != 1 || targets[0].ID != "+15550002222" {
+		t.Fatalf("targets = %#v, err = %v", targets, err)
+	}
+	direct, err := b.CreateConversation(context.Background(), wire.CreateConversationParams{TargetIDs: []string{targets[0].ID}})
+	if err != nil || direct.ID != directPrefix+targets[0].ID || direct.IsGroup {
+		t.Fatalf("direct = %#v, err = %v", direct, err)
+	}
+	group, err := b.CreateConversation(context.Background(), wire.CreateConversationParams{TargetIDs: []string{"+15550002222", "+15550003333"}, Name: "Friends"})
+	if err != nil || group.ID != groupPrefix+"group-id" || !group.IsGroup {
+		t.Fatalf("group = %#v, err = %v", group, err)
+	}
+	params := fake.params["updateGroup"].(map[string]any)
+	if params["name"] != "Friends" {
+		t.Fatalf("group params = %#v", params)
+	}
+}
+
 func TestIncomingAndSyncedGroupMessagesPreserveDirectionAndSender(t *testing.T) {
 	fake := &fakeCaller{}
 	b := New(zerolog.Nop(), testPaths(t), nil)

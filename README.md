@@ -147,6 +147,7 @@ start pairing again.
 | Feature | Google Messages | WhatsApp | Telegram | Messenger | Signal (experimental) |
 | --- | --- | --- | --- | --- | --- |
 | Conversation list, text, per-chat drafts | Yes | Yes | Yes | Yes | Yes, accumulated locally after linking |
+| Start direct and group chats | Yes | Yes | Yes | Yes | Yes |
 | Photos and captions | Yes | Yes | Yes | Yes | Yes |
 | Send GIF files | Yes | Yes (ffmpeg) | No dedicated GIF sending support | Yes | Yes |
 | Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |

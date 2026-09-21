@@ -151,6 +151,12 @@ Item {
   readonly property bool composerFocus: composer.activeFocus || searchField.activeFocus || attachCaption.activeFocus
   property int focusRequest: 0
   property bool linkConfirmOpen: false
+  property bool newChatOpen: false
+  property bool newChatGroup: false
+  property bool newChatLoading: false
+  property string newChatError: ""
+  property var newChatTargets: []
+  property var newChatSelected: ({})
   property string pendingUrl: ""
   property var emojiList: []
   property var emojiBundleRows: []
@@ -192,6 +198,17 @@ Item {
     for (var i = 0; i < conversations.length; i++) if (conversations[i].unread === true) n++
     return n
   }
+
+  readonly property var visibleNewChatTargets: {
+    var query = newChatSearch ? newChatSearch.text.trim().toLowerCase() : ""
+    if (query === "") return newChatTargets
+    return newChatTargets.filter(function(target) {
+      return String(target.name || "").toLowerCase().indexOf(query) >= 0
+        || String(target.detail || "").toLowerCase().indexOf(query) >= 0
+    })
+  }
+
+  readonly property int newChatSelectionCount: Object.keys(newChatSelected).length
 
 
   property var _selectedByNet: ({})
@@ -305,10 +322,10 @@ Item {
   }
 
   function isKeyboardEditing() {
-    return composerFocus || linkConfirmOpen || emojiPickerOpen
+    return composerFocus || linkConfirmOpen || emojiPickerOpen || newChatOpen
   }
 
-  function hasKeyboardModal() { return linkConfirmOpen || emojiPickerOpen }
+  function hasKeyboardModal() { return linkConfirmOpen || emojiPickerOpen || newChatOpen }
 
   function updateEmojiSearchResults() {
     if (emojiSearchIndex) emojiSearchResults = EmojiSearch.search(emojiSearchIndex, emojiSearchQuery)
@@ -447,6 +464,50 @@ Item {
     chats[selectedConvID] = text
     drafts[network] = chats
     setDrafts(drafts)
+  }
+
+  function openNewChat() {
+    if (!service || newChatLoading) return
+    newChatOpen = true
+    newChatGroup = false
+    newChatError = ""
+    newChatTargets = []
+    newChatSelected = ({})
+    newChatLoading = true
+    service.call("conversationTargets", null, function(ok, result) {
+      newChatLoading = false
+      if (!newChatOpen) return
+      if (!ok) { newChatError = String(result); return }
+      newChatTargets = result || []
+      Qt.callLater(function() { if (root.newChatOpen) newChatSearch.forceActiveFocus() })
+    }, network)
+  }
+
+  function toggleNewChatTarget(id) {
+    var selected = Object.assign({}, newChatSelected)
+    if (!newChatGroup) selected = ({})
+    if (selected[id]) delete selected[id]
+    else selected[id] = true
+    newChatSelected = selected
+  }
+
+  function createNewChat() {
+    if (!service || newChatLoading || newChatSelectionCount < 1) return
+    if (newChatGroup && newChatSelectionCount < 2) {
+      newChatError = "Select at least two contacts for a group."
+      return
+    }
+    var name = newChatGroup ? newChatName.text.trim() : ""
+    if (newChatGroup && name === "") { newChatError = "Enter a group name."; return }
+    newChatLoading = true
+    newChatError = ""
+    service.call("createConversation", { targetIDs: Object.keys(newChatSelected), name: name }, function(ok, result) {
+      newChatLoading = false
+      if (!ok) { newChatError = String(result); return }
+      newChatOpen = false
+      if (service.loadConversations) service.loadConversations(network)
+      if (result && result.id) selectConversation(String(result.id))
+    }, network)
   }
 
   function selectConversation(id, remember) {
@@ -1401,7 +1462,8 @@ Item {
       pasteContext: root.network
       objectName: "searchField"
       anchors.left: parent.left
-      anchors.right: parent.right
+      anchors.right: newChatButton.left
+      anchors.rightMargin: Style.space(6)
       anchors.top: inboxHeader.bottom
       anchors.topMargin: Style.space(6)
       placeholderText: "Search conversations"
@@ -1410,6 +1472,19 @@ Item {
       foreground: root.foreground
       onTextChanged: root.searchQuery = text
       onActiveFocusChanged: if (activeFocus) root.focusRequest++
+    }
+
+    Button {
+      id: newChatButton
+      objectName: "newChatButton"
+      anchors.right: parent.right
+      anchors.verticalCenter: searchField.verticalCenter
+      width: Style.space(34)
+      height: Style.space(34)
+      text: "+"
+      enabled: root.service && !root.newChatLoading
+      Accessible.name: "New conversation"
+      onClicked: root.openNewChat()
     }
 
     Rectangle {
@@ -2627,6 +2702,130 @@ Item {
     onCanceled: root.cancelOpenUrl()
     Keys.onPressed: function(event) {
       if (handleKey(event)) event.accepted = true
+    }
+  }
+
+  Rectangle {
+    id: newChatOverlay
+    objectName: "newChatOverlay"
+    anchors.fill: parent
+    visible: root.newChatOpen
+    z: 100
+    color: Qt.rgba(0, 0, 0, 0.55)
+
+    MouseArea { anchors.fill: parent; onClicked: root.newChatOpen = false }
+
+    Rectangle {
+      anchors.centerIn: parent
+      width: Math.min(parent.width - Style.space(32), Style.space(480))
+      height: Math.min(parent.height - Style.space(32), Style.space(520))
+      radius: Style.space(10)
+      color: root.panelBg
+      border.width: 1
+      border.color: Color.popups.border
+
+      MouseArea { anchors.fill: parent }
+
+      Column {
+        anchors.fill: parent
+        anchors.margins: Style.space(16)
+        spacing: Style.space(10)
+
+        Text {
+          text: root.newChatGroup ? "New group" : "New conversation"
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.title)
+          font.bold: true
+        }
+
+        Row {
+          spacing: Style.space(8)
+          Button { text: "Direct"; enabled: root.newChatGroup; onClicked: { root.newChatGroup = false; root.newChatSelected = ({}) } }
+          Button { text: "Group"; enabled: !root.newChatGroup; onClicked: { root.newChatGroup = true; root.newChatSelected = ({}) } }
+        }
+
+        TextField {
+          id: newChatName
+          objectName: "newChatName"
+          width: parent.width
+          visible: root.newChatGroup
+          placeholderText: "Group name"
+          foreground: root.foreground
+          font.pixelSize: fs(Style.font.body)
+        }
+
+        TextField {
+          id: newChatSearch
+          objectName: "newChatSearch"
+          width: parent.width
+          placeholderText: "Search contacts"
+          foreground: root.foreground
+          font.pixelSize: fs(Style.font.body)
+        }
+
+        ListView {
+          id: newChatTargetList
+          objectName: "newChatTargetList"
+          width: parent.width
+          height: parent.height - y - newChatActions.height - Style.space(34)
+          clip: true
+          spacing: Style.space(2)
+          model: root.visibleNewChatTargets
+
+          delegate: Rectangle {
+            required property var modelData
+            width: newChatTargetList.width
+            height: Style.space(48)
+            radius: Style.space(5)
+            color: root.newChatSelected[String(modelData.id)] ? root.selectedFill : "transparent"
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(10)
+              anchors.right: check.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: modelData.name + (modelData.detail ? "  ·  " + modelData.detail : "")
+              color: root.newChatSelected[String(modelData.id)] ? root.selectedInk : root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: fs(Style.font.bodySmall)
+              elide: Text.ElideRight
+            }
+            Text {
+              id: check
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.newChatSelected[String(modelData.id)] ? "✓" : ""
+              color: root.selectedInk
+              font.pixelSize: fs(Style.font.body)
+            }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleNewChatTarget(String(modelData.id)) }
+          }
+        }
+
+        Text {
+          width: parent.width
+          visible: root.newChatLoading || root.newChatError !== "" || (!root.newChatLoading && root.newChatTargets.length === 0)
+          text: root.newChatLoading ? "Loading contacts…" : (root.newChatError || "No contacts available.")
+          color: root.newChatError !== "" ? root.errorInk : root.dim
+          wrapMode: Text.WordWrap
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.caption)
+        }
+
+        Row {
+          id: newChatActions
+          anchors.right: parent.right
+          spacing: Style.space(8)
+          Button { text: "Cancel"; onClicked: root.newChatOpen = false }
+          Button {
+            objectName: "createConversationButton"
+            text: root.newChatGroup ? "Create group" : "Start chat"
+            enabled: !root.newChatLoading && root.newChatSelectionCount > 0
+            onClicked: root.createNewChat()
+          }
+        }
+      }
     }
   }
 
