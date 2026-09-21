@@ -17,13 +17,14 @@ import (
 )
 
 type fakeCaller struct {
-	mu      sync.Mutex
-	notify  func(json.RawMessage)
-	started bool
-	closed  bool
-	calls   []string
-	params  map[string]any
-	onExit  func(error)
+	mu        sync.Mutex
+	notify    func(json.RawMessage)
+	started   bool
+	closed    bool
+	calls     []string
+	params    map[string]any
+	responses map[string]string
+	onExit    func(error)
 }
 
 func (f *fakeCaller) Start(_ context.Context, _ string, notify func(json.RawMessage), onExit func(error)) error {
@@ -59,6 +60,9 @@ func (f *fakeCaller) Call(_ context.Context, method string, params any, out any)
 		raw = `{"data":"aGVsbG8="}`
 	default:
 		raw = `{}`
+	}
+	if response, ok := f.responses[method]; ok {
+		raw = response
 	}
 	if out == nil {
 		return nil
@@ -159,6 +163,51 @@ func TestIncomingAndSyncMessagesUseSeparateConversationDirections(t *testing.T) 
 	}
 }
 
+func TestRefreshDoesNotExposeEmptyContactsOrGroups(t *testing.T) {
+	fake := &fakeCaller{responses: map[string]string{
+		"listContacts": `[{"number":"+15550002222","name":"Taylor"}]`,
+		"listGroups":   `[{"id":"group-id","name":"Book Club","isMember":true}]`,
+	}}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if conversations := b.Conversations(0); len(conversations) != 0 {
+		t.Fatalf("refresh exposed empty conversations: %#v", conversations)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","sourceName":"Taylor","dataMessage":{"timestamp":1700000000000,"message":"hello","groupInfo":{"groupId":"group-id","groupName":"Book Club"}}}}`))
+	conversations := b.Conversations(0)
+	if len(conversations) != 1 || conversations[0].ID != groupPrefix+"group-id" || !conversations[0].IsGroup {
+		t.Fatalf("active group was not exposed: %#v", conversations)
+	}
+}
+
+func TestIncomingAndSyncedGroupMessagesPreserveDirectionAndSender(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceUuid":"sender-uuid","sourceNumber":"+15550002222","sourceName":"Taylor","dataMessage":{"timestamp":1700000000000,"message":"hello group","groupInfo":{"groupId":"group-id","groupName":"Book Club"}}}}`))
+	fake.notify(json.RawMessage(`{"envelope":{"syncMessage":{"sentMessage":{"timestamp":1700000001000,"message":"hi back","groupInfo":{"groupId":"group-id","groupName":"Book Club"}}}}}`))
+	result, err := b.Messages(context.Background(), wire.MessagesParams{ConversationID: groupPrefix + "group-id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) != 2 {
+		t.Fatalf("group messages = %#v", result.Messages)
+	}
+	incoming, outgoing := result.Messages[0], result.Messages[1]
+	if incoming.FromMe || incoming.SenderID != "sender-uuid" || incoming.SenderName != "Taylor" {
+		t.Fatalf("incoming sender = %#v", incoming)
+	}
+	if !outgoing.FromMe || outgoing.SenderID != "+15550001111" {
+		t.Fatalf("synced outgoing message = %#v", outgoing)
+	}
+}
+
 func TestPairingPublishesQRAndCompletes(t *testing.T) {
 	fake := &fakeCaller{}
 	events := make(chan wire.Event, 8)
@@ -234,6 +283,24 @@ func TestOutgoingReactionTogglesAndUsesSignalCLIParameters(t *testing.T) {
 	}
 }
 
+func TestGroupReactionUsesGroupTarget(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.notify(json.RawMessage(`{"envelope":{"sourceUuid":"sender-uuid","sourceName":"Taylor","dataMessage":{"timestamp":1700000000000,"message":"hello","groupInfo":{"groupId":"group-id","groupName":"Book Club"}}}}`))
+	p := wire.ReactParams{ConversationID: groupPrefix + "group-id", MessageID: messageID(1700000000000, "sender-uuid"), Emoji: "👍"}
+	if err := b.React(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	params := fake.params["sendReaction"].(map[string]any)
+	if params["groupId"] != "group-id" || params["targetAuthor"] != "sender-uuid" || params["targetTimestamp"] != int64(1700000000000) {
+		t.Fatalf("group reaction params = %#v", params)
+	}
+}
+
 func TestPhoneSyncedReactionIsMarkedMine(t *testing.T) {
 	fake := &fakeCaller{}
 	b := New(zerolog.Nop(), testPaths(t), nil)
@@ -299,6 +366,30 @@ func TestSendMediaUsesAttachmentAndVoiceNoteParameters(t *testing.T) {
 	params := fake.params["send"].(map[string]any)
 	if params["groupId"] != "group-id" || params["voiceNote"] != true || params["message"] != "listen" {
 		t.Fatalf("params = %#v", params)
+	}
+}
+
+func TestGroupImageUsesAttachmentAndGroupParameters(t *testing.T) {
+	fake := &fakeCaller{}
+	b := New(zerolog.Nop(), testPaths(t), nil)
+	b.SetClient(fake)
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "photo.png")
+	if err := os.WriteFile(path, []byte("image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.SendMedia(context.Background(), wire.SendMediaParams{ConversationID: groupPrefix + "group-id", Path: path, Caption: "look"}); err != nil {
+		t.Fatal(err)
+	}
+	params := fake.params["send"].(map[string]any)
+	attachments, ok := params["attachments"].([]string)
+	if params["groupId"] != "group-id" || params["message"] != "look" || !ok || len(attachments) != 1 || attachments[0] != path {
+		t.Fatalf("group image params = %#v", params)
+	}
+	if _, exists := params["voiceNote"]; exists {
+		t.Fatalf("image marked as voice note: %#v", params)
 	}
 }
 
@@ -372,5 +463,20 @@ func TestStoreRepairsSuccessfulSendToUndiscoveredSelfConversation(t *testing.T) 
 	result, _ := b.Messages(context.Background(), wire.MessagesParams{ConversationID: conversationID})
 	if len(result.Messages) != 1 || result.Messages[0].Text != "test" {
 		t.Fatalf("repaired messages = %#v", result.Messages)
+	}
+}
+
+func TestStorePrunesLegacyDiscoveryStubs(t *testing.T) {
+	paths := testPaths(t)
+	emptyID := directPrefix + "+15550002222"
+	activeID := groupPrefix + "group-id"
+	legacy := `{"version":2,"conversations":{"` + emptyID + `":{"id":"` + emptyID + `","name":"Taylor"},"` + activeID + `":{"id":"` + activeID + `","name":"Book Club","isGroup":true,"preview":"hello","timestamp":1700000000000000}},"order":["` + emptyID + `","` + activeID + `"],"messages":{"` + activeID + `":[{"id":"signal:1700000000000:sender","conversationID":"` + activeID + `","text":"hello","timestamp":1700000000000000}]}}`
+	if err := os.WriteFile(paths.SignalStoreFile(), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := New(zerolog.Nop(), paths, nil)
+	conversations := b.Conversations(0)
+	if len(conversations) != 1 || conversations[0].ID != activeID {
+		t.Fatalf("pruned conversations = %#v", conversations)
 	}
 }

@@ -225,23 +225,32 @@ func (b *Backend) Refresh(ctx context.Context) error {
 			continue
 		}
 		id := directPrefix + peer
-		if _, exists := b.convs[id]; exists {
+		conversation, exists := b.convs[id]
+		if !exists {
 			continue
 		}
 		name := first(c.Name, strings.TrimSpace(c.GivenName+" "+c.FamilyName), c.Username, c.Number, c.UUID)
-		b.convs[id] = newConversation(id, name, false)
-		b.order = append(b.order, id)
+		if name != "" && conversation.Name != name {
+			conversation.Name = name
+			conversation.Initials = conversationInitials(name)
+			b.convs[id] = conversation
+		}
 	}
 	for _, g := range groups {
 		if !g.IsMember || g.ID == "" {
 			continue
 		}
 		id := groupPrefix + g.ID
-		if _, exists := b.convs[id]; exists {
+		conversation, exists := b.convs[id]
+		if !exists {
 			continue
 		}
-		b.convs[id] = newConversation(id, first(g.Name, "Signal group"), true)
-		b.order = append(b.order, id)
+		name := first(g.Name, "Signal group")
+		if conversation.Name != name {
+			conversation.Name = name
+			conversation.Initials = conversationInitials(name)
+			b.convs[id] = conversation
+		}
 	}
 	_ = b.saveLocked()
 	b.recountUnreadLocked()
@@ -536,15 +545,16 @@ func (b *Backend) handleNotification(raw json.RawMessage) {
 	}
 	if n.Envelope.DataMessage != nil {
 		d := n.Envelope.DataMessage
-		peer, name, group := first(n.Envelope.SourceUUID, n.Envelope.SourceNumber, n.Envelope.Source), first(n.Envelope.SourceName, n.Envelope.SourceNumber, n.Envelope.SourceUUID), false
+		peer, actorName, group := first(n.Envelope.SourceUUID, n.Envelope.SourceNumber, n.Envelope.Source), first(n.Envelope.SourceName, n.Envelope.SourceNumber, n.Envelope.SourceUUID), false
 		convID := directPrefix + peer
+		conversationName := actorName
 		if d.GroupInfo != nil && d.GroupInfo.GroupID != "" {
-			convID, name, group = groupPrefix+d.GroupInfo.GroupID, first(d.GroupInfo.GroupName, "Signal group"), true
+			convID, conversationName, group = groupPrefix+d.GroupInfo.GroupID, first(d.GroupInfo.GroupName, "Signal group"), true
 		}
 		if peer == "" && !group {
 			return
 		}
-		b.handleDataMessage(convID, peer, name, false, d)
+		b.handleDataMessage(convID, peer, actorName, conversationName, false, d)
 	}
 	if n.Envelope.SyncMessage != nil && n.Envelope.SyncMessage.SentMessage != nil {
 		s := n.Envelope.SyncMessage.SentMessage
@@ -552,19 +562,20 @@ func (b *Backend) handleNotification(raw json.RawMessage) {
 		if s.DataMessage != nil {
 			d = s.DataMessage
 		}
-		peer, name, group := first(s.DestinationUUID, s.DestinationNumber, s.Destination), first(s.DestinationNumber, s.DestinationUUID), false
+		peer, actorName, group := first(s.DestinationUUID, s.DestinationNumber, s.Destination), first(s.DestinationNumber, s.DestinationUUID), false
 		convID := directPrefix + peer
+		conversationName := actorName
 		if d.GroupInfo != nil && d.GroupInfo.GroupID != "" {
-			convID, name, group = groupPrefix+d.GroupInfo.GroupID, first(d.GroupInfo.GroupName, "Signal group"), true
+			convID, conversationName, group = groupPrefix+d.GroupInfo.GroupID, first(d.GroupInfo.GroupName, "Signal group"), true
 		}
 		if peer == "" && !group {
 			return
 		}
-		b.handleDataMessage(convID, b.account, name, true, d)
+		b.handleDataMessage(convID, b.account, actorName, conversationName, true, d)
 	}
 }
 
-func (b *Backend) handleDataMessage(conversationID, actor, actorName string, fromMe bool, data *dataMessage) {
+func (b *Backend) handleDataMessage(conversationID, actor, actorName, conversationName string, fromMe bool, data *dataMessage) {
 	if data == nil {
 		return
 	}
@@ -593,7 +604,7 @@ func (b *Backend) handleDataMessage(conversationID, actor, actorName string, fro
 	if strings.TrimSpace(text) == "" && len(attachments) == 0 {
 		return
 	}
-	b.ensureConversation(conversationID, actorName, strings.HasPrefix(conversationID, groupPrefix))
+	b.ensureConversation(conversationID, conversationName, strings.HasPrefix(conversationID, groupPrefix))
 	msg := wire.Message{ID: messageID(data.Timestamp, actor), ConversationID: conversationID, Text: text, Timestamp: data.Timestamp * 1000, FromMe: fromMe, SenderID: actor, SenderName: actorName, Attachments: attachments}
 	if fromMe {
 		msg.Delivery = wire.DeliverySent

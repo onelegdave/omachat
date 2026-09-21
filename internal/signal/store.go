@@ -97,6 +97,22 @@ func loadStoredData(path string) storedData {
 			out.Conversations[conversationID] = conversation
 		}
 	}
+	// Early Signal builds inserted every discovered contact and group into the
+	// inbox. Remove only untouched discovery stubs; conversations with actual
+	// activity retain a timestamp and/or messages and remain visible.
+	order := out.Order[:0]
+	for _, conversationID := range out.Order {
+		conversation, ok := out.Conversations[conversationID]
+		if !ok {
+			continue
+		}
+		if len(out.Messages[conversationID]) == 0 && conversation.Timestamp == 0 && conversation.Preview == "" && !conversation.Unread {
+			delete(out.Conversations, conversationID)
+			continue
+		}
+		order = append(order, conversationID)
+	}
+	out.Order = order
 	out.Version = cacheVersion
 	return out
 }
