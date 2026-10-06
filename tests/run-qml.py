@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise real QML with a short-lived demo window and a mock service."""
 import os
+import argparse
 import shlex
 import shutil
 import hashlib
@@ -9,6 +10,9 @@ import subprocess
 import tempfile
 
 repo = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description="Run isolated native QML fixtures")
+parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates"])
+args = parser.parse_args()
 go_cache = subprocess.check_output(["go", "env", "GOCACHE"], text=True,
                                  env=dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")).strip()
 omarchy = Path(os.environ.get("OMARCHY_PATH", "/usr/share/omarchy"))
@@ -44,6 +48,13 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
         (build / source).symlink_to(repo / source)
     (build / "scripts").mkdir()
     (build / "scripts/updates.py").write_text((repo / "scripts/updates.py").read_text())
+    if args.fixture:
+        (config / "shell.qml").write_text((repo / ("tests/qml/" + args.fixture + ".qml")).read_text())
+        result = subprocess.run(["qs", "-p", str(config)], env=env, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+        print(result.stdout)
+        marker = "OMACHAT_" + ("QML" if args.fixture == "shell" else args.fixture.replace("-", "_").upper())
+        raise SystemExit(1 if result.returncode or marker + "_PASS" not in result.stdout or marker + "_FAIL" in result.stdout or "ERROR" in result.stdout else 0)
     if headless:
         # PanelWindow needs a native Wayland backend. This is an explicit subset,
         # not a substitute for the full native panel, keyboard and pop-out suite.

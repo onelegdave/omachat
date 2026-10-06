@@ -1,0 +1,58 @@
+{
+  "package": "emojibase-data",
+  "version": "17.0.0",
+  "git_commit": "a5fc630a91ca42cddf3f4a66492965600fd3bce8",
+  "archive_url": "https://registry.npmjs.org/emojibase-data/-/emojibase-data-17.0.0.tgz",
+  "archive_sha256": "d01d0e2ca4e22cb402679532155342c71e2e871f25c32223c013b8b166ebdf5a",
+  "members_sha256": {
+    "package/en/data.json": "ed014f1049bd370c5794f815850156196ac382850f51c3e9f6a9e83553fb3f01",
+    "package/en/shortcodes/github.json": "d6bb7101e7bab1e52b30f4b3562da2319b484a6266352a1119f0d1ba52db23db",
+    "package/en/shortcodes/joypixels.json": "71c0608ffb9715b0bcd7dcc5001218fee07ddbd95635e328a392b9cc07a70ab8",
+    "package/LICENSE": "5c4e1582dcae9429a5d00ec0a64185c3a711f9757b2308fdf275d90b120f6149"
+  },
+  "source_top_level_records": 1949,
+  "source_flat_records": 3979,
+  "excluded_unordered_records": 26,
+  "presets": {
+    "github": {
+      "source_identities": 1870,
+      "included_identities": 1870,
+      "excluded_hexcodes": []
+    },
+    "joypixels": {
+      "source_identities": 3808,
+      "included_identities": 3782,
+      "excluded_hexcodes": [
+        "1F1FF",
+        "1F1FE",
+        "1F1FD",
+        "1F1FC",
+        "1F1FB",
+        "1F1FA",
+        "1F1F9",
+        "1F1F8",
+        "1F1F7",
+        "1F1F6",
+        "1F1F5",
+        "1F1F4",
+        "1F1F3",
+        "1F1F2",
+        "1F1F1",
+        "1F1F0",
+        "1F1EF",
+        "1F1EE",
+        "1F1ED",
+        "1F1EC",
+        "1F1EB",
+        "1F1EA",
+        "1F1E9",
+        "1F1E8",
+        "1F1E7",
+        "1F1E6"
+      ]
+    }
+  },
+  "output_records": 3953,
+  "output_aliases": 6630,
+  "output_sha256": "75590089f24896045ccadcc443063db98d2ad2345526f2ddb83bf3effb3cc241"
+}

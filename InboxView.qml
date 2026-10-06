@@ -5,6 +5,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "EmojiSearch.js" as EmojiSearch
 
 Item {
   id: root
@@ -138,6 +139,12 @@ Item {
   property bool linkConfirmOpen: false
   property string pendingUrl: ""
   property var emojiList: []
+  property var emojiBundleRows: []
+  property var emojiSearchIndex: null
+  property var emojiSearchResults: []
+  property string emojiSearchQuery: ""
+  property bool emojiSearchDataLoaded: false
+  property var emojiPickerOpener: null
   readonly property var reactionChoices: ["❤️", "👍", "👎", "😂", "😮", "😢"]
   readonly property var fallbackEmoji: [
     { e: "😀", k: "grinning" }, { e: "😂", k: "laugh tears" },
@@ -281,6 +288,53 @@ Item {
 
   function hasKeyboardModal() { return linkConfirmOpen || emojiPickerOpen }
 
+  function updateEmojiSearchResults() {
+    if (emojiSearchIndex) emojiSearchResults = EmojiSearch.search(emojiSearchIndex, emojiSearchQuery)
+    else emojiSearchResults = fallbackEmoji.slice()
+    if (emojiGrid) emojiGrid.currentIndex = emojiSearchResults.length ? 0 : -1
+  }
+
+  function rebuildEmojiSearchIndex() {
+    var rows = []
+    var byGlyph = Object.create(null)
+    function add(source) {
+      if (!source || !Array.isArray(source)) return
+      for (var i = 0; i < source.length; i++) {
+        var item = source[i] || {}
+        var glyph = String(item.e || "")
+        if (!glyph) continue
+        var key = "$" + glyph.replace(/[\uFE0E\uFE0F]/g, "")
+        var row = byGlyph[key]
+        if (!row) {
+          row = { e: glyph, label: String(item.label || ""), keywords: [], aliases: [] }
+          byGlyph[key] = row
+          rows.push(row)
+        } else if (!row.label && item.label) row.label = String(item.label)
+        var words = Array.isArray(item.keywords) ? item.keywords : String(item.k || "").split(/\s+/)
+        words.forEach(function(word) {
+          if (word && row.keywords.indexOf(String(word)) < 0) row.keywords.push(String(word))
+        })
+        ;(Array.isArray(item.aliases) ? item.aliases : []).forEach(function(alias) {
+          if (alias && row.aliases.indexOf(String(alias)) < 0) row.aliases.push(String(alias))
+        })
+      }
+    }
+    add(emojiBundleRows)
+    add(emojiList)
+    add(fallbackEmoji)
+    emojiSearchIndex = EmojiSearch.buildIndex(rows)
+    updateEmojiSearchResults()
+  }
+
+  function closeEmojiPicker() {
+    emojiPickerOpen = false
+    emojiPickerForReact = false
+    var opener = emojiPickerOpener
+    emojiPickerOpener = null
+    if (opener && opener.forceActiveFocus) opener.forceActiveFocus()
+    else if (composer.enabled) composer.forceActiveFocus()
+  }
+
   function focusConversationList() {
     if (!convList || convList.count < 1) return
     var selectedIndex = -1
@@ -309,9 +363,7 @@ Item {
 
   function leaveKeyboardEditor() {
     if (emojiPickerOpen) {
-      emojiPickerOpen = false
-      emojiPickerForReact = false
-      if (composer.enabled) composer.forceActiveFocus()
+      closeEmojiPicker()
       return
     }
     if (linkConfirmOpen) {
@@ -336,6 +388,8 @@ Item {
     } else if (actionId === "emojiPicker") {
       if (composer.enabled) {
         emojiPickerForReact = false
+        emojiPickerOpener = composer
+        emojiSearchQuery = ""
         emojiPickerOpen = true
       }
     } else if (actionId === "attach") {
@@ -568,15 +622,28 @@ Item {
 
   function chooseEmoji(emoji) {
     if (!emoji) return
-    if (root.emojiPickerForReact && root.reactingTo) root.react(root.reactingTo, emoji)
-    else composer.text += emoji
+    var isReaction = root.emojiPickerForReact && root.reactingTo
+    var opener = root.emojiPickerOpener
+    if (isReaction) root.react(root.reactingTo, emoji)
+    else {
+      var start = composer.selectionStart >= 0 ? composer.selectionStart : composer.cursorPosition
+      var end = composer.selectionEnd >= start ? composer.selectionEnd : start
+      if (end > start) composer.remove(start, end)
+      composer.insert(start, emoji)
+      composer.cursorPosition = start + emoji.length
+    }
     root.emojiPickerOpen = false
     root.emojiPickerForReact = false
-    composer.forceActiveFocus()
+    root.emojiPickerOpener = null
+    if (!isReaction || !opener || !opener.forceActiveFocus) composer.forceActiveFocus()
+    else opener.forceActiveFocus()
   }
 
-  onEmojiPickerOpenChanged: if (emojiPickerOpen) Qt.callLater(function() { emojiGrid.forceActiveFocus() })
-
+  onEmojiPickerOpenChanged: if (emojiPickerOpen) Qt.callLater(function() {
+    if (root.emojiPickerOpen) emojiSearchField.forceActiveFocus()
+  })
+  onEmojiSearchQueryChanged: updateEmojiSearchResults()
+  onEmojiSearchIndexChanged: updateEmojiSearchResults()
 
   function storeLocalSends(net, convID, rows) {
     var next = Object.assign({}, root._pendingSends)
@@ -1106,8 +1173,30 @@ Item {
       } catch (e) {
         root.emojiList = root.fallbackEmoji
       }
+      root.rebuildEmojiSearchIndex()
     }
-    onLoadFailed: root.emojiList = root.fallbackEmoji
+    onLoadFailed: { root.emojiList = root.fallbackEmoji; root.rebuildEmojiSearchIndex() }
+  }
+
+  FileView {
+    path: Qt.resolvedUrl("data/emoji-search.json")
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(text())
+        if (!Array.isArray(parsed) || parsed.length < 1000) throw new Error("incomplete bundled emoji data")
+        root.emojiBundleRows = parsed
+        root.emojiSearchDataLoaded = true
+      } catch (e) {
+        root.emojiBundleRows = []
+        root.emojiSearchDataLoaded = false
+      }
+      root.rebuildEmojiSearchIndex()
+    }
+    onLoadFailed: {
+      root.emojiBundleRows = []
+      root.emojiSearchDataLoaded = false
+      root.rebuildEmojiSearchIndex()
+    }
   }
 
   Item {
@@ -1859,6 +1948,8 @@ Item {
               }
             }
             Button {
+              id: moreEmojiReactionButton
+              objectName: "moreEmojiReactionButton"
               focusable: true
               Accessible.role: Accessible.Button
               Accessible.name: "+"
@@ -1869,6 +1960,8 @@ Item {
               fontFamily: root.fontFamily
               onClicked: {
                 root.emojiPickerForReact = true
+                root.emojiPickerOpener = moreEmojiReactionButton
+                root.emojiSearchQuery = ""
                 root.emojiPickerOpen = true
               }
             }
@@ -2106,6 +2199,8 @@ Item {
         enabled: composer.enabled
         onClicked: {
           root.emojiPickerForReact = false
+          root.emojiPickerOpener = emojiButton
+          root.emojiSearchQuery = ""
           root.emojiPickerOpen = !root.emojiPickerOpen
         }
       }
@@ -2142,51 +2237,104 @@ Item {
 
 
     Rectangle {
+      id: emojiPicker
+      objectName: "emojiPicker"
       visible: root.emojiPickerOpen && root.selectedConvID !== ""
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.bottom: composerRow.top
       anchors.bottomMargin: Style.space(6)
-      height: visible ? Style.space(280) : 0
+      height: visible ? Style.space(312) : 0
       radius: Style.space(8)
       color: Color.popups.background
       border.width: 1
       border.color: Color.popups.border
       clip: true
 
+      TextField {
+        id: emojiSearchField
+        objectName: "emojiSearchField"
+        Accessible.name: "Search emoji by name, keyword, alias, or glyph"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Style.space(8)
+        height: Style.space(36)
+        placeholderText: "Search emoji"
+        placeholderTextColor: root.dim
+        foreground: root.foreground
+        font.pixelSize: fs(Style.font.body)
+        onTextChanged: root.emojiSearchQuery = text
+        Keys.onDownPressed: function(event) {
+          if (emojiGrid.count > 0) { emojiGrid.currentIndex = 0; emojiGrid.forceActiveFocus() }
+          event.accepted = true
+        }
+        Keys.onTabPressed: function(event) {
+          if (emojiGrid.count > 0) { emojiGrid.currentIndex = 0; emojiGrid.forceActiveFocus() }
+          event.accepted = true
+        }
+        Keys.onReturnPressed: function(event) {
+          if (emojiGrid.count > 0) root.chooseEmoji(emojiGrid.model[0].e)
+          event.accepted = true
+        }
+        Keys.onEnterPressed: function(event) {
+          if (emojiGrid.count > 0) root.chooseEmoji(emojiGrid.model[0].e)
+          event.accepted = true
+        }
+      }
+
       GridView {
         id: emojiGrid
         objectName: "emojiGrid"
         activeFocusOnTab: true
         keyNavigationEnabled: true
-        Keys.onReturnPressed: if (currentItem) root.chooseEmoji(currentItem.text)
-        Keys.onEnterPressed: if (currentItem) root.chooseEmoji(currentItem.text)
-        Keys.onEscapePressed: { root.emojiPickerOpen = false; composer.forceActiveFocus() }
+        Keys.onReturnPressed: if (currentIndex >= 0 && currentIndex < count) root.chooseEmoji(model[currentIndex].e)
+        Keys.onEnterPressed: if (currentIndex >= 0 && currentIndex < count) root.chooseEmoji(model[currentIndex].e)
+        Keys.onEscapePressed: root.closeEmojiPicker()
+        Keys.onUpPressed: emojiSearchField.forceActiveFocus()
         highlight: Rectangle { color: "transparent"; border.width: 2; border.color: Color.accent }
         highlightFollowsCurrentItem: true
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: emojiSearchField.bottom
+        anchors.bottom: parent.bottom
         anchors.margins: Style.space(8)
+        anchors.topMargin: Style.space(4)
         cellWidth: Style.space(52)
         cellHeight: Style.space(52)
-        model: root.emojiList
+        model: root.emojiSearchResults
         clip: true
         delegate: Text {
           required property var modelData
+          Accessible.name: (modelData.label || modelData.k || "Emoji") + " " + modelData.e
+          Accessible.role: Accessible.ListItem
           width: Style.space(52)
           height: Style.space(52)
           horizontalAlignment: Text.AlignHCenter
           verticalAlignment: Text.AlignVCenter
-          text: modelData.e || modelData.emoji || ""
+          text: modelData.e || ""
+          ToolTip.visible: hoverHandler.hovered
+          ToolTip.text: modelData.label || modelData.k || "Emoji"
           font.pixelSize: fs(Style.space(32))
           renderType: Text.NativeRendering
+          HoverHandler { id: hoverHandler }
           MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: {
-              root.chooseEmoji(parent.text)
-            }
+            onClicked: root.chooseEmoji(parent.text)
           }
         }
+      }
+
+      Text {
+        id: emojiNoResults
+        objectName: "emojiNoResults"
+        anchors.centerIn: emojiGrid
+        visible: root.emojiSearchQuery.length > 0 && emojiGrid.count === 0
+        text: "No emoji found"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
       }
     }
 
