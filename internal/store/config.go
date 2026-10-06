@@ -28,6 +28,8 @@ type Config struct {
 	// choose automatically.
 	BrowserProfile string `json:"browserProfile,omitempty"`
 
+	KeyboardShortcuts map[string]string `json:"keyboardShortcuts,omitempty"`
+
 	// UiScale multiplies panel type. 1 is the theme default. 0 means unset
 	// and is treated as 1 when read.
 	UiScale              float64           `json:"uiScale,omitempty"`
@@ -150,6 +152,13 @@ func (c *ConfigStore) Get() Config {
 	if out.NotificationsEnabled != nil {
 		enabled := *out.NotificationsEnabled
 		out.NotificationsEnabled = &enabled
+	}
+	if out.KeyboardShortcuts != nil {
+		shortcuts := make(map[string]string, len(out.KeyboardShortcuts))
+		for id, shortcut := range out.KeyboardShortcuts {
+			shortcuts[id] = shortcut
+		}
+		out.KeyboardShortcuts = shortcuts
 	}
 	return out
 }
@@ -371,6 +380,122 @@ func (c *ConfigStore) SetWindowPreferences(alwaysPopout bool, mode string) error
 		cfg["popoutMode"] = mode
 		loaded.AlwaysPopout = alwaysPopout
 		loaded.PopoutMode = mode
+	})
+}
+
+var defaultKeyboardShortcuts = map[string][]string{
+	"help": {"?", "Ctrl+Shift+p"}, "search": {"/", "Ctrl+f"}, "compose": {"i"},
+	"history": {"m"}, "nextUnread": {"u"}, "newConversation": {"Ctrl+n"},
+	"settings": {"Ctrl+,"}, "emojiPicker": {"Ctrl+e"}, "attach": {"Ctrl+o"},
+	"refresh": {"r", "Ctrl+r"}, "service.gmessages": {"1", "Ctrl+1"}, "service.whatsapp": {"2", "Ctrl+2"},
+	"service.telegram": {"3", "Ctrl+3"}, "service.messenger": {"4", "Ctrl+4"}, "service.signal": {"5", "Ctrl+5"},
+}
+
+func normalizeKeyboardShortcut(value string) (string, error) {
+	parts := strings.Split(strings.TrimSpace(value), "+")
+	if len(parts) == 0 || len(parts) > 4 {
+		return "", fmt.Errorf("invalid shortcut")
+	}
+	modifiers := map[string]bool{}
+	for _, part := range parts[:len(parts)-1] {
+		key := strings.ToLower(strings.TrimSpace(part))
+		aliases := map[string]string{"ctrl": "Ctrl", "control": "Ctrl", "alt": "Alt", "option": "Alt", "meta": "Meta", "super": "Meta", "shift": "Shift"}
+		modifier, ok := aliases[key]
+		if !ok || modifiers[modifier] {
+			return "", fmt.Errorf("invalid or duplicated modifier")
+		}
+		modifiers[modifier] = true
+	}
+	key := strings.TrimSpace(parts[len(parts)-1])
+	if len(key) != 1 || strings.ContainsRune("+ 	\r\n", rune(key[0])) {
+		return "", fmt.Errorf("shortcut key must be one printable character")
+	}
+	key = strings.ToLower(key)
+	if strings.ContainsRune("?/,.-", rune(key[0])) {
+		delete(modifiers, "Shift")
+	}
+	var prefix []string
+	for _, modifier := range []string{"Ctrl", "Alt", "Meta", "Shift"} {
+		if modifiers[modifier] {
+			prefix = append(prefix, modifier)
+		}
+	}
+	return strings.Join(append(prefix, key), "+"), nil
+}
+
+func isReservedKeyboardShortcut(shortcut string) bool {
+	return strings.Contains(" Tab Backtab Left Right Up Down Home End PageUp PageDown Enter Return Escape Space Backspace Delete ", " "+shortcut+" ")
+}
+
+func hasKeyboardModifier(shortcut string) bool {
+	return strings.HasPrefix(shortcut, "Ctrl+") || strings.HasPrefix(shortcut, "Alt+") || strings.HasPrefix(shortcut, "Meta+")
+}
+
+func validateKeyboardShortcuts(shortcuts map[string]string) error {
+	if len(shortcuts) > len(defaultKeyboardShortcuts) {
+		return fmt.Errorf("too many shortcut assignments")
+	}
+	for id := range shortcuts {
+		if _, ok := defaultKeyboardShortcuts[id]; !ok {
+			return fmt.Errorf("unknown keyboard action %q", id)
+		}
+	}
+	effective := make(map[string][]string, len(defaultKeyboardShortcuts))
+	for id, defaults := range defaultKeyboardShortcuts {
+		custom, ok := shortcuts[id]
+		if !ok {
+			effective[id] = defaults
+			continue
+		}
+		if strings.TrimSpace(custom) == "" {
+			effective[id] = nil
+			continue
+		}
+		normalized, err := normalizeKeyboardShortcut(custom)
+		if err != nil {
+			return fmt.Errorf("invalid shortcut for %s: %w", id, err)
+		}
+		if isReservedKeyboardShortcut(strings.Split(normalized, "+")[len(strings.Split(normalized, "+"))-1]) {
+			return fmt.Errorf("shortcut %q is reserved for keyboard navigation", normalized)
+		}
+		effective[id] = []string{normalized}
+	}
+	ids := make([]string, 0, len(effective))
+	for id := range effective {
+		ids = append(ids, id)
+	}
+	for i, firstID := range ids {
+		for _, secondID := range ids[i+1:] {
+			for _, first := range effective[firstID] {
+				for _, second := range effective[secondID] {
+					if first == second {
+						return fmt.Errorf("shortcut %q is assigned to multiple actions", first)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// SetKeyboardShortcuts persists validated user overrides. Empty values unbind
+// an action; removing an override restores that action's built-in shortcuts.
+func (c *ConfigStore) SetKeyboardShortcuts(shortcuts map[string]string) error {
+	if err := validateKeyboardShortcuts(shortcuts); err != nil {
+		return err
+	}
+	copyOfShortcuts := make(map[string]string, len(shortcuts))
+	for id, shortcut := range shortcuts {
+		copyOfShortcuts[id] = shortcut
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		if len(copyOfShortcuts) == 0 {
+			delete(cfg, "keyboardShortcuts")
+			loaded.KeyboardShortcuts = nil
+			return
+		}
+		cfg["keyboardShortcuts"] = copyOfShortcuts
+		loaded.KeyboardShortcuts = copyOfShortcuts
 	})
 }
 

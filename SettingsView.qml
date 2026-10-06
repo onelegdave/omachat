@@ -13,7 +13,27 @@ Flickable {
   property real uiScale: 1
   signal scaleSaved(real scale)
   signal windowPreferencesSaved(bool alwaysPopout, string popoutMode)
+  signal keyboardShortcutsSaved(var shortcuts)
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
+
+  function focusInitialControl() {
+    if (sectionNav.count > 0 && sectionNav.itemAt(0)) sectionNav.itemAt(0).forceActiveFocus()
+  }
+
+  function isKeyboardEditing() {
+    return keyboardSection.captureActive || tgIdField.activeFocus || tgHashField.activeFocus
+  }
+
+  function isCapturingShortcut() { return keyboardSection.captureActive }
+
+  function leaveKeyboardEditor() {
+    if (keyboardSection.captureActive) return keyboardSection.cancelRecording()
+    if (tgIdField.activeFocus || tgHashField.activeFocus) {
+      focusInitialControl()
+      return true
+    }
+    return false
+  }
 
   function readableInk(surface, preferred, minRatio) {
     return Model.readableInk(surface, preferred, minRatio)
@@ -39,6 +59,7 @@ Flickable {
   property string windowStatusText: ""
   property bool savingWindowPreferences: false
   property int windowRequestGeneration: 0
+  property var keyboardShortcuts: ({})
 
   property bool telegramConfigured: false
   property int telegramApiId: 0
@@ -72,6 +93,7 @@ Flickable {
       if (isFinite(s) && s > 0) root.uiScale = s
       root.alwaysPopout = res.alwaysPopout === true
       root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
+      root.keyboardShortcuts = res.keyboardShortcuts || ({})
     }, "gmessages")
   }
 
@@ -212,11 +234,13 @@ Flickable {
       width: parent.width
       spacing: Style.space(8)
       Repeater {
+        id: sectionNav
         model: [
           {label:"Updates", section:updatesSection},
           {label:"Services", section:serviceChoices},
           {label:"Notifications", section:notificationsSection},
           {label:"Appearance", section:windowSection},
+          {label:"Keyboard", section:keyboardSection},
           {label:"Service guides", section:servicesSection},
           {label:"Tools", section:toolsSection},
           {label:"Telegram API", section:telegramSection},
@@ -254,6 +278,24 @@ Flickable {
       service:root.service
       fontFamily:root.fontFamily
       uiScale:root.uiScale
+    }
+
+    KeyboardShortcutsView {
+      id: keyboardSection
+      objectName: "keyboardShortcutsSection"
+      width: parent.width
+      service: root.service
+      overrides: root.keyboardShortcuts
+      foreground: root.copyColor
+      mutedColor: root.mutedColor
+      accentColor: root.accentColor
+      errorColor: root.urgentColor
+      fontFamily: root.fontFamily
+      fontSize: fs(Style.font.body)
+      onSaved: function(shortcuts) {
+        root.keyboardShortcuts = shortcuts
+        root.keyboardShortcutsSaved(shortcuts)
+      }
     }
 
     Column {

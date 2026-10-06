@@ -626,6 +626,16 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 		}
 		return ok(d.PluginConfig())
 
+	case wire.MethodSetKeyboardShortcuts:
+		p, err := decodeParams[wire.SetKeyboardShortcutsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetKeyboardShortcuts(p.Shortcuts); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
 	case wire.MethodConfig:
 		return ok(d.PluginConfig())
 

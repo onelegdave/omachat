@@ -10,12 +10,14 @@ Item {
   id: root
 
   property var service: null
+  readonly property var keyboardInitialFocus: convList
   property color foreground: Model.readableInk(Color.popups.background, Color.popups.text, 7)
   property string fontFamily: Style.font.family
   property real uiScale: 1
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
   property var host: null
   property var settings: null
+  property var keyboardActionRouter: null
   property string network: "gmessages"
   property bool sidebarCollapsed: false
   property var lastConversations: ({})
@@ -273,6 +275,74 @@ Item {
     return fallback
   }
 
+  function isKeyboardEditing() {
+    return composerFocus || linkConfirmOpen || emojiPickerOpen
+  }
+
+  function hasKeyboardModal() { return linkConfirmOpen || emojiPickerOpen }
+
+  function focusConversationList() {
+    if (!convList || convList.count < 1) return
+    var selectedIndex = -1
+    for (var i = 0; i < visibleConversations.length; i++) {
+      if (visibleConversations[i].id === selectedConvID) { selectedIndex = i; break }
+    }
+    convList.currentIndex = selectedIndex >= 0 ? selectedIndex : Math.max(0, convList.currentIndex)
+    convList.forceActiveFocus()
+  }
+
+  function moveConversationCursor(delta) {
+    if (!convList || convList.count < 1) return
+    var current = convList.currentIndex < 0 ? 0 : convList.currentIndex
+    convList.currentIndex = Math.max(0, Math.min(convList.count - 1, current + delta))
+    convList.forceActiveFocus()
+  }
+
+  function openFocusedConversation() {
+    var conversation = visibleConversations[convList.currentIndex]
+    if (!conversation) return
+    selectConversation(conversation.id)
+    if (composer.enabled) composer.forceActiveFocus()
+    else if (messageList.count > 0) messageList.forceActiveFocus()
+    else convList.forceActiveFocus()
+  }
+
+  function leaveKeyboardEditor() {
+    if (emojiPickerOpen) {
+      emojiPickerOpen = false
+      emojiPickerForReact = false
+      if (composer.enabled) composer.forceActiveFocus()
+      return
+    }
+    if (linkConfirmOpen) {
+      cancelOpenUrl()
+      if (composer.enabled) composer.forceActiveFocus()
+      return
+    }
+    if (composerFocus) focusConversationList()
+  }
+
+  function handleKeyboardAction(actionId) {
+    if (actionId === "search") {
+      searchField.forceActiveFocus()
+      searchField.selectAll()
+    } else if (actionId === "compose") {
+      if (composer.enabled) composer.forceActiveFocus()
+    } else if (actionId === "history") {
+      messageList.forceActiveFocus()
+      if (messageList.count > 0) messageList.currentIndex = messageList.count - 1
+    } else if (actionId === "nextUnread") {
+      nextUnreadAction.clicked(null)
+    } else if (actionId === "emojiPicker") {
+      if (composer.enabled) {
+        emojiPickerForReact = false
+        emojiPickerOpen = true
+      }
+    } else if (actionId === "attach") {
+      if (composer.enabled && !sendingMedia) attachFromDisk()
+    }
+  }
+
   function selectConversation(id, remember) {
     if (sendingMedia) return
     if (id === selectedConvID) { focusComposer(); return }
@@ -506,6 +576,7 @@ Item {
   }
 
   onEmojiPickerOpenChanged: if (emojiPickerOpen) Qt.callLater(function() { emojiGrid.forceActiveFocus() })
+
 
   function storeLocalSends(net, convID, rows) {
     var next = Object.assign({}, root._pendingSends)
@@ -1086,6 +1157,7 @@ Item {
       color: Style.normalFillFor(root.foreground, Color.accent)
 
       MouseArea {
+        id: nextUnreadAction
         objectName: "nextUnreadButton"
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
@@ -1128,12 +1200,8 @@ Item {
       keyNavigationEnabled: true
       Accessible.role: Accessible.List
       Accessible.name: "Conversations"
-      Keys.onReturnPressed: {
-        if (currentItem && currentItem.modelData) root.selectConversation(currentItem.modelData.id)
-      }
-      Keys.onEnterPressed: {
-        if (currentItem && currentItem.modelData) root.selectConversation(currentItem.modelData.id)
-      }
+      Keys.onReturnPressed: root.openFocusedConversation()
+      Keys.onEnterPressed: root.openFocusedConversation()
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: unreadChip.visible ? unreadChip.bottom : searchField.bottom
@@ -2045,6 +2113,11 @@ Item {
       TextField {
         id: composer
         objectName: "composer"
+        Keys.priority: Keys.BeforeItem
+        Keys.onPressed: function(event) {
+          if ((event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) !== 0
+              && root.keyboardActionRouter) root.keyboardActionRouter(event)
+        }
         placeholderTextColor: root.dim
         font.pixelSize: fs(Style.font.body)
         anchors.left: emojiButton.right

@@ -100,6 +100,7 @@ const (
 	MethodNotifyMessage          = "notifyMessage"
 	MethodTestNotification       = "testNotification"
 	MethodSetWindowPreferences   = "setWindowPreferences"
+	MethodSetKeyboardShortcuts   = "setKeyboardShortcuts"
 	MethodConfig                 = "config"
 	MethodUnpair                 = "unpair"
 	MethodMedia                  = "media"
@@ -408,6 +409,7 @@ type ConfigResult struct {
 	TelegramAPIID            int               `json:"telegramApiId,omitempty"`
 	AlwaysPopout             bool              `json:"alwaysPopout"`
 	PopoutMode               string            `json:"popoutMode"`
+	KeyboardShortcuts        map[string]string `json:"keyboardShortcuts"`
 }
 
 type SetEnabledServicesParams struct {
@@ -442,6 +444,10 @@ type NotificationTarget struct {
 type SetWindowPreferencesParams struct {
 	AlwaysPopout bool   `json:"alwaysPopout"`
 	PopoutMode   string `json:"popoutMode"`
+}
+
+type SetKeyboardShortcutsParams struct {
+	Shortcuts map[string]string `json:"shortcuts"`
 }
 
 // DiscardCaptureParams removes a webcam capture the user rejected.

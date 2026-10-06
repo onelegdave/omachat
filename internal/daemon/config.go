@@ -29,6 +29,7 @@ func (d *Daemon) PluginConfig() wire.ConfigResult {
 		NotificationPreviews:     cfg.NotificationPreviews,
 		AlwaysPopout:             cfg.AlwaysPopout,
 		PopoutMode:               mode,
+		KeyboardShortcuts:        cfg.KeyboardShortcuts,
 		TelegramConfigured:       credErr == nil,
 		TelegramAPIID:            cfg.TelegramAPIID,
 	}
@@ -40,4 +41,8 @@ func (d *Daemon) SetUiScale(scale float64) error {
 
 func (d *Daemon) SetWindowPreferences(alwaysPopout bool, mode string) error {
 	return d.config.SetWindowPreferences(alwaysPopout, mode)
+}
+
+func (d *Daemon) SetKeyboardShortcuts(shortcuts map[string]string) error {
+	return d.config.SetKeyboardShortcuts(shortcuts)
 }
