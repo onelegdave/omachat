@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	maxConversations       = 50
+	maxConversations       = maxPersistedConversations
 	maxInboundMediaBytes   = 25 * 1024 * 1024 // 25 MB
 	maxOutboundMediaBytes  = 16 * 1024 * 1024 // 16 MB
 	maxOutboundVoiceSecs   = 60
@@ -61,13 +61,22 @@ type Backend struct {
 
 	pairCancel context.CancelFunc
 
-	container *sqlstore.Container
-	device    *waStore.Device
-	client    Client
-	paired    bool
-	status    wire.Status
-	gen       uint64
-	handlerID uint32
+	container            *sqlstore.Container
+	historyStore         *historyStore
+	historyCacheMB       int
+	historyPending       *pendingHistoryRequest
+	historyTimeout       time.Duration
+	historyRetryCooldown time.Duration
+	historyUnavailable   map[string]bool
+	historyCooldown      map[string]time.Time
+	historyAnchors       map[hotHistoryAnchorKey]hotHistoryAnchor
+	historyAnchorOrder   []hotHistoryAnchorKey
+	device               *waStore.Device
+	client               Client
+	paired               bool
+	status               wire.Status
+	gen                  uint64
+	handlerID            uint32
 
 	convs          map[string]wire.Conversation
 	order          []string
@@ -86,14 +95,20 @@ type Backend struct {
 // New creates an unstarted WhatsApp backend.
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *Backend {
 	return &Backend{
-		log:            log.With().Str("network", wire.NetworkWhatsApp).Logger(),
-		paths:          paths,
-		publish:        publish,
-		convs:          make(map[string]wire.Conversation),
-		messages:       make(map[string][]wire.Message),
-		rawMsgs:        make(map[string]*waE2E.Message),
-		reactionActors: make(map[string]map[string]string),
-		convertGIF:     convertGIFToMP4,
+		log:                  log.With().Str("network", wire.NetworkWhatsApp).Logger(),
+		paths:                paths,
+		historyCacheMB:       128,
+		historyTimeout:       30 * time.Second,
+		historyRetryCooldown: 2 * time.Second,
+		historyUnavailable:   make(map[string]bool),
+		historyCooldown:      make(map[string]time.Time),
+		historyAnchors:       make(map[hotHistoryAnchorKey]hotHistoryAnchor),
+		publish:              publish,
+		convs:                make(map[string]wire.Conversation),
+		messages:             make(map[string][]wire.Message),
+		rawMsgs:              make(map[string]*waE2E.Message),
+		reactionActors:       make(map[string]map[string]string),
+		convertGIF:           convertGIFToMP4,
 		status: wire.Status{
 			Network: wire.NetworkWhatsApp,
 			State:   wire.StateUnpaired,
@@ -189,12 +204,39 @@ func (b *Backend) SetState(state wire.ConnState, errStr string) {
 	b.setState(state, errStr)
 }
 
+// SetHistoryCacheMB applies a supported cache budget without restarting services.
+func (b *Backend) SetHistoryCacheMB(sizeMB int) error {
+	if sizeMB != 64 && sizeMB != 128 && sizeMB != 256 && sizeMB != 512 {
+		return fmt.Errorf("unsupported WhatsApp history cache size %d MB", sizeMB)
+	}
+	b.sessionMu.Lock()
+	defer b.sessionMu.Unlock()
+	b.mu.RLock()
+	store := b.historyStore
+	b.mu.RUnlock()
+	if store != nil {
+		if err := store.setBudgetMB(context.Background(), sizeMB); err != nil {
+			return err
+		}
+	}
+	b.mu.Lock()
+	b.historyCacheMB = sizeMB
+	b.mu.Unlock()
+	return nil
+}
+
 // Start initializes the database store and connects if a paired session exists.
 func (b *Backend) Start(ctx context.Context) error {
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
 
 	b.ctx, b.cancel = context.WithCancel(ctx)
+	store, storeErr := openHistoryStore(b.paths.WhatsAppHistoryFile(), b.historyCacheMB)
+	if storeErr != nil {
+		b.log.Warn().Err(storeErr).Msg("Could not open bounded WhatsApp history store")
+	} else {
+		b.historyStore = store
+	}
 
 	// Load persisted chat store from disk, including media protobufs needed
 	// to download attachments after a restart. View-once payloads are omitted.
@@ -202,6 +244,18 @@ func (b *Backend) Start(ctx context.Context) error {
 	if loaded, err := loadChatStore(storePath); err != nil {
 		b.log.Warn().Err(err).Msg("Failed to load WhatsApp chat store; starting with empty state")
 	} else {
+		if b.historyStore != nil {
+			var messages []wire.Message
+			for _, chatMessages := range loaded.Messages {
+				messages = append(messages, chatMessages...)
+			}
+			if err := b.historyStore.put(ctx, messages, loaded.RawMedia); err != nil {
+				b.log.Warn().Err(err).Msg("Could not migrate bounded WhatsApp history into SQLite")
+			} else if err := saveChatIndex(storePath, loaded); err != nil {
+				b.log.Warn().Err(err).Msg("Could not retire migrated WhatsApp message payloads from the legacy cache")
+			}
+		}
+		trimStoredHotMessages(loaded)
 		raw := restoreRawMedia(loaded.RawMedia)
 		b.mu.Lock()
 		b.convs = loaded.Conversations
@@ -292,6 +346,40 @@ func contactDisplayName(info types.ContactInfo) string {
 	return ""
 }
 
+func savedContactName(info types.ContactInfo) string {
+	for _, name := range []string{info.FullName, info.FirstName} {
+		if name = strings.TrimSpace(name); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func lookupSavedContactName(ctx context.Context, device *waStore.Device, jid types.JID) string {
+	if device == nil || device.Contacts == nil || jid.IsEmpty() {
+		return ""
+	}
+	jid = jid.ToNonAD()
+	candidates := []types.JID{jid}
+	if device.LIDs != nil {
+		if alt, err := device.GetAltJID(ctx, jid); err == nil && !alt.IsEmpty() {
+			alt = alt.ToNonAD()
+			if alt != jid {
+				candidates = append(candidates, alt)
+			}
+		}
+	}
+	for _, candidate := range candidates {
+		info, err := device.Contacts.GetContact(ctx, candidate)
+		if err == nil {
+			if name := savedContactName(info); name != "" {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
 func lookupContactName(ctx context.Context, device *waStore.Device, jid types.JID) string {
 	if device == nil || device.Contacts == nil {
 		return ""
@@ -300,6 +388,9 @@ func lookupContactName(ctx context.Context, device *waStore.Device, jid types.JI
 		if name := contactDisplayName(info); name != "" {
 			return name
 		}
+	}
+	if device.LIDs == nil {
+		return ""
 	}
 	alt, err := device.GetAltJID(ctx, jid)
 	if err != nil || alt.IsEmpty() {
@@ -324,6 +415,10 @@ func (b *Backend) refreshConversationNames(device *waStore.Device) {
 	for _, id := range ids {
 		jid, err := types.ParseJID(id)
 		if err != nil {
+			continue
+		}
+		if name := lookupSavedContactName(ctx, device, jid); name != "" {
+			b.updateSavedContactName(gen, name, jid)
 			continue
 		}
 		if name := lookupContactName(ctx, device, jid); name != "" {
@@ -362,8 +457,14 @@ func (b *Backend) Stop() {
 	if b.pairCancel != nil {
 		b.pairCancel()
 	}
+	if b.historyPending != nil && b.historyPending.timer != nil {
+		b.historyPending.timer.Stop()
+	}
+	b.historyPending = nil
 	cli := b.client
 	container := b.container
+	history := b.historyStore
+	b.historyStore = nil
 	b.mu.Unlock()
 
 	if cli != nil {
@@ -371,6 +472,9 @@ func (b *Backend) Stop() {
 	}
 	if container != nil {
 		_ = container.Close()
+	}
+	if history != nil {
+		_ = history.close()
 	}
 }
 
@@ -694,6 +798,12 @@ func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, conta
 		return
 	}
 	b.gen++
+	if b.historyPending != nil && b.historyPending.timer != nil {
+		b.historyPending.timer.Stop()
+	}
+	b.historyPending = nil
+	b.historyUnavailable = make(map[string]bool)
+	b.historyCooldown = make(map[string]time.Time)
 	cli = b.client
 	container = b.container
 	pairCancel = b.pairCancel
@@ -786,12 +896,43 @@ func (b *Backend) Conversations(count int) []wire.Conversation {
 // Messages returns cached and synced messages for a WhatsApp chat with stable timestamp+ID tie breaking.
 func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.MessagesResult, error) {
 	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	msgs := b.messages[p.ConversationID]
+	history := b.historyStore
+	msgs := append([]wire.Message(nil), b.messages[p.ConversationID]...)
+	b.mu.RUnlock()
 	limit := int(p.Count)
 	if limit <= 0 {
 		limit = 60
+	}
+	if history != nil {
+		page, err := history.page(ctx, p.ConversationID, limit, p.CursorID, p.CursorTime)
+		if err != nil {
+			return wire.MessagesResult{}, fmt.Errorf("read cached WhatsApp history: %w", err)
+		}
+		if len(page.Messages) > 0 {
+			first := page.Messages[0]
+			b.mu.Lock()
+			b.rememberHistoryAnchorLocked(p.ConversationID, first)
+			canFetch := !page.HasMore && b.canFetchHistoryLocked(p.ConversationID)
+			b.mu.Unlock()
+			return wire.MessagesResult{ConversationID: p.ConversationID, Messages: page.Messages, CursorID: first.ID, CursorTime: first.Timestamp, HasMore: page.HasMore, CanFetchOlder: canFetch}, nil
+		}
+		if p.CursorID != "" {
+			var hotAnchor *wire.Message
+			if page.Gap {
+				for i := range msgs {
+					if msgs[i].ID == p.CursorID && msgs[i].ConversationID == p.ConversationID {
+						cached := msgs[i]
+						hotAnchor = &cached
+						break
+					}
+				}
+			}
+			if page.Gap && hotAnchor == nil {
+				hotAnchor = b.hotHistoryAnchor(p.ConversationID, p.CursorID)
+			}
+			state, notice := b.requestOlderHistory(ctx, p.ConversationID, p.CursorID, hotAnchor)
+			return wire.MessagesResult{ConversationID: p.ConversationID, CursorID: p.CursorID, CursorTime: p.CursorTime, HasMore: state == "loading" || state == "failed", CanFetchOlder: state == "loading" || state == "failed", HistoryFetchState: state, HistoryNotice: notice}, nil
+		}
 	}
 
 	var filtered []wire.Message
@@ -821,9 +962,10 @@ func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.Mes
 		cursorTime = resMsgs[0].Timestamp
 	}
 
-	// OmaChat initial WhatsApp implementation pages from cached synced history.
-	// On-demand phone history sync requests are not yet implemented.
 	hasMore := start > 0
+	b.mu.RLock()
+	canFetch := !hasMore && len(resMsgs) > 0 && b.canFetchHistoryLocked(p.ConversationID)
+	b.mu.RUnlock()
 
 	return wire.MessagesResult{
 		ConversationID: p.ConversationID,
@@ -831,6 +973,7 @@ func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.Mes
 		CursorID:       cursorID,
 		CursorTime:     cursorTime,
 		HasMore:        hasMore,
+		CanFetchOlder:  canFetch,
 	}, nil
 }
 
@@ -870,7 +1013,16 @@ func (b *Backend) Send(ctx context.Context, p wire.SendParams) (wire.Message, er
 				}
 			}
 		}
+		history := b.historyStore
 		b.mu.RUnlock()
+		if rawQuoted == nil && history != nil {
+			if raw, err := history.getRaw(ctx, p.ConversationID, p.ReplyToID); err == nil && len(raw) > 0 {
+				var quoted waE2E.Message
+				if proto.Unmarshal(raw, &quoted) == nil {
+					rawQuoted = &quoted
+				}
+			}
+		}
 
 		if rawQuoted == nil && quotedParticipant == "" {
 			return wire.Message{}, fmt.Errorf("reply target message %q not found", p.ReplyToID)
@@ -1310,8 +1462,24 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	b.mu.RLock()
 	cli := b.client
 	rawMsg := b.rawMsgs[key]
+	history := b.historyStore
 	gen := b.gen
 	b.mu.RUnlock()
+
+	if rawMsg == nil && history != nil {
+		if chatID, messageID, ok := strings.Cut(key, "\x1f"); ok {
+			payload, err := history.getRaw(ctx, chatID, messageID)
+			if err != nil {
+				return wire.MediaResult{}, fmt.Errorf("read cached WhatsApp attachment metadata: %w", err)
+			}
+			if len(payload) > 0 {
+				var raw waE2E.Message
+				if err := proto.Unmarshal(payload, &raw); err == nil {
+					rawMsg = &raw
+				}
+			}
+		}
+	}
 
 	if rawMsg == nil {
 		return wire.MediaResult{}, errors.New("unauthorized or unknown media key")
@@ -1503,7 +1671,11 @@ func (b *Backend) handleEventFor(gen uint64, evt any) {
 		}
 		b.status.State = wire.StateDisconnected
 		b.status.Error = "WhatsApp disconnected"
+		pendingHistory := b.historyPending
 		b.mu.Unlock()
+		if pendingHistory != nil && pendingHistory.gen == gen {
+			b.finishHistoryRequest(pendingHistory, "failed", "WhatsApp disconnected before older history arrived. Reconnect and retry.")
+		}
 		b.log.Info().Msg("WhatsApp disconnected")
 		b.publishStatus()
 
@@ -1545,14 +1717,16 @@ func (b *Backend) handleEventFor(gen uint64, evt any) {
 		b.handleReceipt(gen, e)
 
 	case *events.HistorySync:
-		b.ingestHistorySync(gen, e.Data)
+		if !b.handleOnDemandHistorySync(gen, e.Data, e.Notification) {
+			b.ingestHistorySync(gen, e.Data)
+		}
 
 	case *events.Contact:
 		name := strings.TrimSpace(e.Action.GetFullName())
 		if name == "" {
 			name = strings.TrimSpace(e.Action.GetFirstName())
 		}
-		b.updateConversationNames(gen, name, e.JID)
+		b.updateSavedContactName(gen, name, e.JID)
 
 	case *events.PushName:
 		b.updateConversationNames(gen, e.NewPushName, e.JID, e.JIDAlt)
@@ -1563,6 +1737,14 @@ func (b *Backend) handleEventFor(gen uint64, evt any) {
 }
 
 func (b *Backend) updateConversationNames(gen uint64, name string, jids ...types.JID) {
+	b.updateConversationNamesWithPriority(gen, name, false, jids...)
+}
+
+func (b *Backend) updateSavedContactName(gen uint64, name string, jids ...types.JID) {
+	b.updateConversationNamesWithPriority(gen, name, true, jids...)
+}
+
+func (b *Backend) updateConversationNamesWithPriority(gen uint64, name string, replaceExisting bool, jids ...types.JID) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return
@@ -1575,7 +1757,7 @@ func (b *Backend) updateConversationNames(gen uint64, name string, jids ...types
 		ctx = context.Background()
 	}
 	allJIDs := append([]types.JID(nil), jids...)
-	if device != nil {
+	if device != nil && device.LIDs != nil {
 		for _, jid := range jids {
 			if alt, err := device.GetAltJID(ctx, jid); err == nil && !alt.IsEmpty() {
 				allJIDs = append(allJIDs, alt)
@@ -1593,7 +1775,7 @@ func (b *Backend) updateConversationNames(gen uint64, name string, jids ...types
 		}
 		id := jid.ToNonAD().String()
 		conv, ok := b.convs[id]
-		if !ok || (!isFallbackConversationName(jid, conv.Name) && conv.Name != "") {
+		if !ok || (!replaceExisting && !isFallbackConversationName(jid, conv.Name) && conv.Name != "") || conv.Name == name {
 			continue
 		}
 		conv.Name = name
@@ -1707,9 +1889,27 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 	return true
 }
 
+func historyConversationContactJID(conversation *waHistorySync.Conversation) types.JID {
+	if conversation == nil {
+		return types.EmptyJID
+	}
+	for _, raw := range []string{conversation.GetPnJID(), conversation.GetID(), conversation.GetLidJID()} {
+		if jid, err := types.ParseJID(raw); err == nil {
+			return jid
+		}
+	}
+	return types.EmptyJID
+}
+
 func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync) {
+	if err := b.ingestHistorySyncMode(gen, data, false); err != nil {
+		b.log.Warn().Err(err).Msg("Could not persist received WhatsApp history")
+	}
+}
+
+func (b *Backend) ingestHistorySyncMode(gen uint64, data *waHistorySync.HistorySync, onDemand bool) error {
 	if data == nil {
-		return
+		return nil
 	}
 	b.mu.RLock()
 	device := b.device
@@ -1719,15 +1919,23 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 		ctx = context.Background()
 	}
 	resolvedNames := make(map[string]string)
+	savedNames := make(map[string]string)
 	for _, c := range data.GetConversations() {
 		chatID := c.GetID()
-		jid, err := types.ParseJID(chatID)
-		if err != nil {
+		if _, err := types.ParseJID(chatID); err != nil {
 			continue
 		}
-		name := strings.TrimSpace(c.GetName())
+		contactJID := historyConversationContactJID(c)
+		savedName := lookupSavedContactName(ctx, device, contactJID)
+		name := savedName
 		if name == "" {
-			name = lookupContactName(ctx, device, jid)
+			name = strings.TrimSpace(c.GetName())
+		}
+		if name == "" {
+			name = lookupContactName(ctx, device, contactJID)
+		}
+		if savedName != "" {
+			savedNames[chatID] = savedName
 		}
 		resolvedNames[chatID] = name
 	}
@@ -1735,9 +1943,10 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 	b.mu.Lock()
 	if b.gen != gen {
 		b.mu.Unlock()
-		return
+		return nil
 	}
 
+	var persistenceErr error
 	for _, c := range data.GetConversations() {
 		chatID := c.GetID()
 		if chatID == "" {
@@ -1753,8 +1962,11 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 				AvatarColor: avatarColor(chatID),
 				Initials:    initials(name),
 				IsGroup:     jid.Server == types.GroupServer,
-				Unread:      c.GetUnreadCount() > 0,
+				Unread:      !onDemand && c.GetUnreadCount() > 0,
 			}
+		} else if savedNames[chatID] != "" {
+			conv.Name = savedNames[chatID]
+			conv.Initials = initials(conv.Name)
 		} else if resolvedNames[chatID] != "" && isFallbackConversationName(jid, conv.Name) {
 			conv.Name = resolvedNames[chatID]
 			conv.Initials = initials(conv.Name)
@@ -1765,6 +1977,7 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 			actor     string
 			emoji     string
 		}
+		var historyRows []wire.Message
 		for _, hMsg := range c.GetMessages() {
 			webMsg := hMsg.GetMessage()
 			if webMsg == nil || webMsg.GetMessage() == nil {
@@ -1835,6 +2048,7 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 			if !dup {
 				existing = append(existing, m)
 				b.messages[chatID] = existing
+				historyRows = append(historyRows, m)
 			}
 
 			if ts > conv.Timestamp {
@@ -1848,6 +2062,22 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 		}
 		for _, reaction := range pendingReactions {
 			_, _ = b.setReactionLocked(chatID, reaction.messageID, reaction.actor, reaction.emoji)
+		}
+		if b.historyStore != nil && len(historyRows) > 0 {
+			for i := range historyRows {
+				for _, current := range b.messages[chatID] {
+					if current.ID == historyRows[i].ID {
+						historyRows[i].Reactions = current.Reactions
+						break
+					}
+				}
+			}
+			if err := b.historyStore.put(ctx, historyRows, snapshotRawMedia(b.rawMsgs)); err != nil {
+				b.log.Warn().Err(err).Msg("Failed to persist received WhatsApp history chunk")
+				if persistenceErr == nil {
+					persistenceErr = err
+				}
+			}
 		}
 
 		sort.Slice(b.messages[chatID], func(i, j int) bool {
@@ -1879,6 +2109,7 @@ func (b *Backend) ingestHistorySync(gen uint64, data *waHistorySync.HistorySync)
 	}
 	b.emitLocked(wire.EventStatus, st)
 	b.mu.Unlock()
+	return persistenceErr
 }
 
 func (b *Backend) handleReceipt(gen uint64, evt *events.Receipt) {
@@ -1922,7 +2153,49 @@ func (b *Backend) handleReceipt(gen uint64, evt *events.Receipt) {
 	b.mu.Unlock()
 }
 
+func (b *Backend) pruneRawMessagesLocked() {
+	keepKeys := make(map[string]struct{})
+	keepIDs := make(map[string]struct{})
+	for chatID, messages := range b.messages {
+		for _, message := range messages {
+			if message.ID == "" {
+				continue
+			}
+			keepKeys[rawMediaKey(chatID, message.ID)] = struct{}{}
+			keepIDs[message.ID] = struct{}{}
+		}
+	}
+	for key := range b.rawMsgs {
+		if _, ok := keepKeys[key]; ok {
+			continue
+		}
+		if _, ok := keepIDs[key]; ok {
+			continue
+		}
+		delete(b.rawMsgs, key)
+	}
+}
+
 func (b *Backend) saveStoreLocked() {
+	b.pruneRawMessagesLocked()
+	if b.historyStore != nil {
+		var messages []wire.Message
+		for _, chatMessages := range b.messages {
+			messages = append(messages, chatMessages...)
+		}
+		if err := b.historyStore.put(context.Background(), messages, snapshotRawMedia(b.rawMsgs)); err != nil {
+			b.log.Warn().Err(err).Msg("Failed to persist WhatsApp history page")
+			return
+		}
+		stored := &StoredChatData{
+			Conversations: b.convs, Order: b.order, Messages: b.messages,
+			ReactionActors: b.reactionActors,
+		}
+		if err := saveChatIndex(b.paths.WhatsAppStoreFile(), stored); err != nil {
+			b.log.Warn().Err(err).Msg("Failed to persist WhatsApp conversation index")
+		}
+		return
+	}
 	stored := &StoredChatData{
 		Conversations:  b.convs,
 		Order:          b.order,
@@ -1966,20 +2239,26 @@ func (b *Backend) reorderLocked() {
 	}
 	b.order = make([]string, limit)
 	keep := make(map[string]struct{}, limit)
+	hot := make(map[string]struct{}, maxHotMessageConversations)
 	for i := 0; i < limit; i++ {
 		b.order[i] = entries[i].id
 		keep[entries[i].id] = struct{}{}
+		if i < maxHotMessageConversations {
+			hot[entries[i].id] = struct{}{}
+		}
 	}
 	for id := range b.convs {
 		if _, ok := keep[id]; !ok {
 			delete(b.convs, id)
+			delete(b.messages, id)
+		} else if _, isHot := hot[id]; !isHot {
 			delete(b.messages, id)
 		}
 	}
 	for key := range b.rawMsgs {
 		chat, _, ok := strings.Cut(key, "\x1f")
 		if ok {
-			if _, keepChat := keep[chat]; !keepChat {
+			if _, keepChat := hot[chat]; !keepChat {
 				delete(b.rawMsgs, key)
 			}
 		}

@@ -30,6 +30,7 @@ type Config struct {
 
 	KeyboardShortcuts           map[string]string `json:"keyboardShortcuts,omitempty"`
 	KeepPreviousEmojiSearchText bool              `json:"keepPreviousEmojiSearchText,omitempty"`
+	WhatsAppHistoryCacheMB      int               `json:"whatsappHistoryCacheMB,omitempty"`
 
 	// UiScale multiplies panel type. 1 is the theme default. 0 means unset
 	// and is treated as 1 when read.
@@ -140,6 +141,9 @@ func (c *ConfigStore) Get() Config {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	out := c.loaded
+	if out.WhatsAppHistoryCacheMB != 64 && out.WhatsAppHistoryCacheMB != 128 && out.WhatsAppHistoryCacheMB != 256 && out.WhatsAppHistoryCacheMB != 512 {
+		out.WhatsAppHistoryCacheMB = 128
+	}
 	if out.EnabledServices != nil {
 		services := append([]string{}, (*out.EnabledServices)...)
 		out.EnabledServices = &services
@@ -389,6 +393,17 @@ func (c *ConfigStore) SetKeepPreviousEmojiSearchText(keep bool) error {
 	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
 		cfg["keepPreviousEmojiSearchText"] = keep
 		loaded.KeepPreviousEmojiSearchText = keep
+	})
+}
+
+// SetWhatsAppHistoryCacheMB persists the local WhatsApp history budget.
+func (c *ConfigStore) SetWhatsAppHistoryCacheMB(size int) error {
+	if size != 64 && size != 128 && size != 256 && size != 512 {
+		return fmt.Errorf("invalid WhatsApp history cache size %d MB", size)
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["whatsappHistoryCacheMB"] = size
+		loaded.WhatsAppHistoryCacheMB = size
 	})
 }
 

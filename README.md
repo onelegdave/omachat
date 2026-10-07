@@ -130,12 +130,15 @@ start pairing again.
 | Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
 | Reactions | Yes | Yes | Yes (chat-dependent) | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes |
-| Older history | Fetch older pages | Page cached phone-sync history | Fetch older pages | Fetch older pages |
+| Older history | Fetch older pages | Page cached history and request an older phone page | Fetch older pages | Fetch older pages |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable |
 
 Threads open with the latest 60 messages; **Load older messages** pages back
-while preserving the reading position. WhatsApp cannot currently request
-additional phone history beyond what has synced. Telegram animated TGS/video
+while preserving the reading position. WhatsApp pages cached history offline and
+can request an older page from the phone at the history boundary when connected;
+the phone may not provide every requested message. The WhatsApp history cache is
+configurable at 64, 128, 256, or 512 MB (128 MB by default), with older local
+messages evicted automatically as space is needed. Telegram animated TGS/video
 stickers are unsupported, and media references need refreshing after restart.
 WhatsApp view-once/ephemeral and Telegram self-destructing media are not saved
 or reopened.

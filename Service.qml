@@ -227,6 +227,7 @@ Item {
   signal messageReceived(var message, string network)
   signal conversationUpdated(var conversation, string network)
   signal paired(string network)
+  signal historyUpdated(var update, string network)
   signal transportError(string message)
 
   property int _nextId: 1
@@ -634,6 +635,9 @@ Item {
     case "message":
       notificationManager.handleMessage(frame.data, net, frame.notify === true)
       root.messageReceived(frame.data, net)
+      break
+    case "history":
+      root.historyUpdated(frame.data, net)
       break
     case "paired":
       notificationManager.forgetNetwork(net)

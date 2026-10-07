@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"sort"
+	"strings"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"google.golang.org/protobuf/proto"
@@ -14,8 +15,9 @@ import (
 )
 
 const (
-	maxPersistedConversations = 50
-	maxPersistedMessages      = 100
+	maxPersistedConversations  = 1000
+	maxPersistedMessages       = 100
+	maxHotMessageConversations = 50
 )
 
 // StoredChatData represents the on-disk state of WhatsApp conversations and messages.
@@ -87,6 +89,100 @@ func saveChatStore(path string, stored *StoredChatData) error {
 	}
 
 	return store.WritePrivateJSON(path, raw)
+}
+
+// saveChatIndex stores only bounded conversation metadata and hot reaction
+// actors. Message bodies and attachment protobufs live in the budgeted SQLite
+// history store after successful migration/persistence.
+func saveChatIndex(path string, stored *StoredChatData) error {
+	if stored == nil {
+		return nil
+	}
+	keep := make(map[string]struct{})
+	hotChats := make(map[string]struct{}, maxHotMessageConversations)
+	for i, chatID := range stored.Order {
+		if i >= maxHotMessageConversations {
+			break
+		}
+		hotChats[chatID] = struct{}{}
+	}
+	for chatID, messages := range stored.Messages {
+		if _, hot := hotChats[chatID]; !hot {
+			continue
+		}
+		for _, message := range messages {
+			if message.ID == "" {
+				continue
+			}
+			keep[rawMediaKey(chatID, message.ID)] = struct{}{}
+		}
+	}
+	actors := make(map[string]map[string]string)
+	for key, values := range stored.ReactionActors {
+		if _, ok := keep[key]; !ok || len(values) == 0 {
+			continue
+		}
+		copyValues := make(map[string]string, len(values))
+		for actor, emoji := range values {
+			copyValues[actor] = emoji
+		}
+		actors[key] = copyValues
+	}
+	index := &StoredChatData{
+		Conversations:  stored.Conversations,
+		Order:          stored.Order,
+		Messages:       make(map[string][]wire.Message),
+		ReactionActors: actors,
+	}
+	raw, err := json.Marshal(index)
+	if err != nil {
+		return err
+	}
+	return store.WritePrivateJSON(path, raw)
+}
+
+func trimStoredHotMessages(stored *StoredChatData) {
+	if stored == nil {
+		return
+	}
+	hotChats := make(map[string]struct{}, maxHotMessageConversations)
+	hotIDs := make(map[string]struct{})
+	for i, chatID := range stored.Order {
+		if i >= maxHotMessageConversations {
+			break
+		}
+		hotChats[chatID] = struct{}{}
+		for _, message := range stored.Messages[chatID] {
+			if message.ID != "" {
+				hotIDs[message.ID] = struct{}{}
+			}
+		}
+	}
+	for chatID := range stored.Messages {
+		if _, ok := hotChats[chatID]; !ok {
+			delete(stored.Messages, chatID)
+		}
+	}
+	for key := range stored.RawMedia {
+		chatID, _, composite := strings.Cut(key, "\x1f")
+		if composite {
+			if _, ok := hotChats[chatID]; !ok {
+				delete(stored.RawMedia, key)
+			}
+		} else if _, ok := hotIDs[key]; !ok {
+			delete(stored.RawMedia, key)
+		}
+	}
+	for key := range stored.ReactionActors {
+		chatID, _, composite := strings.Cut(key, "\x1f")
+		if composite {
+			if _, ok := hotChats[chatID]; !ok {
+				delete(stored.ReactionActors, key)
+			}
+		} else if _, ok := hotIDs[key]; !ok {
+			delete(stored.ReactionActors, key)
+		}
+	}
 }
 
 func boundStoredChat(stored *StoredChatData) {

@@ -646,6 +646,16 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 		}
 		return ok(d.PluginConfig())
 
+	case wire.MethodSetWhatsAppHistoryCache:
+		p, err := decodeParams[wire.SetWhatsAppHistoryCacheParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetWhatsAppHistoryCacheMB(p.SizeMB); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
 	case wire.MethodConfig:
 		return ok(d.PluginConfig())
 

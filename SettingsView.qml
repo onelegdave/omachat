@@ -15,6 +15,7 @@ Flickable {
   signal windowPreferencesSaved(bool alwaysPopout, string popoutMode)
   signal keyboardShortcutsSaved(var shortcuts)
   signal emojiSearchPreferenceSaved(bool keepPreviousEmojiSearchText)
+  property int whatsappHistoryCacheMB: 128
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
 
   function focusInitialControl() {
@@ -97,6 +98,7 @@ Flickable {
       if (isFinite(s) && s > 0) root.uiScale = s
       root.alwaysPopout = res.alwaysPopout === true
       root.keepPreviousEmojiSearchText = res.keepPreviousEmojiSearchText === true
+      root.whatsappHistoryCacheMB = Number(res.whatsappHistoryCacheMB) || 128
       root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
       root.keyboardShortcuts = res.keyboardShortcuts || ({})
     }, "gmessages")
@@ -583,6 +585,49 @@ Flickable {
         text: root.statusText
         color: root.statusText.indexOf("fail") >= 0 || root.statusText.indexOf("error") >= 0
           ? root.urgentColor : root.accentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+      }
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "WhatsApp history cache"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+
+      ChoiceGroup {
+        width: parent.width
+        options: [
+          { value: "64", label: "64 MB" },
+          { value: "128", label: "128 MB" },
+          { value: "256", label: "256 MB" },
+          { value: "512", label: "512 MB" }
+        ]
+        value: String(root.whatsappHistoryCacheMB || 128)
+        foreground: root.foreground
+        background: Color.popups.background
+        accent: root.accentColor
+        fontFamily: root.fontFamily
+        fontSize: fs(Style.font.body)
+        focusable: true
+        onChanged: function(v) {
+          if (!root.service) return
+          root.service.call("setWhatsAppHistoryCache", { sizeMB: Number(v) }, function(ok, res) {
+            if (!ok) { root.statusText = String(res); root.load(); return }
+            root.whatsappHistoryCacheMB = Number(res.whatsappHistoryCacheMB) || 128
+          }, "gmessages")
+        }
+      }
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Older cached messages are removed automatically when space is needed. This does not delete messages from WhatsApp. Photos and videos use the separate media cache."
+        color: root.mutedColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
       }

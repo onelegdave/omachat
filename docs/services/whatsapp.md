@@ -33,12 +33,20 @@ CGO and a standard C compiler such as gcc or clang.
   OGG/Opus notes fail to play on iPhone.
 - On-demand media downloads with bounded files and retry behavior.
 - View-once and ephemeral media are intentionally not cached or reopened.
+- Cached message history pages remain available offline. At the older-history
+  boundary, OmaChat can ask a connected phone for one preceding page; the phone
+  may return no page or less history than requested, so this is not a complete
+  archive guarantee.
 
-WhatsApp history is based on the initial phone sync and cached live messages.
-OmaChat does not currently request additional on-demand phone history. GIF files
-are sent from your computer through the attachment picker; there is no in-app
-GIF search. WhatsApp requires GIFs to be MP4 playback messages, so outbound
-GIFs require ffmpeg. Incoming
+Set **WhatsApp history cache** in Settings to 64, 128, 256, or 512 MB (128 MB by
+default). Older cached messages are removed locally when space is needed; this
+does not delete messages from WhatsApp. Downloaded photos and videos use the
+separate media cache. Increasing the budget allows more history to accumulate
+but does not start a bulk download.
+
+GIF files are sent from your computer through the attachment picker; there is no
+in-app GIF search. WhatsApp requires GIFs to be MP4 playback messages, so
+outbound GIFs require ffmpeg. Incoming
 GIF-playback videos render inline and loop. Calling remains explicitly
 unavailable in the WhatsApp panel.
 

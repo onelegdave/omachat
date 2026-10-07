@@ -16,6 +16,7 @@ or working exploit details in a public issue.
 - Pairing credentials: `~/.local/share/omachat/session.json` (0600)
 - WhatsApp device store: `~/.local/share/omachat/whatsapp.db` (0600 from creation)
 - WhatsApp chat cache: `~/.local/share/omachat/whatsapp_store.json` (0600)
+- WhatsApp paged history cache: `~/.local/share/omachat/whatsapp_history.sqlite` (0600)
 - Telegram session and chat cache: `~/.local/share/omachat/telegram.session` and `telegram_store.json` (0600)
 - Messenger session, encrypted-device state, and chat cache: `~/.local/share/omachat/messenger.db` and `messenger_store.json` (0600)
 - Config (browser profile, Telegram API credentials, notification and pop-out preferences, sidebar layout, last service and per-service conversation IDs): `~/.local/share/omachat/config.json` (0600)

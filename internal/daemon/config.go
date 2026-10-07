@@ -32,6 +32,8 @@ func (d *Daemon) PluginConfig() wire.ConfigResult {
 		KeyboardShortcuts:        cfg.KeyboardShortcuts,
 		TelegramConfigured:       credErr == nil,
 		TelegramAPIID:            cfg.TelegramAPIID,
+		KeepPreviousEmojiSearchText: cfg.KeepPreviousEmojiSearchText,
+		WhatsAppHistoryCacheMB:      cfg.WhatsAppHistoryCacheMB,
 	}
 }
 
@@ -49,4 +51,20 @@ func (d *Daemon) SetKeyboardShortcuts(shortcuts map[string]string) error {
 
 func (d *Daemon) SetKeepPreviousEmojiSearchText(keep bool) error {
 	return d.config.SetKeepPreviousEmojiSearchText(keep)
+}
+
+func (d *Daemon) SetWhatsAppHistoryCacheMB(size int) error {
+	previous := d.config.Get().WhatsAppHistoryCacheMB
+	if d.wa != nil {
+		if err := d.wa.SetHistoryCacheMB(size); err != nil {
+			return err
+		}
+	}
+	if err := d.config.SetWhatsAppHistoryCacheMB(size); err != nil {
+		if d.wa != nil {
+			_ = d.wa.SetHistoryCacheMB(previous)
+		}
+		return err
+	}
+	return nil
 }

@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,7 @@ type MockClient struct {
 	DownloadToFileFunc func(ctx context.Context, msg whatsmeow.DownloadableMessage, file whatsmeow.File) error
 	LogoutFunc         func(ctx context.Context) error
 	MarkReadFunc       func(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptTypeExtra ...types.ReceiptType) error
+	RequestHistoryFunc func(ctx context.Context, anchor types.MessageInfo, count int) error
 }
 
 // NewMockClient constructs a MockClient.
@@ -170,4 +172,11 @@ func (m *MockClient) MarkRead(ctx context.Context, ids []types.MessageID, timest
 		return m.MarkReadFunc(ctx, ids, timestamp, chat, sender, receiptTypeExtra...)
 	}
 	return nil
+}
+
+func (m *MockClient) RequestHistory(ctx context.Context, anchor types.MessageInfo, count int) error {
+	if m.RequestHistoryFunc == nil {
+		return errors.New("mock history request is not configured")
+	}
+	return m.RequestHistoryFunc(ctx, anchor, count)
 }
