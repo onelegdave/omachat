@@ -1,6 +1,23 @@
 .pragma library
 
 // Pure and offline. No Qt/Node APIs; callers own the original records.
+function searchTextForOpen(previousText, keepPrevious) {
+    return keepPrevious ? String(previousText || "") : ""
+}
+
+function gridIndexForFocus(currentIndex, resultCount) {
+    var count = Math.max(0, Math.floor(Number(resultCount) || 0))
+    if (count === 0) return -1
+    var index = Math.floor(Number(currentIndex))
+    return index >= 0 && index < count ? index : 0
+}
+
+function gridUpReturnsToSearch(currentIndex, columns) {
+    var index = Number(currentIndex)
+    var columnCount = Math.max(1, Math.floor(Number(columns) || 0))
+    return !isFinite(index) || index < 0 || index < columnCount
+}
+
 function normalize(value) {
     var text = String(value || "").toLowerCase().replace(/^[\s:]+|[\s:]+$/g, "")
     if (/^[+-]1$/.test(text)) return text

@@ -143,6 +143,7 @@ Item {
   property var emojiSearchIndex: null
   property var emojiSearchResults: []
   property string emojiSearchQuery: ""
+  property bool keepPreviousEmojiSearchText: false
   property bool emojiSearchDataLoaded: false
   property var emojiPickerOpener: null
   readonly property var reactionChoices: ["❤️", "👍", "👎", "😂", "😮", "😢"]
@@ -335,6 +336,22 @@ Item {
     else if (composer.enabled) composer.forceActiveFocus()
   }
 
+  function openEmojiPicker(opener, forReaction) {
+    emojiPickerForReact = forReaction === true
+    emojiPickerOpener = opener || null
+    var query = EmojiSearch.searchTextForOpen(emojiSearchField.text, keepPreviousEmojiSearchText)
+    emojiSearchField.text = query
+    emojiSearchQuery = query
+    emojiPickerOpen = true
+    updateEmojiSearchResults()
+  }
+
+  function focusEmojiGrid() {
+    if (emojiGrid.count < 1) return
+    emojiGrid.currentIndex = EmojiSearch.gridIndexForFocus(emojiGrid.currentIndex, emojiGrid.count)
+    emojiGrid.forceActiveFocus()
+  }
+
   function focusConversationList() {
     if (!convList || convList.count < 1) return
     var selectedIndex = -1
@@ -387,10 +404,7 @@ Item {
       nextUnreadAction.clicked(null)
     } else if (actionId === "emojiPicker") {
       if (composer.enabled) {
-        emojiPickerForReact = false
-        emojiPickerOpener = composer
-        emojiSearchQuery = ""
-        emojiPickerOpen = true
+        openEmojiPicker(composer, false)
       }
     } else if (actionId === "attach") {
       if (composer.enabled && !sendingMedia) attachFromDisk()
@@ -1959,10 +1973,7 @@ Item {
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: {
-                root.emojiPickerForReact = true
-                root.emojiPickerOpener = moreEmojiReactionButton
-                root.emojiSearchQuery = ""
-                root.emojiPickerOpen = true
+                root.openEmojiPicker(moreEmojiReactionButton, true)
               }
             }
           }
@@ -2198,10 +2209,8 @@ Item {
         fontFamily: root.fontFamily
         enabled: composer.enabled
         onClicked: {
-          root.emojiPickerForReact = false
-          root.emojiPickerOpener = emojiButton
-          root.emojiSearchQuery = ""
-          root.emojiPickerOpen = !root.emojiPickerOpen
+          if (root.emojiPickerOpen) root.closeEmojiPicker()
+          else root.openEmojiPicker(emojiButton, false)
         }
       }
 
@@ -2266,11 +2275,11 @@ Item {
         font.pixelSize: fs(Style.font.body)
         onTextChanged: root.emojiSearchQuery = text
         Keys.onDownPressed: function(event) {
-          if (emojiGrid.count > 0) { emojiGrid.currentIndex = 0; emojiGrid.forceActiveFocus() }
+          root.focusEmojiGrid()
           event.accepted = true
         }
         Keys.onTabPressed: function(event) {
-          if (emojiGrid.count > 0) { emojiGrid.currentIndex = 0; emojiGrid.forceActiveFocus() }
+          root.focusEmojiGrid()
           event.accepted = true
         }
         Keys.onReturnPressed: function(event) {
@@ -2291,7 +2300,15 @@ Item {
         Keys.onReturnPressed: if (currentIndex >= 0 && currentIndex < count) root.chooseEmoji(model[currentIndex].e)
         Keys.onEnterPressed: if (currentIndex >= 0 && currentIndex < count) root.chooseEmoji(model[currentIndex].e)
         Keys.onEscapePressed: root.closeEmojiPicker()
-        Keys.onUpPressed: emojiSearchField.forceActiveFocus()
+        Keys.onUpPressed: function(event) {
+          var columns = Math.max(1, Math.floor(emojiGrid.width / emojiGrid.cellWidth))
+          if (EmojiSearch.gridUpReturnsToSearch(emojiGrid.currentIndex, columns)) {
+            emojiSearchField.forceActiveFocus()
+            event.accepted = true
+          } else {
+            event.accepted = false
+          }
+        }
         highlight: Rectangle { color: "transparent"; border.width: 2; border.color: Color.accent }
         highlightFollowsCurrentItem: true
         anchors.left: parent.left

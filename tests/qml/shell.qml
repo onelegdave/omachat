@@ -140,7 +140,7 @@ ShellRoot {
     {id:"go",name:"Go",purpose:"Build",detail:"Available",installed:true,sourceUrl:"https://gitlab.archlinux.org/archlinux/packaging/packages/go"}
   ]))
  }
- Process { command: ["sleep", "0.5"]; running: true; onExited: root.runTests() }
+ Process { command: ["sleep", "4"]; running: true; onExited: root.runTests() }
  function runTests() {
    try {
     console.log("QML_TEST_BEGIN")
@@ -290,16 +290,17 @@ ShellRoot {
     inbox.threadError=""
     composer.text=""
 
+    search.Window.window.requestActivate()
     window.contentItem.forceActiveFocus()
     search.forceActiveFocus()
     search.text=""
     var text="r123 jkl hx"
-    for (var i=0;i<text.length;i++) keyboard.keyClickChar(text[i], Qt.NoModifier, 0)
+    for (var i=0;i<text.length;i++) keyboard.keyClickChar(text[i], Qt.NoModifier, 20)
     root.check(search.text === text && catcher.shortcuts === 0, "real search editor receives shortcut characters")
     inbox.pendingAttachment=root.testImage
     caption.forceActiveFocus()
     caption.text=""
-    for (var j=0;j<text.length;j++) keyboard.keyClickChar(text[j], Qt.NoModifier, 0)
+    for (var j=0;j<text.length;j++) keyboard.keyClickChar(text[j], Qt.NoModifier, 20)
     root.check(caption.text === text && catcher.shortcuts === 0, "real attachment caption receives shortcut characters")
     inbox.pendingAttachment=""
     settings.parent=catcher
@@ -307,7 +308,7 @@ ShellRoot {
     var key=inspect.findChild(settings,"telegramApiHashField")
     key.forceActiveFocus()
     key.text=""
-    for (var k=0;k<text.length;k++) keyboard.keyClickChar(text[k], Qt.NoModifier, 0)
+    for (var k=0;k<text.length;k++) keyboard.keyClickChar(text[k], Qt.NoModifier, 20)
     root.check(key.text === text && catcher.shortcuts === 0, "real Settings credential editor receives shortcut characters")
     key.text=""
 

@@ -28,7 +28,8 @@ type Config struct {
 	// choose automatically.
 	BrowserProfile string `json:"browserProfile,omitempty"`
 
-	KeyboardShortcuts map[string]string `json:"keyboardShortcuts,omitempty"`
+	KeyboardShortcuts           map[string]string `json:"keyboardShortcuts,omitempty"`
+	KeepPreviousEmojiSearchText bool              `json:"keepPreviousEmojiSearchText,omitempty"`
 
 	// UiScale multiplies panel type. 1 is the theme default. 0 means unset
 	// and is treated as 1 when read.
@@ -380,6 +381,14 @@ func (c *ConfigStore) SetWindowPreferences(alwaysPopout bool, mode string) error
 		cfg["popoutMode"] = mode
 		loaded.AlwaysPopout = alwaysPopout
 		loaded.PopoutMode = mode
+	})
+}
+
+// SetKeepPreviousEmojiSearchText persists whether the emoji picker keeps its last query.
+func (c *ConfigStore) SetKeepPreviousEmojiSearchText(keep bool) error {
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["keepPreviousEmojiSearchText"] = keep
+		loaded.KeepPreviousEmojiSearchText = keep
 	})
 }
 

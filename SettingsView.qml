@@ -14,6 +14,7 @@ Flickable {
   signal scaleSaved(real scale)
   signal windowPreferencesSaved(bool alwaysPopout, string popoutMode)
   signal keyboardShortcutsSaved(var shortcuts)
+  signal emojiSearchPreferenceSaved(bool keepPreviousEmojiSearchText)
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
 
   function focusInitialControl() {
@@ -55,10 +56,13 @@ Flickable {
 
   property string statusText: ""
   property bool alwaysPopout: false
+  property bool keepPreviousEmojiSearchText: false
   property string popoutMode: "floating"
   property string windowStatusText: ""
   property bool savingWindowPreferences: false
   property int windowRequestGeneration: 0
+  property bool savingEmojiSearchPreference: false
+  property string emojiSearchPreferenceStatusText: ""
   property var keyboardShortcuts: ({})
 
   property bool telegramConfigured: false
@@ -92,6 +96,7 @@ Flickable {
       var s = Number(res.uiScale)
       if (isFinite(s) && s > 0) root.uiScale = s
       root.alwaysPopout = res.alwaysPopout === true
+      root.keepPreviousEmojiSearchText = res.keepPreviousEmojiSearchText === true
       root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
       root.keyboardShortcuts = res.keyboardShortcuts || ({})
     }, "gmessages")
@@ -120,6 +125,22 @@ Flickable {
       root.alwaysPopout = res.alwaysPopout === true
       root.popoutMode = res && res.popoutMode === "tiled" ? "tiled" : "floating"
       root.windowPreferencesSaved(root.alwaysPopout, root.popoutMode)
+    }, "gmessages")
+  }
+
+  function saveEmojiSearchPreference(keep) {
+    if (!service || savingEmojiSearchPreference) return
+    savingEmojiSearchPreference = true
+    emojiSearchPreferenceStatusText = ""
+    service.call("setEmojiSearchPreference", { keepPreviousEmojiSearchText: keep }, function(ok, res) {
+      root.savingEmojiSearchPreference = false
+      if (!ok) {
+        root.emojiSearchPreferenceStatusText = String(res)
+        root.load()
+        return
+      }
+      root.keepPreviousEmojiSearchText = res && res.keepPreviousEmojiSearchText === true
+      root.emojiSearchPreferenceSaved(root.keepPreviousEmojiSearchText)
     }, "gmessages")
   }
 
@@ -241,6 +262,7 @@ Flickable {
           {label:"Notifications", section:notificationsSection},
           {label:"Appearance", section:windowSection},
           {label:"Keyboard", section:keyboardSection},
+          {label:"Emoji picker", section:emojiPickerSection},
           {label:"Service guides", section:servicesSection},
           {label:"Tools", section:toolsSection},
           {label:"Telegram API", section:telegramSection},
@@ -295,6 +317,85 @@ Flickable {
       onSaved: function(shortcuts) {
         root.keyboardShortcuts = shortcuts
         root.keyboardShortcutsSaved(shortcuts)
+      }
+    }
+
+    Column {
+      id: emojiPickerSection
+      objectName: "emojiPickerSection"
+      width: parent.width
+      spacing: Style.space(8)
+
+      Text {
+        width: parent.width
+        text: "Emoji picker"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+
+      Item {
+        id: keepPreviousEmojiSearchTextSwitch
+        objectName: "keepPreviousEmojiSearchTextSwitch"
+        width: parent.width
+        implicitHeight: Math.max(emojiSearchLabels.implicitHeight, emojiSearchToggle.implicitHeight)
+        enabled: !root.savingEmojiSearchPreference
+        activeFocusOnTab: true
+        opacity: enabled ? 1 : 0.45
+        Keys.onReturnPressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        Keys.onEnterPressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        Keys.onSpacePressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+
+        Column {
+          id: emojiSearchLabels
+          anchors.left: parent.left
+          anchors.right: emojiSearchToggle.left
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+
+          Text {
+            width: parent.width
+            text: "Keep previous emoji search text"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Keep and reapply the last emoji search when opening the picker."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.caption)
+          }
+        }
+
+        ToggleSwitch {
+          id: emojiSearchToggle
+          objectName: "keepPreviousEmojiSearchTextToggle"
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          checked: root.keepPreviousEmojiSearchText
+          busy: root.savingEmojiSearchPreference
+          interactive: keepPreviousEmojiSearchTextSwitch.enabled
+          hasCursor: keepPreviousEmojiSearchTextSwitch.activeFocus
+          foreground: root.foreground
+          accent: root.accentColor
+          onToggled: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        }
+      }
+
+      Text {
+        width: parent.width
+        visible: root.emojiSearchPreferenceStatusText !== ""
+        wrapMode: Text.Wrap
+        text: root.emojiSearchPreferenceStatusText
+        color: root.urgentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
       }
     }
 

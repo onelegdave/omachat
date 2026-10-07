@@ -27,6 +27,25 @@ test('empty search browses original records in input order without mutating them
   assert.deepEqual(results(module, index, '  '), frozen);
   assert.equal(results(module, index, '')[0], frozen[0]);
 });
+test('picker reopening follows the keep-previous-search preference', () => {
+  const module = api();
+  assert.equal(module.searchTextForOpen('heart', false), '');
+  assert.equal(module.searchTextForOpen('heart', true), 'heart');
+  assert.equal(module.searchTextForOpen('', true), '');
+});
+test('grid Up returns to search only from its first row', () => {
+  const module = api();
+  assert.equal(module.gridUpReturnsToSearch(0, 8), true);
+  assert.equal(module.gridUpReturnsToSearch(7, 8), true);
+  assert.equal(module.gridUpReturnsToSearch(8, 8), false);
+  assert.equal(module.gridUpReturnsToSearch(23, 8), false);
+  assert.equal(module.gridUpReturnsToSearch(-1, 8), true);
+  assert.equal(module.gridUpReturnsToSearch(0, 0), true);
+  assert.equal(module.gridIndexForFocus(8, 20), 8);
+  assert.equal(module.gridIndexForFocus(-1, 20), 0);
+  assert.equal(module.gridIndexForFocus(20, 20), 0);
+  assert.equal(module.gridIndexForFocus(8, 0), -1);
+});
 test('exact labels, aliases, glyphs and keywords normalize without conflating signed aliases', () => {
   const module = api();
   const index = module.buildIndex(rows);

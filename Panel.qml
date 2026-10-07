@@ -40,6 +40,7 @@ Panel {
   property int accountGeneration: 0
   property string popoutMode: "floating"
   property bool alwaysPopout: false
+  property bool keepPreviousEmojiSearchText: false
   property bool panelConfigLoaded: false
   property bool openPendingConfig: false
   property bool configLoadPending: false
@@ -539,6 +540,7 @@ Panel {
       var validated = Keybindings.validateOverrides(res.keyboardShortcuts || ({}))
       root.shortcutOverrides = validated.ok ? validated.overrides : ({})
       root.alwaysPopout = res.alwaysPopout === true
+      root.keepPreviousEmojiSearchText = res.keepPreviousEmojiSearchText === true
       root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
       root.panelConfigLoaded = true
       if (root.openPendingConfig) root.open()
@@ -1200,6 +1202,7 @@ Panel {
     SettingsView {
       service: root.service
       alwaysPopout: root.alwaysPopout
+      keepPreviousEmojiSearchText: root.keepPreviousEmojiSearchText
       popoutMode: root.popoutMode
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -1208,6 +1211,7 @@ Panel {
       onWindowPreferencesSaved: function(always, mode) {
         root.applyWindowPreferences(always, mode)
       }
+      onEmojiSearchPreferenceSaved: function(keep) { root.keepPreviousEmojiSearchText = keep }
       onKeyboardShortcutsSaved: function(shortcuts) {
         var validated = Keybindings.validateOverrides(shortcuts || ({}))
         if (validated.ok) root.shortcutOverrides = validated.overrides
@@ -1514,6 +1518,7 @@ Panel {
       onConversationSelected: function(network, id) { root.rememberConversation(network, id) }
       onSendingMediaChanged: if (!sendingMedia) Qt.callLater(root.selectPendingConversation)
       networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : (root.activeService === "telegram" ? "Telegram" : (root.activeService === "messenger" ? "Messenger" : "Google Messages"))
+      keepPreviousEmojiSearchText: root.keepPreviousEmojiSearchText
       uiScale: root.uiScale
     }
   }

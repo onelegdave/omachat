@@ -214,7 +214,9 @@ fallback if loading fails. Render native glyphs, not third-party emoji artwork.
   explicit no-results state. Keep an empty query browsable.
 - Down/Tab moves from search to results. Arrows navigate the grid; Enter from
   search chooses the best current result, and Enter in the grid chooses its
-  highlighted result. Provide a direct return-to-search route.
+  highlighted result. Up returns to search only from the first grid row; other
+  Up presses continue grid navigation. Clear the query on reopen by default, with
+  a Settings preference to retain and reapply it.
 - Escape dismisses the picker and restores its opener. Insertion uses the
   composer's caret/selection rather than always appending. Reactions retain the
   intended message/conversation and cannot act on a stale selection.

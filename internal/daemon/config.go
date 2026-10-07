@@ -46,3 +46,7 @@ func (d *Daemon) SetWindowPreferences(alwaysPopout bool, mode string) error {
 func (d *Daemon) SetKeyboardShortcuts(shortcuts map[string]string) error {
 	return d.config.SetKeyboardShortcuts(shortcuts)
 }
+
+func (d *Daemon) SetKeepPreviousEmojiSearchText(keep bool) error {
+	return d.config.SetKeepPreviousEmojiSearchText(keep)
+}
