@@ -172,7 +172,7 @@ Panel {
       if (unifiedActive) providerTabs.forEach(function(tab) { service.refreshConversations(tab.value) })
       else service.refreshConversations(activeService)
     }
-    if (!unifiedActive && inboxLoader.item && inboxLoader.item.refreshThread) inboxLoader.item.refreshThread()
+    if (activeInboxItem && activeInboxItem.refreshThread) activeInboxItem.refreshThread()
   }
 
   function cancelRestartResume() {
@@ -310,6 +310,7 @@ Panel {
 
   function setActiveService(v, preserveSettings) {
     if (!serviceTabs.some(function(tab) { return tab.value === v })) return
+    var wasUnified = unifiedActive
     if (preserveSettings !== true) root.settingsOpen = false
     pendingConversationID = ""
     root.activeService = v
@@ -319,6 +320,8 @@ Panel {
       if (v === "all") root.providerTabs.forEach(function(tab) { root.service.loadConversations(tab.value) })
       else root.service.loadConversations(v)
     }
+    if (preserveSettings !== true && (wasUnified || v === "all"))
+      Qt.callLater(root.focusInitialControl)
   }
 
   function setUnifiedInboxEnabled(enabled) {
@@ -334,13 +337,6 @@ Panel {
     }, "gmessages")
   }
 
-  function openUnifiedConversation(row) {
-    if (!row || !row.network || !row.id) return
-    setActiveService(row.network)
-    pendingConversationNetwork = row.network
-    pendingConversationID = row.id
-    Qt.callLater(selectPendingConversation)
-  }
 
   function switchService(direction) {
     if (root.serviceTabs.length < 2) return
@@ -927,8 +923,10 @@ Panel {
             objectName: "sidebarToggleButton"
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            visible: inboxLoader.visible
-            enabled: inboxLoader.item && inboxLoader.item.selectedConvID !== ""
+            visible: inboxLoader.visible || unifiedInboxLoader.visible
+            enabled: root.unifiedActive
+              ? unifiedInboxLoader.item && unifiedInboxLoader.item.detailConversationID !== ""
+              : inboxLoader.item && inboxLoader.item.selectedConvID !== ""
             focusable: true
             Accessible.role: Accessible.Button
             Accessible.name: tooltipText
@@ -1204,7 +1202,10 @@ Panel {
       Loader {
         id: inboxLoader
         onLoaded: Qt.callLater(root.selectPendingConversation)
-        onVisibleChanged: if (visible) Qt.callLater(root.selectPendingConversation)
+        onVisibleChanged: if (visible) Qt.callLater(function() {
+          root.selectPendingConversation()
+          root.focusInitialControl()
+        })
         objectName: "inboxLoader"
         anchors.left: parent.left
         anchors.right: parent.right
@@ -1588,6 +1589,13 @@ Panel {
   Component {
     id: unifiedInboxView
     UnifiedInbox {
+      service: root.service
+      host: surfaceHost
+      settings: root.settings
+      lastConversations: root.lastConversations
+      keepPreviousEmojiSearchText: root.keepPreviousEmojiSearchText
+      sidebarCollapsed: root.sidebarCollapsed
+      viewActive: unifiedInboxLoader.visible
       conversations: root.unifiedConversations.map(function(row) {
         var copy = Object.assign({}, row)
         var tab = root.allServiceTabs.find(function(candidate) { return candidate.value === row.network })
@@ -1597,7 +1605,6 @@ Panel {
       foreground: root.foreground
       fontFamily: root.fontFamily
       uiScale: root.uiScale
-      onConversationActivated: function(row) { root.openUnifiedConversation(row) }
     }
   }
 

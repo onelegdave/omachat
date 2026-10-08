@@ -20,6 +20,8 @@ Item {
   property var settings: null
   property var keyboardActionRouter: null
   property string network: "gmessages"
+  property bool detailOnly: false
+  property string detailConversationID: ""
   property bool sidebarCollapsed: false
   property var lastConversations: ({})
   readonly property bool sidebarVisible: !sidebarCollapsed || selectedConvID === ""
@@ -223,10 +225,16 @@ Item {
     messages = []
     grouped = []
     if (composer) composer.text = ""
-    restoreConversation()
+    if (root.detailOnly) Qt.callLater(root.restoreConversation)
+    else restoreConversation()
   }
 
   onConversationsChanged: restoreConversation()
+  onDetailConversationIDChanged: {
+    if (!root.detailOnly || !root.detailConversationID || root.detailConversationID === root.selectedConvID) return
+    if (root.conversations.some(function(conv) { return conv.id === root.detailConversationID }))
+      root.selectConversation(root.detailConversationID, false)
+  }
   onLastConversationsChanged: restoreConversation()
   Component.onCompleted: restoreConversation()
   Component.onDestruction: { viewportRevision++; selectionGeneration++ }
@@ -234,8 +242,8 @@ Item {
   function restoreConversation() {
     if (!composer || selectedConvID !== "") return
     var sessionID = _selectedByNet[network] || ""
-    var id = sessionID || lastConversations[network] || ""
-    if (id && (sessionID || conversations.some(function(conv) { return conv.id === id }))) selectConversation(id, false)
+    var id = detailOnly ? detailConversationID : (sessionID || lastConversations[network] || "")
+    if (id && ((!detailOnly && sessionID) || conversations.some(function(conv) { return conv.id === id }))) selectConversation(id, false)
   }
 
   function focusComposer() {
@@ -1254,7 +1262,7 @@ Item {
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     width: visible ? Math.round(parent.width * 0.32) : 0
-    visible: root.sidebarVisible
+    visible: !root.detailOnly && root.sidebarVisible
 
     PanelSectionHeader {
       id: inboxHeader
@@ -1444,7 +1452,7 @@ Item {
 
   Rectangle {
     id: paneRule
-    visible: root.sidebarVisible
+    visible: !root.detailOnly && root.sidebarVisible
     anchors.left: listPane.right
     anchors.top: parent.top
     anchors.bottom: parent.bottom
@@ -1456,8 +1464,8 @@ Item {
   Item {
     id: threadPane
     objectName: "threadPane"
-    anchors.left: paneRule.right
-    anchors.leftMargin: root.sidebarVisible ? Style.space(10) : 0
+    anchors.left: root.detailOnly ? parent.left : paneRule.right
+    anchors.leftMargin: !root.detailOnly && root.sidebarVisible ? Style.space(10) : 0
     anchors.right: parent.right
     anchors.top: parent.top
     anchors.bottom: parent.bottom

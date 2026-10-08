@@ -16,6 +16,8 @@ ShellRoot {
     property bool unifiedInboxEnabled: false
     property int loadCount: 0
     property var loadedNetworks: []
+    property string lastMessageNetwork: ""
+    property string lastMessageConversation: ""
     property bool servicesConfigLoaded: true
     property bool serviceSelectionRequired: false
     property bool savingServices: false
@@ -48,6 +50,7 @@ ShellRoot {
     function refreshConversations(net) {}
     function call(method, params, callback, network) {
       if (!callback) return
+      if (method === "messages") { lastMessageNetwork=network; lastMessageConversation=params.conversationID }
       if (method === "config") callback(true,{uiScale:1.1,enabledServices:enabledServices,keyboardShortcuts:keyboardShortcuts, unifiedInboxEnabled:unifiedInboxEnabled})
       else if (method === "setUnifiedInboxPreference") {
         unifiedInboxEnabled=params.enabled
@@ -138,14 +141,37 @@ ShellRoot {
         check(panel.unifiedConversations.length===12 && panel.unifiedConversations.some(function(row){return row.network==="gmessages" && row.key==="gmessages:demo-alex"}),"unified list combines cached provider conversations and tags each entry")
         var unifiedLoader=inspect.findChild(panel,"unifiedInboxLoader")
         check(unifiedLoader.visible && unifiedLoader.item.conversations.length===12,"enabled unified inbox presents the aggregate conversation list")
+        var unifiedList=root.visualChild(unifiedLoader.item,"unifiedConvList")
+        var firstUnifiedRow=unifiedList.itemAtIndex(0)
         var selectedUnifiedNetwork=unifiedLoader.item.conversations[0].network
-        unifiedLoader.item.conversationActivated(unifiedLoader.item.conversations[0])
-        check(panel.activeService===selectedUnifiedNetwork,"activating a unified row switches to its provider thread")
+        keyboard.mouseClick(firstUnifiedRow,18,18,Qt.LeftButton,Qt.NoModifier,0)
+        var unifiedDetails=inspect.findChild(unifiedLoader.item,"unifiedDetailInbox")
+        check(panel.activeService==="all" && unifiedLoader.item.detailNetwork===selectedUnifiedNetwork,"selecting a unified row keeps All active and targets its provider")
+        check(unifiedDetails && unifiedDetails.network===selectedUnifiedNetwork && unifiedDetails.selectedConvID===unifiedLoader.item.selectedConversation.id,"the selected provider thread appears in the unified detail pane")
+        check(fake.lastMessageNetwork===selectedUnifiedNetwork && fake.lastMessageConversation===unifiedLoader.item.selectedConversation.id,"the detail pane loads messages from the selected provider and conversation")
+        var unifiedLeft=inspect.findChild(unifiedLoader.item,"unifiedConversationSidebar")
+        var unifiedRight=inspect.findChild(unifiedLoader.item,"unifiedDetailPane")
+        check(unifiedRight.width>0 && unifiedLeft.width>0 && unifiedRight.x>unifiedLeft.x,"unified inbox keeps its list and thread panes side by side")
+        check(root.visualChild(unifiedLoader.item,"unifiedSelectedAvatar")!==null,"unified list renders the selected contact avatar")
+        check(root.visualChild(unifiedLoader.item,"unifiedServiceBadge")!==null,"unified list tags each conversation with its service")
+        var sidebarToggle=inspect.findChild(panel,"sidebarToggleButton")
+        check(sidebarToggle.visible && sidebarToggle.enabled,"conversation-list visibility control is available in the unified inbox")
+        var expandedDetailWidth=unifiedRight.width
+        keyboard.mouseClick(sidebarToggle,10,10,Qt.LeftButton,Qt.NoModifier,0)
+        check(panel.sidebarCollapsed && !unifiedLeft.visible && unifiedRight.width>expandedDetailWidth,"hiding the unified conversation list expands the thread pane")
+        keyboard.mouseClick(sidebarToggle,10,10,Qt.LeftButton,Qt.NoModifier,0)
+        check(!panel.sidebarCollapsed && unifiedLeft.visible,"show conversations restores the unified list")
+        var unifiedNextUnread=root.visualChild(unifiedLoader.item,"unifiedNextUnread")
+        check(unifiedNextUnread!==null,"unified inbox provides a next-unread control")
+        check(panel.isReadingConversation(selectedUnifiedNetwork,unifiedLoader.item.selectedConversation.id),"reading a unified thread suppresses its notifications")
+        keyboard.mouseClick(unifiedNextUnread,12,12,Qt.LeftButton,Qt.NoModifier,0)
+        check(unifiedLoader.item.selectedConversation.unread===true && panel.activeService==="all","next unread selects an unread thread without leaving All")
         panel.setActiveService("all")
         keyboard.keyClick(Qt.Key_A,Qt.ControlModifier|Qt.ShiftModifier,0)
         check(!panel.unifiedInboxEnabled,"configurable toggle shortcut turns unified inbox off")
         keyboard.keyClick(Qt.Key_1,Qt.ControlModifier,0)
         check(panel.activeService==="gmessages","Ctrl+1 returns to first provider when unified inbox is disabled")
+        check(list.activeFocus,"toggling out of unified inbox restores focus to the provider list")
         panel.unifiedInboxEnabled=true
         panel.activeService="gmessages"
         keyboard.keyClick(Qt.Key_Down,Qt.NoModifier,0)
