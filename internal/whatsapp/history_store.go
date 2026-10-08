@@ -1,6 +1,7 @@
 package whatsapp
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -15,7 +16,36 @@ import (
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
-const sqlitePageBytes = 4096
+const (
+	sqlitePageBytes                 = 4096
+	maxHistoryPageBytes             = 4 * 1024 * 1024
+	maxHistoryPageMessages          = 100
+	historyPageEntryOverhead        = 512
+	historyPageContainerOverhead    = 64 * 1024
+	maxHistoryPageAttachments       = 256
+	maxHistoryPageReactions         = 256
+	maxHistoryIndexFileBytes        = 8 * 1024 * 1024
+	historySQLiteSafetyReserveBytes = 1 * 1024 * 1024
+)
+
+func historyIndexBudgetBytes(physicalBudget int64) int64 {
+	indexBudget := int64(maxHistoryIndexFileBytes)
+	if physicalBudget/8 < indexBudget {
+		indexBudget = physicalBudget / 8
+	}
+	return indexBudget
+}
+
+func historyDatabaseBudgetBytes(physicalBudget int64) int64 {
+	// Reserve three database-sized footprints for SQLite's main database,
+	// compaction copy, and rollback journal. The extra fixed reserve covers
+	// journal headers, page records, and sector rounding at supported cache sizes.
+	remaining := physicalBudget - 2*historyIndexBudgetBytes(physicalBudget) - historySQLiteSafetyReserveBytes
+	if remaining <= 0 {
+		return 0
+	}
+	return remaining / 3
+}
 
 // historyStore is separate from whatsmeow's credential/device database.
 type historyStore struct {
@@ -38,26 +68,91 @@ func openHistoryStoreWithBudget(path string, physicalBudget int64) (*historyStor
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	// Reserve space for SQLite's rollback journal and temporary compaction file.
-	maxBytes := physicalBudget / 3
-	db, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(path)+"?_foreign_keys=on&_journal_mode=DELETE&_synchronous=FULL")
+	indexPath := filepath.Join(filepath.Dir(path), "whatsapp_store.json")
+	if err := cleanupHistoryIndexTemps(indexPath); err != nil {
+		return nil, fmt.Errorf("clean interrupted WhatsApp history index writes: %w", err)
+	}
+	maxBytes := historyDatabaseBudgetBytes(physicalBudget)
+	if maxBytes < sqlitePageBytes {
+		return nil, errors.New("WhatsApp history cache budget is too small for SQLite overhead")
+	}
+	existingBytes, err := historyDatabaseArtifactBytes(path)
+	if err != nil {
+		return nil, err
+	}
+	if existingBytes > 2*maxBytes {
+		return nil, fmt.Errorf("existing WhatsApp history database artifacts use %d bytes, above the bounded journal allowance", existingBytes)
+	}
+	db, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(path)+"?_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("open WhatsApp history store: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	fail := func(err error) (*historyStore, error) { _ = db.Close(); return nil, err }
+	var pageSize int64
+	if err := db.QueryRow(`PRAGMA page_size`).Scan(&pageSize); err != nil {
+		return fail(fmt.Errorf("read history page size: %w", err))
+	}
+	if pageSize != sqlitePageBytes {
+		return fail(fmt.Errorf("unsupported existing WhatsApp history page size %d", pageSize))
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fail(fmt.Errorf("restrict WhatsApp history database permissions: %w", err))
+	}
+	pageLimit := maxBytes / pageSize
+	if pageLimit < 1 {
+		return fail(errors.New("WhatsApp history cache budget is smaller than one SQLite page"))
+	}
+	var actual int64
+	if err := db.QueryRow(`PRAGMA max_page_count=` + fmt.Sprint(pageLimit)).Scan(&actual); err != nil {
+		return fail(fmt.Errorf("limit history pages before initialization: %w", err))
+	}
+	if actual*pageSize > maxBytes {
+		return fail(fmt.Errorf("existing WhatsApp history database exceeds its %d-byte database allocation", maxBytes))
+	}
+	if _, err := db.Exec(`PRAGMA temp_store=MEMORY`); err != nil {
+		return fail(fmt.Errorf("configure in-memory SQLite temporary storage: %w", err))
+	}
+	var tempStore int
+	if err := db.QueryRow(`PRAGMA temp_store`).Scan(&tempStore); err != nil {
+		return fail(fmt.Errorf("verify SQLite temporary storage mode: %w", err))
+	}
+	if tempStore != 2 {
+		return fail(errors.New("SQLite build does not support in-memory temporary tables"))
+	}
+	var journalMode string
+	if err := db.QueryRow(`PRAGMA journal_mode=DELETE`).Scan(&journalMode); err != nil {
+		return fail(fmt.Errorf("set history journal mode: %w", err))
+	}
+	if strings.ToLower(journalMode) != "delete" {
+		return fail(fmt.Errorf("unexpected WhatsApp history journal mode %q", journalMode))
+	}
+	if _, err := db.Exec(`PRAGMA synchronous=FULL`); err != nil {
+		return fail(fmt.Errorf("set history synchronous mode: %w", err))
+	}
 	var autoVacuum int
 	if err := db.QueryRow(`PRAGMA auto_vacuum`).Scan(&autoVacuum); err != nil {
 		return fail(fmt.Errorf("read history vacuum mode: %w", err))
 	}
-	if autoVacuum != 2 {
-		if _, err := db.Exec(`PRAGMA auto_vacuum=INCREMENTAL`); err != nil {
-			return fail(fmt.Errorf("enable incremental history vacuum: %w", err))
+	if autoVacuum != 1 {
+		if autoVacuum == 0 && existingBytes > maxBytes {
+			return fail(errors.New("existing WhatsApp history database is too large to convert safely"))
 		}
-		if _, err := db.Exec(`VACUUM`); err != nil {
-			return fail(fmt.Errorf("initialize incremental history vacuum: %w", err))
+		if _, err := db.Exec(`PRAGMA auto_vacuum=FULL`); err != nil {
+			return fail(fmt.Errorf("enable full history vacuum: %w", err))
 		}
+		if autoVacuum == 0 && existingBytes > 0 {
+			if _, err := db.Exec(`VACUUM`); err != nil {
+				return fail(fmt.Errorf("initialize full history vacuum: %w", err))
+			}
+		}
+	}
+	if err := db.QueryRow(`PRAGMA auto_vacuum`).Scan(&autoVacuum); err != nil {
+		return fail(fmt.Errorf("verify history vacuum mode: %w", err))
+	}
+	if autoVacuum != 1 {
+		return fail(fmt.Errorf("unexpected WhatsApp history vacuum mode %d", autoVacuum))
 	}
 	if _, err := db.Exec(`PRAGMA page_size=4096`); err != nil {
 		return fail(fmt.Errorf("set history page size: %w", err))
@@ -86,23 +181,13 @@ func openHistoryStoreWithBudget(path string, physicalBudget int64) (*historyStor
 	if _, err := db.Exec(`INSERT OR IGNORE INTO history_chat_state(chat_id) SELECT DISTINCT chat_id FROM history_messages`); err != nil {
 		return fail(fmt.Errorf("migrate history chat state: %w", err))
 	}
-	pageLimit := maxBytes / sqlitePageBytes
-	if pageLimit < 1 {
-		pageLimit = 1
-	}
-	var actual int64
 	if err := db.QueryRow(`PRAGMA max_page_count=` + fmt.Sprint(pageLimit)).Scan(&actual); err != nil {
 		return fail(fmt.Errorf("limit history pages: %w", err))
 	}
-	store := &historyStore{db: db, maxBytes: maxBytes}
-	if err := os.Chmod(path, 0o600); err != nil {
-		return fail(fmt.Errorf("restrict WhatsApp history database permissions: %w", err))
-	}
 	if actual*sqlitePageBytes > maxBytes {
-		if err := store.setBudgetBytes(context.Background(), physicalBudget); err != nil {
-			return fail(fmt.Errorf("shrink existing WhatsApp history database: %w", err))
-		}
+		return fail(fmt.Errorf("initialized WhatsApp history database exceeds its %d-byte database allocation", maxBytes))
 	}
+	store := &historyStore{db: db, maxBytes: maxBytes}
 	return store, nil
 }
 
@@ -118,7 +203,13 @@ func (s *historyStore) put(ctx context.Context, messages []wire.Message, rawByMe
 		return nil
 	}
 	perRowLimit := s.maxBytesLimit() / 2
+	if pageSafeLimit := int64(maxHistoryPageBytes - historyPageEntryOverhead); perRowLimit > pageSafeLimit {
+		perRowLimit = pageSafeLimit
+	}
 	batchTarget := s.maxBytesLimit() / 4
+	if batchTarget > maxHistoryPageBytes {
+		batchTarget = maxHistoryPageBytes
+	}
 	if batchTarget < sqlitePageBytes {
 		batchTarget = sqlitePageBytes
 	}
@@ -197,6 +288,9 @@ func (s *historyStore) putOnce(ctx context.Context, messages []wire.Message, raw
 		if message.ID == "" || strings.TrimSpace(message.ConversationID) == "" {
 			continue
 		}
+		if len(message.Attachments) > maxHistoryPageAttachments || len(message.Reactions) > maxHistoryPageReactions {
+			return errors.New("WhatsApp history message exceeds the bounded attachment or reaction count")
+		}
 		payload, err := json.Marshal(message)
 		if err != nil {
 			return err
@@ -256,9 +350,6 @@ func (s *historyStore) evictOne(ctx context.Context) (bool, error) {
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	if _, err := s.db.ExecContext(ctx, `PRAGMA incremental_vacuum(100000)`); err != nil {
-		return false, err
-	}
 	return true, nil
 }
 
@@ -270,7 +361,10 @@ func (s *historyStore) setBudgetMB(ctx context.Context, sizeMB int) error {
 }
 
 func (s *historyStore) setBudgetBytes(ctx context.Context, physicalBudget int64) error {
-	maxBytes := physicalBudget / 3
+	maxBytes := historyDatabaseBudgetBytes(physicalBudget)
+	if maxBytes < sqlitePageBytes {
+		return errors.New("WhatsApp history cache budget is too small for SQLite overhead")
+	}
 	pageLimit := maxBytes / sqlitePageBytes
 	for attempt := 0; attempt < 1024; attempt++ {
 		var pages int64
@@ -291,7 +385,7 @@ func (s *historyStore) setBudgetBytes(ctx context.Context, physicalBudget int64)
 			return fmt.Errorf("shrink WhatsApp history cache: %w", err)
 		}
 		if !evicted {
-			return errors.New("could not shrink WhatsApp history cache to the selected budget")
+			return fmt.Errorf("could not shrink WhatsApp history cache to the selected budget: %d pages remain, limit is %d", pages, pageLimit)
 		}
 	}
 	return errors.New("history cache shrink exceeded its bounded eviction limit")
@@ -318,11 +412,60 @@ func (s *historyStore) get(ctx context.Context, chatID, messageID string) (wire.
 	if err != nil {
 		return wire.Message{}, false, err
 	}
+	if err := validateHistoryMessagePayload(payload); err != nil {
+		return wire.Message{}, false, err
+	}
 	var message wire.Message
 	if err := json.Unmarshal(payload, &message); err != nil {
 		return wire.Message{}, false, err
 	}
+	if retainedMessageBytes(message)+historyPageEntryOverhead > maxHistoryPageBytes {
+		return wire.Message{}, false, errors.New("decoded WhatsApp history row exceeds the page memory ceiling")
+	}
 	return message, true, nil
+}
+
+func validateHistoryMessagePayload(payload []byte) error {
+	if len(payload) > maxHistoryPageBytes {
+		return errors.New("stored WhatsApp history row exceeds the page byte ceiling")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		return err
+	}
+	for fieldName, limit := range map[string]int{
+		"attachments": maxHistoryPageAttachments,
+		"reactions":   maxHistoryPageReactions,
+	} {
+		for key, value := range fields {
+			if !strings.EqualFold(key, fieldName) {
+				continue
+			}
+			decoder := json.NewDecoder(bytes.NewReader(value))
+			token, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			if token == nil {
+				continue
+			}
+			if token != json.Delim('[') {
+				continue // The typed decoder below reports the field type mismatch.
+			}
+			count := 0
+			for decoder.More() {
+				if count == limit {
+					return fmt.Errorf("stored WhatsApp history %s exceeds the bounded count of %d", fieldName, limit)
+				}
+				var item json.RawMessage
+				if err := decoder.Decode(&item); err != nil {
+					return err
+				}
+				count++
+			}
+		}
+	}
+	return nil
 }
 
 func (s *historyStore) getRaw(ctx context.Context, chatID, messageID string) ([]byte, error) {
@@ -338,6 +481,9 @@ func (s *historyStore) page(ctx context.Context, chatID string, limit int, curso
 	if limit <= 0 {
 		limit = 60
 	}
+	if limit > maxHistoryPageMessages {
+		limit = maxHistoryPageMessages
+	}
 	query := `SELECT payload,raw_payload FROM history_messages WHERE chat_id=? ORDER BY ts DESC,message_id DESC LIMIT ?`
 	args := []any{chatID, limit + 1}
 	if cursorID != "" {
@@ -350,20 +496,43 @@ func (s *historyStore) page(ctx context.Context, chatID string, limit int, curso
 	}
 	defer rows.Close()
 	result := historyPage{Messages: make([]wire.Message, 0, limit), Raw: make(map[string][]byte)}
+	encodedBytes := int64(0)
+	retainedBytes := int64(historyPageContainerOverhead)
 	for rows.Next() {
 		var payload, raw []byte
 		if err := rows.Scan(&payload, &raw); err != nil {
 			return historyPage{}, err
 		}
-		var message wire.Message
-		if err := json.Unmarshal(payload, &message); err != nil {
-			continue
-		}
 		if len(result.Messages) == limit {
 			result.HasMore = true
 			break
 		}
+		encodedRowBytes := int64(len(payload)) + int64(len(raw)) + historyPageEntryOverhead
+		if encodedRowBytes > maxHistoryPageBytes || int64(len(payload)) > maxHistoryPageBytes {
+			return historyPage{}, errors.New("stored WhatsApp history row exceeds the page byte ceiling")
+		}
+		if encodedBytes > maxHistoryPageBytes-encodedRowBytes {
+			result.HasMore = true
+			break
+		}
+		if err := validateHistoryMessagePayload(payload); err != nil {
+			return historyPage{}, err
+		}
+		var message wire.Message
+		if err := json.Unmarshal(payload, &message); err != nil {
+			return historyPage{}, err
+		}
+		retainedRowBytes := retainedMessageBytes(message) + int64(len(raw)) + historyPageEntryOverhead
+		if retainedRowBytes > maxHistoryPageBytes || retainedBytes > maxHistoryPageBytes-retainedRowBytes {
+			if len(result.Messages) == 0 {
+				return historyPage{}, errors.New("decoded WhatsApp history row exceeds the page memory ceiling")
+			}
+			result.HasMore = true
+			break
+		}
 		result.Messages = append(result.Messages, message)
+		encodedBytes += encodedRowBytes
+		retainedBytes += retainedRowBytes
 		if len(raw) > 0 {
 			result.Raw[rawMediaKey(message.ConversationID, message.ID)] = raw
 		}

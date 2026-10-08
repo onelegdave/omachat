@@ -2,6 +2,8 @@ package whatsapp
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +24,104 @@ import (
 const syntheticHistoryChat = "123456789@g.us"
 const syntheticDirectPNChat = "111222333@s.whatsapp.net"
 const syntheticDirectLIDChat = "444555666@lid"
+
+func TestSetHistoryCacheMBRejectsUnenforceableBudgetWithoutHistoryStore(t *testing.T) {
+	paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+	f, err := os.Create(paths.WhatsAppStoreFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(64*1024*1024 + 1); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	backend := New(zerolog.Nop(), paths, nil)
+	if err := backend.SetHistoryCacheMB(64); err == nil {
+		t.Fatal("accepted a 64 MiB budget while legacy cache artifacts exceed it and SQLite is unavailable")
+	}
+	backend.mu.RLock()
+	got := backend.historyCacheMB
+	backend.mu.RUnlock()
+	if got != 128 {
+		t.Fatalf("failed budget update changed active size to %d MiB, want 128", got)
+	}
+}
+
+func TestSetHistoryCacheMBRejectsBudgetWhenLegacyIndexAloneExceedsIt(t *testing.T) {
+	paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+	index, err := os.Create(paths.WhatsAppStoreFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := index.Truncate(65 * 1024 * 1024); err != nil {
+		_ = index.Close()
+		t.Fatal(err)
+	}
+	if err := index.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := openHistoryStore(paths.WhatsAppHistoryFile(), 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.close()
+	backend := New(zerolog.Nop(), paths, nil)
+	backend.historyStore = store
+	if err := backend.SetHistoryCacheMB(64); err == nil {
+		t.Fatal("accepted a 64 MiB budget while the unshrinkable legacy index alone exceeds it")
+	}
+	if backend.historyCacheMB != 128 {
+		t.Fatalf("failed budget update changed active size to %d MiB, want 128", backend.historyCacheMB)
+	}
+}
+
+func TestRememberHistoryAnchorRejectsOversizedIdentifierBytes(t *testing.T) {
+	paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+	backend := New(zerolog.Nop(), paths, nil)
+	chatID := strings.Repeat("c", maxHotHistoryAnchorKeyBytes)
+	backend.mu.Lock()
+	backend.rememberHistoryAnchorLocked(chatID, wire.Message{ID: "message-id", Timestamp: 1})
+	backend.mu.Unlock()
+	if len(backend.historyAnchors) != 0 {
+		t.Fatalf("retained anchor with %d identifier bytes, limit is %d", len(chatID)+len("message-id"), maxHotHistoryAnchorKeyBytes)
+	}
+}
+
+func TestMessagesRejectsOversizedHistoryIdentifierBytes(t *testing.T) {
+	paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+	backend := New(zerolog.Nop(), paths, nil)
+	_, err := backend.Messages(context.Background(), wire.MessagesParams{ConversationID: strings.Repeat("c", maxHotHistoryAnchorKeyBytes+1)})
+	if err == nil {
+		t.Fatal("Messages accepted an oversized conversation identifier")
+	}
+}
+
+func TestHistoryRequestStatusMapsRemainBounded(t *testing.T) {
+	paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+	backend := New(zerolog.Nop(), paths, nil)
+	for i := 0; i < maxHistoryRequestStateEntries+5; i++ {
+		chatID := fmt.Sprintf("chat-%d@g.us", i)
+		pending := &pendingHistoryRequest{chatID: chatID, gen: backend.gen}
+		backend.mu.Lock()
+		backend.historyPending = pending
+		backend.mu.Unlock()
+		backend.finishHistoryRequest(pending, "unavailable", "")
+		pending = &pendingHistoryRequest{chatID: chatID, gen: backend.gen}
+		backend.mu.Lock()
+		backend.historyPending = pending
+		backend.mu.Unlock()
+		backend.finishHistoryRequest(pending, "failed", "")
+	}
+	if len(backend.historyUnavailable) > maxHistoryRequestStateEntries {
+		t.Fatalf("retained %d unavailable states, limit is %d", len(backend.historyUnavailable), maxHistoryRequestStateEntries)
+	}
+	if len(backend.historyCooldown) > maxHistoryRequestStateEntries {
+		t.Fatalf("retained %d cooldown states, limit is %d", len(backend.historyCooldown), maxHistoryRequestStateEntries)
+	}
+}
 
 func historyBackendWithAnchor(t *testing.T, timeout time.Duration) (*Backend, *MockClient, chan wire.Event) {
 	return historyBackendWithAnchorChat(t, timeout, syntheticHistoryChat)
@@ -320,7 +420,7 @@ func TestHistoryRequestDisconnectIsRetryableAndCancelsTimer(t *testing.T) {
 
 func TestOnDemandHistoryCacheWriteFailureIsNotReportedAsPhoneUnavailable(t *testing.T) {
 	backend, mock, eventsCh := historyBackendWithAnchor(t, time.Second)
-	if err := backend.historyStore.setBudgetBytes(context.Background(), 256*1024); err != nil {
+	if err := backend.historyStore.setBudgetBytes(context.Background(), 4*1024*1024); err != nil {
 		t.Fatal(err)
 	}
 	mock.RequestHistoryFunc = func(context.Context, types.MessageInfo, int) error { return nil }
@@ -329,7 +429,7 @@ func TestOnDemandHistoryCacheWriteFailureIsNotReportedAsPhoneUnavailable(t *test
 	message := &waWeb.WebMessageInfo{
 		Key:              &waCommon.MessageKey{ID: proto.String("oversized-older")},
 		MessageTimestamp: proto.Uint64(800),
-		Message:          &waE2E.Message{Conversation: proto.String(strings.Repeat("x", 100*1024))},
+		Message:          &waE2E.Message{Conversation: proto.String(strings.Repeat("x", 1024*1024))},
 	}
 	data := &waHistorySync.HistorySync{
 		SyncType: waHistorySync.HistorySync_ON_DEMAND.Enum(),

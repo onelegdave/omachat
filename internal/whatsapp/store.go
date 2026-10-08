@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -18,6 +19,8 @@ const (
 	maxPersistedConversations  = 1000
 	maxPersistedMessages       = 100
 	maxHotMessageConversations = 50
+	maxHotHistoryMemoryBytes   = 16 * 1024 * 1024
+	historyIndexTempPrefix     = ".omachat-whatsapp-history-"
 )
 
 // StoredChatData represents the on-disk state of WhatsApp conversations and messages.
@@ -95,8 +98,27 @@ func saveChatStore(path string, stored *StoredChatData) error {
 // actors. Message bodies and attachment protobufs live in the budgeted SQLite
 // history store after successful migration/persistence.
 func saveChatIndex(path string, stored *StoredChatData) error {
+	return saveChatIndexWithLimit(path, stored, maxHistoryIndexFileBytes)
+}
+
+func saveChatIndexWithLimit(path string, stored *StoredChatData, maxBytes int64) error {
+	return saveChatIndexInternal(path, stored, maxBytes, 0, false)
+}
+
+func saveChatIndexWithBudget(path string, stored *StoredChatData, maxBytes, totalBudget int64) error {
+	return saveChatIndexInternal(path, stored, maxBytes, totalBudget, false)
+}
+
+func saveChatIndexForMigration(path string, stored *StoredChatData, maxBytes, migrationPeakBudget int64) error {
+	return saveChatIndexInternal(path, stored, maxBytes, migrationPeakBudget, true)
+}
+
+func saveChatIndexInternal(path string, stored *StoredChatData, maxBytes, totalBudget int64, allowOversizedExisting bool) error {
 	if stored == nil {
 		return nil
+	}
+	if maxBytes <= 0 {
+		return errors.New("WhatsApp conversation index byte budget must be positive")
 	}
 	keep := make(map[string]struct{})
 	hotChats := make(map[string]struct{}, maxHotMessageConversations)
@@ -138,7 +160,58 @@ func saveChatIndex(path string, stored *StoredChatData) error {
 	if err != nil {
 		return err
 	}
-	return store.WritePrivateJSON(path, raw)
+	if int64(len(raw)) > maxBytes {
+		return errors.New("WhatsApp conversation index exceeds its byte budget")
+	}
+	if info, statErr := os.Stat(path); statErr == nil {
+		if int64(info.Size()) > maxBytes && !allowOversizedExisting {
+			return errors.New("existing WhatsApp conversation index exceeds its byte budget")
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	if totalBudget > 0 {
+		if err := checkHistoryAtomicWriteBudget(path, int64(len(raw)), totalBudget); err != nil {
+			return err
+		}
+	}
+	return writeHistoryIndexAtomically(path, raw)
+}
+
+func writeHistoryIndexAtomically(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Type().IsRegular() && strings.HasPrefix(entry.Name(), historyIndexTempPrefix) && strings.HasSuffix(entry.Name(), ".tmp") {
+			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
+	f, err := os.CreateTemp(dir, historyIndexTempPrefix+"*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func trimStoredHotMessages(stored *StoredChatData) {
@@ -245,7 +318,9 @@ func boundStoredChat(stored *StoredChatData) {
 			return list[a].ID < list[b].ID
 		})
 		if len(list) > maxPersistedMessages {
-			list = list[len(list)-maxPersistedMessages:]
+			retained := list[len(list)-maxPersistedMessages:]
+			list = make([]wire.Message, len(retained))
+			copy(list, retained)
 		}
 		msgs[e.id] = list
 		for _, m := range list {

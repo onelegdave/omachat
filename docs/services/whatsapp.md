@@ -44,6 +44,15 @@ does not delete messages from WhatsApp. Downloaded photos and videos use the
 separate media cache. Increasing the budget allows more history to accumulate
 but does not start a bulk download.
 
+The allowance covers retained message text and metadata, reaction state, raw
+attachment-download metadata, the conversation index, and bounded SQLite/index
+write overhead. It is a logical file-size allowance, not a filesystem quota or
+process-memory limit; downloaded media, WhatsApp device credentials, filesystem
+allocation metadata, and process RSS are separate. During legacy conversion the
+source and new store can coexist, so the temporary peak may reach twice the
+selected allowance. A legacy source already larger than the selected allowance
+is preserved rather than truncated or loaded.
+
 GIF files are sent from your computer through the attachment picker; there is no
 in-app GIF search. WhatsApp requires GIFs to be MP4 playback messages, so
 outbound GIFs require ffmpeg. Incoming
@@ -55,7 +64,8 @@ unavailable in the WhatsApp panel.
 | Data | Location |
 | --- | --- |
 | Device database | `~/.local/share/omachat/whatsapp.db` |
-| Conversation cache | `~/.local/share/omachat/whatsapp_store.json` |
+| Conversation index and legacy cache | `~/.local/share/omachat/whatsapp_store.json` |
+| Paged message-history store | `~/.local/share/omachat/whatsapp_history.sqlite` |
 | Media cache | `~/.cache/omachat/media_whatsapp/` |
 | Configuration | `~/.local/share/omachat/config.json` |
 

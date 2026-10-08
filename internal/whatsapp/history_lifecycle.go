@@ -23,7 +23,11 @@ type pendingHistoryRequest struct {
 	timer      *time.Timer
 }
 
-const maxHotHistoryAnchors = 256
+const (
+	maxHotHistoryAnchors          = 256
+	maxHotHistoryAnchorKeyBytes   = 2 * 1024
+	maxHistoryRequestStateEntries = 256
+)
 
 type hotHistoryAnchorKey struct {
 	chatID    string
@@ -86,12 +90,36 @@ func (b *Backend) canFetchHistoryLocked(chatID string) bool {
 	return b.paired && b.historyUnavailable[chatID] != true
 }
 
+func (b *Backend) trimHistoryRequestStateLocked(keepChatID string) {
+	for len(b.historyUnavailable) > maxHistoryRequestStateEntries {
+		for chatID := range b.historyUnavailable {
+			if chatID != keepChatID {
+				delete(b.historyUnavailable, chatID)
+				break
+			}
+		}
+	}
+	for len(b.historyCooldown) > maxHistoryRequestStateEntries {
+		for chatID := range b.historyCooldown {
+			if chatID != keepChatID {
+				delete(b.historyCooldown, chatID)
+				break
+			}
+		}
+	}
+}
+
 func (b *Backend) rememberHistoryAnchorLocked(chatID string, message wire.Message) {
+	if chatID == "" || message.ID == "" || len(chatID)+len(message.ID) > maxHotHistoryAnchorKeyBytes {
+		return
+	}
 	key := hotHistoryAnchorKey{chatID: chatID, messageID: message.ID}
 	for i, existing := range b.historyAnchorOrder {
 		if existing == key {
 			copy(b.historyAnchorOrder[i:], b.historyAnchorOrder[i+1:])
-			b.historyAnchorOrder = b.historyAnchorOrder[:len(b.historyAnchorOrder)-1]
+			last := len(b.historyAnchorOrder) - 1
+			b.historyAnchorOrder[last] = hotHistoryAnchorKey{}
+			b.historyAnchorOrder = b.historyAnchorOrder[:last]
 			break
 		}
 	}
@@ -100,7 +128,22 @@ func (b *Backend) rememberHistoryAnchorLocked(chatID string, message wire.Messag
 	if len(b.historyAnchorOrder) > maxHotHistoryAnchors {
 		oldest := b.historyAnchorOrder[0]
 		delete(b.historyAnchors, oldest)
-		b.historyAnchorOrder = b.historyAnchorOrder[1:]
+		copy(b.historyAnchorOrder, b.historyAnchorOrder[1:])
+		last := len(b.historyAnchorOrder) - 1
+		b.historyAnchorOrder[last] = hotHistoryAnchorKey{}
+		b.historyAnchorOrder = b.historyAnchorOrder[:last]
+	}
+	b.trimHistoryAnchorsLocked()
+}
+
+func (b *Backend) trimHistoryAnchorsLocked() {
+	for b.hotHistoryMemoryBytesLocked() > maxHotHistoryMemoryBytes && len(b.historyAnchorOrder) > 0 {
+		oldest := b.historyAnchorOrder[0]
+		delete(b.historyAnchors, oldest)
+		copy(b.historyAnchorOrder, b.historyAnchorOrder[1:])
+		last := len(b.historyAnchorOrder) - 1
+		b.historyAnchorOrder[last] = hotHistoryAnchorKey{}
+		b.historyAnchorOrder = b.historyAnchorOrder[:last]
 	}
 }
 
@@ -120,6 +163,9 @@ func (b *Backend) hotHistoryAnchor(chatID, messageID string) *wire.Message {
 }
 
 func (b *Backend) requestOlderHistory(ctx context.Context, chatID, anchorID string, hotAnchor *wire.Message) (string, string) {
+	if chatID == "" || anchorID == "" || len(chatID)+len(anchorID) > maxHotHistoryAnchorKeyBytes {
+		return "failed", "The WhatsApp conversation or history cursor is invalid."
+	}
 	b.mu.RLock()
 	store := b.historyStore
 	client := b.client
@@ -173,6 +219,7 @@ func (b *Backend) requestOlderHistory(ctx context.Context, chatID, anchorID stri
 		b.mu.Unlock()
 		return "failed", "Wait briefly before retrying older history."
 	}
+	delete(b.historyCooldown, chatID)
 	pending := &pendingHistoryRequest{chatID: chatID, gen: gen, anchor: anchorID, anchorTime: anchorMessage.Timestamp}
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -222,6 +269,7 @@ func (b *Backend) finishHistoryRequest(pending *pendingHistoryRequest, state, no
 		}
 		b.historyCooldown[pending.chatID] = time.Now().Add(cooldown)
 	}
+	b.trimHistoryRequestStateLocked(pending.chatID)
 	b.mu.Unlock()
 	b.publishHistory(wire.HistoryUpdate{ConversationID: pending.chatID, State: state, Notice: notice})
 }

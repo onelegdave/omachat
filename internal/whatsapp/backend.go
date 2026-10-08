@@ -211,17 +211,49 @@ func (b *Backend) SetHistoryCacheMB(sizeMB int) error {
 	}
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
-	b.mu.RLock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	store := b.historyStore
-	b.mu.RUnlock()
+	indexPath := b.paths.WhatsAppStoreFile()
+	budget := int64(sizeMB) * 1024 * 1024
 	if store != nil {
+		if err := cleanupHistoryIndexTemps(indexPath); err != nil {
+			return err
+		}
+		artifacts, err := historyArtifactBytes(indexPath)
+		if err != nil {
+			return err
+		}
+		databaseArtifacts, err := historyDatabaseArtifactBytes(b.paths.WhatsAppHistoryFile())
+		if err != nil {
+			return err
+		}
+		if databaseArtifacts > artifacts {
+			return errors.New("WhatsApp history artifact accounting is inconsistent")
+		}
+		if indexArtifacts := artifacts - databaseArtifacts; indexArtifacts > budget {
+			return fmt.Errorf("cannot apply WhatsApp history cache budget: unshrinkable index artifacts use %d bytes, above the %d-byte budget", indexArtifacts, budget)
+		}
 		if err := store.setBudgetMB(context.Background(), sizeMB); err != nil {
 			return err
 		}
+		artifacts, err = historyArtifactBytes(indexPath)
+		if err != nil {
+			return err
+		}
+		if artifacts > budget {
+			return fmt.Errorf("cannot apply WhatsApp history cache budget: existing artifacts use %d bytes, above the %d-byte budget after SQLite eviction", artifacts, budget)
+		}
+	} else {
+		current, err := historyArtifactBytes(indexPath)
+		if err != nil {
+			return err
+		}
+		if current > budget {
+			return fmt.Errorf("cannot apply WhatsApp history cache budget while the paged store is unavailable: existing artifacts use %d bytes, above the %d-byte budget", current, budget)
+		}
 	}
-	b.mu.Lock()
 	b.historyCacheMB = sizeMB
-	b.mu.Unlock()
 	return nil
 }
 
@@ -231,7 +263,10 @@ func (b *Backend) Start(ctx context.Context) error {
 	defer b.sessionMu.Unlock()
 
 	b.ctx, b.cancel = context.WithCancel(ctx)
-	store, storeErr := openHistoryStore(b.paths.WhatsAppHistoryFile(), b.historyCacheMB)
+	b.mu.RLock()
+	cacheMB := b.historyCacheMB
+	b.mu.RUnlock()
+	store, storeErr := openHistoryStore(b.paths.WhatsAppHistoryFile(), cacheMB)
 	if storeErr != nil {
 		b.log.Warn().Err(storeErr).Msg("Could not open bounded WhatsApp history store")
 	} else {
@@ -241,7 +276,8 @@ func (b *Backend) Start(ctx context.Context) error {
 	// Load persisted chat store from disk, including media protobufs needed
 	// to download attachments after a restart. View-once payloads are omitted.
 	storePath := b.paths.WhatsAppStoreFile()
-	if loaded, err := loadChatStore(storePath); err != nil {
+	physicalBudget := int64(cacheMB) * 1024 * 1024
+	if loaded, err := loadChatStoreWithBudget(storePath, physicalBudget); err != nil {
 		b.log.Warn().Err(err).Msg("Failed to load WhatsApp chat store; starting with empty state")
 	} else {
 		if b.historyStore != nil {
@@ -251,11 +287,11 @@ func (b *Backend) Start(ctx context.Context) error {
 			}
 			if err := b.historyStore.put(ctx, messages, loaded.RawMedia); err != nil {
 				b.log.Warn().Err(err).Msg("Could not migrate bounded WhatsApp history into SQLite")
-			} else if err := saveChatIndex(storePath, loaded); err != nil {
+			} else if err := saveChatIndexForMigration(storePath, loaded, historyIndexBudgetBytes(physicalBudget), 2*physicalBudget); err != nil {
 				b.log.Warn().Err(err).Msg("Could not retire migrated WhatsApp message payloads from the legacy cache")
 			}
 		}
-		trimStoredHotMessages(loaded)
+		trimStoredHotMessagesToByteBudget(loaded, maxHotHistoryMemoryBytes)
 		raw := restoreRawMedia(loaded.RawMedia)
 		b.mu.Lock()
 		b.convs = loaded.Conversations
@@ -895,6 +931,9 @@ func (b *Backend) Conversations(count int) []wire.Conversation {
 
 // Messages returns cached and synced messages for a WhatsApp chat with stable timestamp+ID tie breaking.
 func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.MessagesResult, error) {
+	if len(p.ConversationID)+len(p.CursorID) > maxHotHistoryAnchorKeyBytes {
+		return wire.MessagesResult{}, fmt.Errorf("WhatsApp history identifiers exceed %d bytes", maxHotHistoryAnchorKeyBytes)
+	}
 	b.mu.RLock()
 	history := b.historyStore
 	msgs := append([]wire.Message(nil), b.messages[p.ConversationID]...)
@@ -1825,7 +1864,9 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 		return list[i].ID < list[j].ID
 	})
 	if len(list) > maxPersistedMessages {
-		list = list[len(list)-maxPersistedMessages:]
+		retained := list[len(list)-maxPersistedMessages:]
+		list = make([]wire.Message, len(retained))
+		copy(list, retained)
 	}
 	b.messages[msg.ConversationID] = list
 
@@ -2087,7 +2128,9 @@ func (b *Backend) ingestHistorySyncMode(gen uint64, data *waHistorySync.HistoryS
 			return b.messages[chatID][i].ID < b.messages[chatID][j].ID
 		})
 		if len(b.messages[chatID]) > maxPersistedMessages {
-			b.messages[chatID] = b.messages[chatID][len(b.messages[chatID])-maxPersistedMessages:]
+			retained := b.messages[chatID][len(b.messages[chatID])-maxPersistedMessages:]
+			b.messages[chatID] = make([]wire.Message, len(retained))
+			copy(b.messages[chatID], retained)
 		}
 
 		b.convs[chatID] = conv
@@ -2178,6 +2221,7 @@ func (b *Backend) pruneRawMessagesLocked() {
 
 func (b *Backend) saveStoreLocked() {
 	b.pruneRawMessagesLocked()
+	b.trimHotMemoryLocked()
 	if b.historyStore != nil {
 		var messages []wire.Message
 		for _, chatMessages := range b.messages {
@@ -2191,7 +2235,8 @@ func (b *Backend) saveStoreLocked() {
 			Conversations: b.convs, Order: b.order, Messages: b.messages,
 			ReactionActors: b.reactionActors,
 		}
-		if err := saveChatIndex(b.paths.WhatsAppStoreFile(), stored); err != nil {
+		physicalBudget := int64(b.historyCacheMB) * 1024 * 1024
+		if err := saveChatIndexWithBudget(b.paths.WhatsAppStoreFile(), stored, historyIndexBudgetBytes(physicalBudget), physicalBudget); err != nil {
 			b.log.Warn().Err(err).Msg("Failed to persist WhatsApp conversation index")
 		}
 		return
@@ -2203,7 +2248,7 @@ func (b *Backend) saveStoreLocked() {
 		RawMedia:       snapshotRawMedia(b.rawMsgs),
 		ReactionActors: b.reactionActors,
 	}
-	if err := saveChatStore(b.paths.WhatsAppStoreFile(), stored); err != nil {
+	if err := saveChatStoreWithBudget(b.paths.WhatsAppStoreFile(), stored, int64(b.historyCacheMB)*1024*1024); err != nil {
 		b.log.Warn().Err(err).Msg("Failed to persist WhatsApp chat store")
 	}
 }

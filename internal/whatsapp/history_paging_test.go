@@ -3,7 +3,10 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
+	"unicode/utf8"
+	"unsafe"
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow/proto/waCommon"
@@ -45,6 +48,63 @@ func TestWhatsAppMessagesReadsPersistedSQLitePages(t *testing.T) {
 	}
 	if len(result.Messages) != 60 || !result.HasMore || result.Messages[0].ID != "offline-060" || result.Messages[59].ID != "offline-119" {
 		t.Fatalf("persisted older page = count %d, hasMore=%t, first=%s, last=%s", len(result.Messages), result.HasMore, result.Messages[0].ID, result.Messages[len(result.Messages)-1].ID)
+	}
+}
+
+func TestBackendReorderBoundsHotHistoryByPayloadBytes(t *testing.T) {
+	paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+	backend := New(zerolog.Nop(), paths, nil)
+	chatID := "memory@s.whatsapp.net"
+	backend.convs[chatID] = wire.Conversation{ID: chatID, Timestamp: 3}
+	backend.messages[chatID] = []wire.Message{
+		{ID: "old", ConversationID: chatID, Timestamp: 1, Text: strings.Repeat("o", 6*1024*1024)},
+		{ID: "middle", ConversationID: chatID, Timestamp: 2, Text: strings.Repeat("m", 6*1024*1024)},
+		{ID: "new", ConversationID: chatID, Timestamp: 3, Text: strings.Repeat("n", 6*1024*1024)},
+	}
+	oldKey := rawMediaKey(chatID, "old")
+	backend.rawMsgs[oldKey] = &waE2E.Message{Conversation: proto.String("synthetic raw metadata")}
+	backend.reactionActors[oldKey] = map[string]string{"actor": "👍"}
+
+	backend.reorderLocked()
+	backend.saveStoreLocked()
+	if got := backend.hotHistoryMemoryBytesLocked(); got > maxHotHistoryMemoryBytes {
+		t.Fatalf("backend retains %d history bytes, over %d-byte cap", got, maxHotHistoryMemoryBytes)
+	}
+	if got := backend.messages[chatID]; len(got) != 2 || got[0].ID != "middle" || got[1].ID != "new" {
+		t.Fatalf("backend did not retain the newest complete messages: %+v", got)
+	}
+	if _, ok := backend.rawMsgs[oldKey]; ok {
+		t.Fatal("raw protobuf for an evicted message remains in memory")
+	}
+	if _, ok := backend.reactionActors[oldKey]; ok {
+		t.Fatal("reaction actors for an evicted message remain in memory")
+	}
+}
+
+func TestHotHistoryMemoryAccountingIncludesMessageSliceCapacity(t *testing.T) {
+	paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+	backend := New(zerolog.Nop(), paths, nil)
+	chatID := "capacity@s.whatsapp.net"
+	backend.mu.Lock()
+	before := backend.hotHistoryMemoryBytesLocked()
+	backing := make([]wire.Message, 0, 128)
+	backend.messages[chatID] = backing
+	after := backend.hotHistoryMemoryBytesLocked()
+	backend.mu.Unlock()
+	actualSliceBytes := int64(cap(backing)) * int64(unsafe.Sizeof(wire.Message{}))
+	if after-before < actualSliceBytes {
+		t.Fatalf("memory estimate increased by %d bytes for a %d-byte message slice backing array", after-before, actualSliceBytes)
+	}
+}
+
+func TestTruncateHistoryTextRespectsByteLimitAndUTF8(t *testing.T) {
+	value := strings.Repeat("界", 20)
+	got := truncateHistoryText(value, 7)
+	if len(got) > 7 {
+		t.Fatalf("truncated preview uses %d bytes, over the 7-byte limit", len(got))
+	}
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated preview is not valid UTF-8: %q", got)
 	}
 }
 
@@ -125,6 +185,9 @@ func TestWhatsAppHistorySyncPersistsPagesBeyondHotMemoryWindow(t *testing.T) {
 	mock.TriggerEvent(&events.HistorySync{Data: &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{{ID: proto.String(chatID), Messages: entries}}}})
 	if got := len(backend.messages[chatID]); got != maxPersistedMessages {
 		t.Fatalf("hot message window = %d, want %d", got, maxPersistedMessages)
+	}
+	if got := cap(backend.messages[chatID]); got > maxPersistedMessages {
+		t.Fatalf("hot message window retains slice capacity %d, want at most %d", got, maxPersistedMessages)
 	}
 	page, err := backend.Messages(context.Background(), wire.MessagesParams{ConversationID: chatID, Count: 60, CursorID: "history-121", CursorTime: 121_000_000})
 	if err != nil {

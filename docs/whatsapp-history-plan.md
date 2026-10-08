@@ -1,8 +1,8 @@
 # WhatsApp older-history retrieval and bounded cache
 
-Status: **In progress** — backend/config/storage slices are implemented and synthetic Go tests pass. Strict total physical-cache accounting, a byte-level memory cap, migration fault recovery, native UI behavior, and live-phone acceptance remain incomplete or unverified; do not treat this as finished.
+Status: **In progress** — the storage-bounds slice is implemented; focused and full repository gates pass, and final independent review is pending. Interruption-safe migration recovery has not started. Native UI behavior and live-phone acceptance remain pending; do not treat the feature as finished.
 Branch inspected: `merged-and-extended`.
-Baseline inspected: `5429dac` (emoji search preference), with prior keyboard/emoji extensions and PR merges preserved.
+Feature baseline: `f7d1d06 Add WhatsApp history paging and local installer`, preserving prior keyboard/emoji extensions and PR merges.
 This document is the execution handoff. Recheck the live worktree before implementing.
 
 ## Agreed scope
@@ -66,16 +66,16 @@ These are source-inspection findings, not test results:
 
 - `internal/whatsapp/backend.go`, `Messages`: now serves SQLite history pages with timestamp/ID cursors first; at a cached boundary it can begin an on-demand request. `HasMore` includes an in-flight/retryable request for the QML paging seam, while `CanFetchOlder` reports remote-fetch possibility separately.
 - `internal/whatsapp/backend.go`, `ingestHistorySync`: imports received history, deduplicates by message ID within a chat, handles reactions, persists data, and emits conversation/status updates.
-- That importer trims in-memory history to the newest `maxPersistedMessages` entries; SQLite now retains additional pages, but there is not yet a separately tested global memory budget.
-- `internal/whatsapp/store.go`: conversation metadata is bounded to 1,000 recent chats; hot message/raw-media memory is bounded to the newest 100 messages in 50 chats. After successful SQLite migration/persistence, `whatsapp_store.json` is reduced to conversation metadata and hot reaction actors rather than duplicating message bodies/raw protobufs. The legacy JSON fallback remains if SQLite cannot open, and actor-index bytes plus SQLite peak journal/temp usage are not included in a proven strict physical cap.
+- That importer trims in-memory history to the newest `maxPersistedMessages` entries; SQLite retains additional pages. A separately tested 16 MiB retained-payload accounting target now supplements those count limits; it is not a heap/RSS cap.
+- `internal/whatsapp/store.go`: conversation metadata is bounded to 1,000 recent chats; the hot message/raw-media window is additionally trimmed to a 16 MiB retained-payload accounting target. The estimate includes message/conversation strings and slice capacities, raw protobuf encoded size, reaction actors, and bounded paging metadata; it is not a process-RSS or allocator-level guarantee. After successful SQLite migration/persistence, `whatsapp_store.json` is reduced to conversation metadata and hot reaction actors rather than duplicating message bodies/raw protobufs. The legacy JSON fallback remains if SQLite cannot open; it rejects writes that would exceed the configured logical file-size budget and preserves an already oversized source rather than truncating it.
 - `internal/whatsapp/mock.go`: has a synthetic request seam; the live request path uses the pinned whatsmeow API, but no personal phone was contacted.
 - Vendored `go.mau.fi/whatsmeow/send.go`, `BuildHistorySyncRequest`: builds a request anchored by chat ID, message ID, FromMe, and timestamp. Library recommends a page size of 50.
 - `SendPeerMessage` sends the request to the primary device; response is an asynchronous `events.HistorySync` with type `ON_DEMAND`.
 - The request's timestamp field name includes MS, but the vendored builder explicitly uses seconds. OmaChat message timestamps use microseconds. Preserve units deliberately.
 - `InboxView.qml`: initial pages contain 60 messages; existing load-older callbacks guard service/selection/request generations. Viewport capture/restore and cursor-stall protection already exist.
 - `internal/wire/wire.go`: now carries explicit history-fetch state and asynchronous history-update events; other services retain their existing paging behavior.
-- `internal/store/config.go`, daemon config/method wiring, `Service.qml`, and `SettingsView.qml` form the preference integration path; inspect exact definitions/usages before editing.
-- `tests/run-qml.py` uses mock fixtures and later isolates helper-build data/runtime. Audit isolation at the beginning of the run rather than assuming every fixture is safe.
+- `internal/store/config.go`, daemon config/method wiring, `Service.qml`, and `SettingsView.qml` form the preference integration path; synthetic tests cover cache-size save/reload.
+- `tests/run-qml.py` uses mock fixtures and isolates helper-build data/runtime; its completed run used disposable temporary helper paths and did not restart the user's shell/live helper.
 
 ## Execution phases
 
@@ -111,7 +111,7 @@ These are source-inspection findings, not test results:
   size is 50. A synthetic request-seam test verifies preserving group chat,
   message ID, FromMe, second precision, and the bounded count.
 - **Storage direction:** a dedicated `whatsapp_history.sqlite` is separate
-  from `whatsapp.db`, with indexed timestamp/ID paging, incremental vacuum,
+  from `whatsapp.db`, with indexed timestamp/ID paging, full auto-vacuum,
   least-recently-viewed chat eviction, an eviction boundary, a SQLite page cap,
   and 0600 database permissions. Synthetic tests now cover paging after reopen,
   steady-state database-plus-sidecar size, retention of a viewed chat, eviction
@@ -119,18 +119,69 @@ These are source-inspection findings, not test results:
   test verifies the migrated row survives reopen without duplication. Raw attachment
   metadata is stored in SQLite and fetched on demand; reaction actors for hot
   chats remain in the bounded JSON index. Still unresolved: interruption at
-  every migration/write boundary, reaction-actor byte accounting, legacy JSON
-  fallback when SQLite is unavailable, peak temporary/journal usage, and crash
-  recovery. The page cap/reserve is not evidence of a strict total physical or
-  memory-budget guarantee.
+  every migration/write boundary, fallback usability when SQLite is unavailable,
+  and crash recovery. The accounting is over logical file sizes, not allocated
+  filesystem blocks or process memory.
+- **Hardening contract (implemented; full gates passed, review/commit pending):** let `B` be the selected
+  history budget, `I = min(8 MiB, B/8)` the maximum final JSON-index size,
+  `R = 1 MiB` the SQLite journal/sector safety reserve, and
+  `D = floor((B - 2I - R)/3)` the SQLite main-database page ceiling. The three
+  database-sized reservations cover the capped main database, rollback-journal
+  footprint, and a bounded compaction copy; `2I` covers the old index plus an
+  atomic replacement temp file. SQLite uses `max_page_count`, DELETE journaling,
+  in-memory temporary tables, and full auto-vacuum so local eviction can shrink
+  the file before a reduced page ceiling is installed. Owned
+  `.omachat-whatsapp-history-*.tmp` files are removed before store initialization
+  and counted during atomic JSON writes. The check is over logical file sizes of
+  app-owned cache artifacts, not filesystem block allocation/metadata or
+  unrelated files. Lowering a live budget may use the previously active budget
+  during local eviction; the new setting is applied only after SQLite reaches
+  its new page ceiling and the complete current artifact total fits `B`. Reject
+  the change before shrinking SQLite if unshrinkable index/temp artifacts alone
+  exceed `B`. Reject an index rewrite before touching the old file if the final
+  JSON exceeds `I`, and reject a budget change when SQLite is unavailable and
+  existing artifacts already exceed the requested limit.
+  Migration from a legacy source no larger than `B` may temporarily retain that
+  source in addition to the bounded SQLite staging footprint (peak below `2B`);
+  a source already larger than `B` is preserved without loading or truncation.
+  The 16 MiB hot-history target is a retained-payload accounting estimate, not a
+  strict heap/RSS cap; upstream events, decoded migration objects, Go allocator
+  overhead, UI copies, and other transient allocations are outside it. The
+  4 MiB history-page guard accounts for decoded message fields, raw payloads,
+  bounded container overhead, and caps attachments/reactions at 256 each per
+  stored message before decoding; it remains a logical retained-size estimate,
+  not a process-RSS guarantee. The selected size does not include downloaded
+  media or device credentials.
+  Reaction-actor state is never approximated: storage pressure rejects/defer
+  writes or evicts eligible older history.
+- **Hardening design-gate evidence:** the new synthetic reservation test first
+  failed against the old `B/3` database ceiling (`83,886,079` reserved bytes
+  against a `67,108,864`-byte budget), then passed with the database/index
+  split. An oversized-index regression also verifies that a failed bounded
+  replacement leaves the previous file byte-for-byte intact. The budget-shrink
+  regression exposed that incremental vacuum could leave interior free pages;
+  switching to full auto-vacuum makes the reduced page ceiling achievable. A
+  page-count regression also caps responses at 100 messages, and startup now
+  removes orphaned owned index temps. These checks do not prove process RSS or
+  migration fault recovery.
+- **Reviewer-finding regressions:** a 65 MiB synthetic legacy index with an
+  available SQLite store first demonstrated that lowering the setting to 64 MiB
+  was incorrectly accepted; `SetHistoryCacheMB` now serializes against cache
+  writes, rejects unshrinkable index/temp artifacts that exceed the target, and
+  verifies the complete logical artifact total after SQLite eviction. A valid
+  synthetic SQLite row with 10,000 compact attachment objects first demonstrated
+  decoded-size amplification beyond its small JSON payload; the reader now
+  validates array counts before decoding and budgets decoded message/raw/page
+  container sizes. Both regression tests failed before their respective fixes.
 - **Baseline evidence:** `make test`, `make lint`, and the synthetic QML
   readability fixture passed before feature changes. The full `make test-ui`
   baseline passed its Node and Python phases and several QML fixtures, then
   failed at `tests/qml/popout.qml` with a window-layout timeout. Isolated XDG
-  paths and the real display socket were used; this failure is not attributed
-  to the feature and remains an unresolved baseline regression.
+  paths and the real display socket were used. The post-change full serial UI
+  suite passed; the earlier timeout was transient and is not currently
+  reproducible.
 
-## Current verification ledger (2026-10-07)
+## Current verification ledger (2026-10-08)
 
 - **Verified synthetic backend/storage:** focused and full Go tests cover SQLite
   paging/reopen/offline reads, 50-message request anchors and count validation,
@@ -143,12 +194,16 @@ These are source-inspection findings, not test results:
   disconnect,
   cache-write failure reporting, viewed-chat retention, eviction boundary and
   retained cursor anchors after eviction,
-  database permissions, steady-state file-size budget, and local budget shrink.
-- **Verified repository gates (after the latest edits):** `make test`,
-  `make lint`, `go test -race -mod=vendor -count=1 ./...`, `make helper`, and
-  `make validate` passed. The isolated installer test built and validated the
-  staged plugin, verified helper-source identity and `.env` exclusion, and
-  rejected symlinked parent/target paths without changing external contents.
+  database permissions, steady-state file-size budget, local budget shrink,
+  rejection of unenforceable live budget reductions, and decoded-page
+  attachment-amplification rejection.
+- **Verified repository gates (after storage-bounds edits):** `make test`,
+  `make lint`, `go test -race -mod=vendor -count=1 ./...`, `make helper`,
+  `make validate`, and `make test-ui` passed. No real helper or shell restart
+  was performed; the QML suite used temporary fixtures and isolated runtime
+  paths. The separate installer checks belong to the prior feature commit.
+  The targeted WhatsApp package suite also passed after reviewer findings were
+  fixed; the previously reported PN/LID test passed five consecutive runs.
 - **Verified static QML:** `qmllint SettingsView.qml Service.qml InboxView.qml
   tests/qml/whatsapp-history-settings.qml` passed.
 - **Verified native QML behavior:** `make test-ui` passed all 39 Node tests,
@@ -156,14 +211,15 @@ These are source-inspection findings, not test results:
   pending-phone duplicate suppression, conversation-switch status reset, and
   completion-triggered page loading; the settings fixture covers cache-size
   save/reload.
-- **Explicit storage gaps:** successful SQLite operation no longer duplicates
-  message bodies/raw protobufs in the JSON index, and metadata now retains up to
-  1,000 chats; when SQLite cannot open, the legacy JSON fallback remains. The
-  actor-state index is outside the SQLite page budget, the 50-chat hot-memory
-  bound is count-based rather than a byte cap, and peak temporary/journal usage
-  and crash/interruption recovery lack acceptance tests. Do not claim the
-  configured value is a strict total physical or memory cap until these gaps
-  are fixed and verified.
+- **Explicit storage limits/gaps:** the final index is capped at 8 MiB for the
+  supported cache sizes; index, database, SQLite sidecar, and owned JSON-temp
+  logical sizes are accounted, with a formula reserving database/journal/copy
+  and atomic-index peaks. Existing legacy sources above the selected limit are
+  preserved and may remain unavailable. The hot-history target is a payload
+  estimate, not strict process memory; filesystem allocation blocks and other
+  transient allocations are not constrained. Legacy migration interruption and
+  crash-recovery tests remain pending, and migration's stated 2× disk peak is a
+  design allowance, not yet fault-injection evidence.
 - **Live-account boundary:** no WhatsApp account data, credentials, daemon
   socket, or live phone were accessed by the agent. User-reported partial manual
   testing: group history worked, while some direct-contact requests failed with
