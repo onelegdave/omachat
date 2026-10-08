@@ -158,7 +158,8 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
         raise SystemExit(1)
 
     for fixture, marker in (("auto-popout", "OMACHAT_AUTO_POPOUT"), ("review", "OMACHAT_REVIEW"), ("panel-keyboard", "OMACHAT_PANEL_KEYBOARD"), ("chat-view", "OMACHAT_CHAT_VIEW"), ("notifications", "OMACHAT_NOTIFICATIONS"), ("unpair", "OMACHAT_UNPAIR"), ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"), ("panel-emoji-search", "OMACHAT_PANEL_EMOJI_SEARCH"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"),
-                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("avatar", "OMACHAT_AVATAR"), ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX")):
+                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("avatar", "OMACHAT_AVATAR"), ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX"),
+                                ("conversation-create", "OMACHAT_CONVERSATION_CREATE")):
         (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
         result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
         print(result.stdout)

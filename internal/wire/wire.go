@@ -307,6 +307,30 @@ type CreateConversationParams struct {
 	Name      string   `json:"name,omitempty"`
 }
 
+// NormalizeCreateConversation removes repeated recipients before deciding whether
+// the request is direct or a group. Blank recipients must never reach a provider.
+func NormalizeCreateConversation(p CreateConversationParams) (CreateConversationParams, error) {
+	out := CreateConversationParams{Name: strings.TrimSpace(p.Name)}
+	seen := make(map[string]bool)
+	for _, raw := range p.TargetIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			return out, fmt.Errorf("select a valid contact")
+		}
+		if !seen[id] {
+			out.TargetIDs = append(out.TargetIDs, id)
+			seen[id] = true
+		}
+	}
+	if len(out.TargetIDs) == 0 {
+		return out, fmt.Errorf("select at least one contact")
+	}
+	if len(out.TargetIDs) > 1 && out.Name == "" {
+		return out, fmt.Errorf("group name is required")
+	}
+	return out, nil
+}
+
 type MessagesParams struct {
 	ConversationID string `json:"conversationID"`
 	Count          int64  `json:"count"`

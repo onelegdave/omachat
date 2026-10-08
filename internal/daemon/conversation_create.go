@@ -11,6 +11,7 @@ import (
 )
 
 func (d *Daemon) ConversationTargets(ctx context.Context) ([]wire.ConversationTarget, error) {
+	ctx = sessionBoundContext{Context: ctx, session: d.sessionContext()}
 	client, err := d.requireClient()
 	if err != nil {
 		return nil, err
@@ -36,9 +37,12 @@ func (d *Daemon) ConversationTargets(ctx context.Context) ([]wire.ConversationTa
 }
 
 func (d *Daemon) CreateConversation(ctx context.Context, p wire.CreateConversationParams) (wire.Conversation, error) {
-	if len(p.TargetIDs) == 0 {
-		return wire.Conversation{}, errors.New("select at least one contact")
+	normalized, normalizeErr := wire.NormalizeCreateConversation(p)
+	if normalizeErr != nil {
+		return wire.Conversation{}, normalizeErr
 	}
+	p = normalized
+	ctx = sessionBoundContext{Context: ctx, session: d.sessionContext()}
 	client, err := d.requireClient()
 	if err != nil {
 		return wire.Conversation{}, err
@@ -62,9 +66,35 @@ func (d *Daemon) CreateConversation(ctx context.Context, p wire.CreateConversati
 	if err != nil {
 		return wire.Conversation{}, err
 	}
-	if resp.GetConversation() == nil {
+	if resp.GetConversation() == nil || resp.GetConversation().GetConversationID() == "" {
 		return wire.Conversation{}, errors.New("Google Messages did not return the conversation")
 	}
-	d.upsertConversation(resp.GetConversation())
-	return convertConversation(resp.GetConversation()), nil
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	if ctx.Err() != nil {
+		return wire.Conversation{}, ctx.Err()
+	}
+	current, currentErr := d.requireClient()
+	if currentErr != nil || current != client {
+		return wire.Conversation{}, errNotConnected
+	}
+	return d.commitCreatedConversation(resp.GetConversation()), nil
+}
+
+func (d *Daemon) commitCreatedConversation(c *gmproto.Conversation) wire.Conversation {
+	w := convertConversation(c)
+	d.mu.Lock()
+	if existing, ok := d.convs[w.ID]; ok {
+		w = existing
+	} else {
+		if p, ok := d.avatars.cached(w.ID); ok {
+			w.AvatarPath = p
+		}
+		d.convs[w.ID] = w
+		d.reorderLocked()
+	}
+	d.mu.Unlock()
+	d.publish(wire.EventConversation, w)
+	d.publishStatus()
+	return w
 }

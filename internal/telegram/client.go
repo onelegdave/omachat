@@ -553,9 +553,11 @@ func (g *GotdClient) ConversationTargets(ctx context.Context) ([]wire.Conversati
 }
 
 func (g *GotdClient) CreateConversation(ctx context.Context, p wire.CreateConversationParams) (Dialog, error) {
-	if len(p.TargetIDs) == 0 {
-		return Dialog{}, errors.New("select at least one contact")
+	normalized, normalizeErr := wire.NormalizeCreateConversation(p)
+	if normalizeErr != nil {
+		return Dialog{}, normalizeErr
 	}
+	p = normalized
 	g.mu.RLock()
 	peers := make([]tg.InputPeerClass, 0, len(p.TargetIDs))
 	for _, rawID := range p.TargetIDs {

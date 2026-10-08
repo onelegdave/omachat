@@ -65,6 +65,7 @@ Item {
     if (composer) composer.focus = false
     if (searchField) searchField.focus = false
     if (attachCaption) attachCaption.focus = false
+    newChatOpen = false
     if (recording) stopRecording(false)
     stopPlayback()
   }
@@ -152,6 +153,13 @@ Item {
   property int focusRequest: 0
   property bool linkConfirmOpen: false
   property bool newChatOpen: false
+  property int newChatRequest: 0
+  onNewChatOpenChanged: {
+    if (newChatOpen) return
+    newChatRequest++
+    newChatLoading = false
+  }
+  onServiceChanged: newChatOpen = false
   property bool newChatGroup: false
   property bool newChatLoading: false
   property string newChatError: ""
@@ -217,6 +225,7 @@ Item {
     var prev = _previousNetwork
     _previousNetwork = network
     if (prev === network) return
+    newChatOpen = false
     pendingLatestScroll = false
     followingLatest = false
     mediaSendToken++
@@ -466,21 +475,32 @@ Item {
     setDrafts(drafts)
   }
 
+  function newChatCurrent(source, targetNet, request) {
+    return source === service && targetNet === network && request === newChatRequest && newChatOpen && panelOpen
+  }
+
   function openNewChat() {
-    if (!service || newChatLoading) return
+    if (!service || newChatLoading || !panelOpen) return
+    if (typeof service.stateFor === "function" && service.stateFor(network) !== "connected") return
+    var source = service
+    var targetNet = network
+    var request = ++newChatRequest
     newChatOpen = true
     newChatGroup = false
     newChatError = ""
     newChatTargets = []
     newChatSelected = ({})
+    newChatName.text = ""
+    newChatSearch.text = ""
     newChatLoading = true
-    service.call("conversationTargets", null, function(ok, result) {
+    source.call("conversationTargets", null, function(ok, result) {
+      if (!newChatCurrent(source, targetNet, request)) return
       newChatLoading = false
-      if (!newChatOpen) return
       if (!ok) { newChatError = String(result); return }
-      newChatTargets = result || []
-      Qt.callLater(function() { if (root.newChatOpen) newChatSearch.forceActiveFocus() })
-    }, network)
+      if (!Array.isArray(result)) { newChatError = "The helper returned an invalid contact list."; return }
+      newChatTargets = result
+      Qt.callLater(function() { if (newChatCurrent(source, targetNet, request)) newChatSearch.forceActiveFocus() })
+    }, targetNet)
   }
 
   function toggleNewChatTarget(id) {
@@ -492,22 +512,27 @@ Item {
   }
 
   function createNewChat() {
-    if (!service || newChatLoading || newChatSelectionCount < 1) return
+    if (!service || !newChatOpen || !panelOpen || newChatLoading || newChatSelectionCount < 1) return
     if (newChatGroup && newChatSelectionCount < 2) {
       newChatError = "Select at least two contacts for a group."
       return
     }
     var name = newChatGroup ? newChatName.text.trim() : ""
     if (newChatGroup && name === "") { newChatError = "Enter a group name."; return }
+    var source = service
+    var targetNet = network
+    var request = ++newChatRequest
     newChatLoading = true
     newChatError = ""
-    service.call("createConversation", { targetIDs: Object.keys(newChatSelected), name: name }, function(ok, result) {
+    source.call("createConversation", { targetIDs: Object.keys(newChatSelected), name: name }, function(ok, result) {
+      if (!newChatCurrent(source, targetNet, request)) return
       newChatLoading = false
       if (!ok) { newChatError = String(result); return }
+      if (!result || !result.id) { newChatError = "The helper did not return a conversation. Refresh before retrying."; return }
       newChatOpen = false
-      if (service.loadConversations) service.loadConversations(network)
-      if (result && result.id) selectConversation(String(result.id))
-    }, network)
+      if (source.loadConversations) source.loadConversations(targetNet)
+      selectConversation(String(result.id))
+    }, targetNet)
   }
 
   function selectConversation(id, remember) {
@@ -1482,7 +1507,7 @@ Item {
       width: Style.space(34)
       height: Style.space(34)
       text: "+"
-      enabled: root.service && !root.newChatLoading
+      enabled: root.service && root.service.connected && !root.newChatLoading && (typeof root.service.stateFor !== "function" || root.service.stateFor(root.network) === "connected")
       Accessible.name: "New conversation"
       onClicked: root.openNewChat()
     }
@@ -2707,6 +2732,8 @@ Item {
 
   Rectangle {
     id: newChatOverlay
+    focus: root.newChatOpen
+    Keys.onEscapePressed: root.newChatOpen = false
     objectName: "newChatOverlay"
     anchors.fill: parent
     visible: root.newChatOpen
@@ -2741,13 +2768,16 @@ Item {
 
         Row {
           spacing: Style.space(8)
-          Button { text: "Direct"; enabled: root.newChatGroup; onClicked: { root.newChatGroup = false; root.newChatSelected = ({}) } }
-          Button { text: "Group"; enabled: !root.newChatGroup; onClicked: { root.newChatGroup = true; root.newChatSelected = ({}) } }
+          Button { id: newChatDirectButton; KeyNavigation.tab: newChatGroupButton; KeyNavigation.backtab: createConversationButton; text: "Direct"; enabled: !root.newChatLoading && root.newChatGroup; onClicked: { root.newChatGroup = false; root.newChatSelected = ({}) } }
+          Button { id: newChatGroupButton; KeyNavigation.tab: newChatName; KeyNavigation.backtab: newChatDirectButton; text: "Group"; enabled: !root.newChatLoading && !root.newChatGroup; onClicked: { root.newChatGroup = true; root.newChatSelected = ({}) } }
         }
 
         TextField {
           id: newChatName
+          KeyNavigation.tab: newChatSearch
+          KeyNavigation.backtab: newChatGroupButton
           objectName: "newChatName"
+          enabled: !root.newChatLoading
           width: parent.width
           visible: root.newChatGroup
           placeholderText: "Group name"
@@ -2757,6 +2787,8 @@ Item {
 
         TextField {
           id: newChatSearch
+          KeyNavigation.tab: newChatTargetList
+          KeyNavigation.backtab: newChatName
           objectName: "newChatSearch"
           width: parent.width
           placeholderText: "Search contacts"
@@ -2766,6 +2798,12 @@ Item {
 
         ListView {
           id: newChatTargetList
+          activeFocusOnTab: !root.newChatLoading
+          KeyNavigation.tab: newChatCancelButton
+          KeyNavigation.backtab: newChatSearch
+          Keys.onSpacePressed: if (!root.newChatLoading && currentItem) root.toggleNewChatTarget(String(currentItem.modelData.id))
+          Keys.onReturnPressed: if (!root.newChatLoading && currentItem) root.toggleNewChatTarget(String(currentItem.modelData.id))
+          highlight: Rectangle { color: "transparent"; border.width: newChatTargetList.activeFocus ? 2 : 0; border.color: Color.accent; radius: Style.space(5) }
           objectName: "newChatTargetList"
           width: parent.width
           height: parent.height - y - newChatActions.height - Style.space(34)
@@ -2775,6 +2813,17 @@ Item {
 
           delegate: Rectangle {
             required property var modelData
+            activeFocusOnTab: false
+            KeyNavigation.tab: newChatCancelButton
+            KeyNavigation.backtab: newChatSearch
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: String(modelData.name || modelData.id)
+            Accessible.checked: !!root.newChatSelected[String(modelData.id)]
+            Keys.onSpacePressed: if (!root.newChatLoading) root.toggleNewChatTarget(String(modelData.id))
+            Keys.onReturnPressed: if (!root.newChatLoading) root.toggleNewChatTarget(String(modelData.id))
+            Keys.onEnterPressed: if (!root.newChatLoading) root.toggleNewChatTarget(String(modelData.id))
+            border.width: activeFocus ? 2 : 0
+            border.color: Color.accent
             width: newChatTargetList.width
             height: Style.space(48)
             radius: Style.space(5)
@@ -2799,7 +2848,7 @@ Item {
               color: root.selectedInk
               font.pixelSize: fs(Style.font.body)
             }
-            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleNewChatTarget(String(modelData.id)) }
+            MouseArea { anchors.fill: parent; enabled: !root.newChatLoading; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleNewChatTarget(String(modelData.id)) }
           }
         }
 
@@ -2817,8 +2866,11 @@ Item {
           id: newChatActions
           anchors.right: parent.right
           spacing: Style.space(8)
-          Button { text: "Cancel"; onClicked: root.newChatOpen = false }
+          Button { id: newChatCancelButton; objectName: "newChatCancelButton"; KeyNavigation.tab: createConversationButton; KeyNavigation.backtab: newChatTargetList; text: "Cancel"; onClicked: root.newChatOpen = false }
           Button {
+            id: createConversationButton
+            KeyNavigation.tab: newChatDirectButton
+            KeyNavigation.backtab: newChatCancelButton
             objectName: "createConversationButton"
             text: root.newChatGroup ? "Create group" : "Start chat"
             enabled: !root.newChatLoading && root.newChatSelectionCount > 0

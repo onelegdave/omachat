@@ -43,8 +43,16 @@ func (b *Backend) ConversationTargets(ctx context.Context) ([]wire.ConversationT
 }
 
 func (b *Backend) CreateConversation(ctx context.Context, p wire.CreateConversationParams) (wire.Conversation, error) {
-	if len(p.TargetIDs) == 0 {
-		return wire.Conversation{}, errors.New("select at least one contact")
+	normalized, normalizeErr := wire.NormalizeCreateConversation(p)
+	if normalizeErr != nil {
+		return wire.Conversation{}, normalizeErr
+	}
+	p = normalized
+	b.mu.RLock()
+	gen, cli, paired := b.gen, b.client, b.paired
+	b.mu.RUnlock()
+	if cli == nil || !paired {
+		return wire.Conversation{}, errors.New("WhatsApp is not linked")
 	}
 	targets, err := b.ConversationTargets(ctx)
 	if err != nil {
@@ -64,14 +72,12 @@ func (b *Backend) CreateConversation(ctx context.Context, p wire.CreateConversat
 		members := make([]types.JID, 0, len(p.TargetIDs))
 		for _, id := range p.TargetIDs {
 			member, parseErr := types.ParseJID(id)
-			if parseErr != nil {
-				return wire.Conversation{}, parseErr
+			if parseErr != nil || member.User == "" || (member.Server != types.DefaultUserServer && member.Server != types.HiddenUserServer) {
+				return wire.Conversation{}, errors.New("invalid WhatsApp contact")
 			}
 			members = append(members, member)
 		}
-		b.mu.RLock()
-		creator, ok := b.client.(groupCreator)
-		b.mu.RUnlock()
+		creator, ok := cli.(groupCreator)
 		if !ok {
 			return wire.Conversation{}, errors.New("WhatsApp group creation is unavailable")
 		}
@@ -79,18 +85,32 @@ func (b *Backend) CreateConversation(ctx context.Context, p wire.CreateConversat
 		if createErr != nil {
 			return wire.Conversation{}, createErr
 		}
+		if info == nil || info.JID.User == "" || info.JID.Server != types.GroupServer {
+			return wire.Conversation{}, errors.New("WhatsApp did not return the new group")
+		}
 		jid = info.JID
 	} else {
 		jid, err = types.ParseJID(p.TargetIDs[0])
-		if err != nil {
-			return wire.Conversation{}, err
+		if err != nil || jid.User == "" || (jid.Server != types.DefaultUserServer && jid.Server != types.HiddenUserServer) {
+			return wire.Conversation{}, errors.New("invalid WhatsApp contact")
 		}
 		name = names[p.TargetIDs[0]]
+		if name == "" {
+			name = jid.User
+		}
 	}
 	conversation := wire.Conversation{ID: jid.String(), Name: name, Timestamp: time.Now().UnixMicro(), IsGroup: group, AvatarColor: avatarColor(jid.String()), Initials: initials(name)}
 	b.mu.Lock()
-	b.convs[conversation.ID] = conversation
-	b.reorderLocked()
+	if b.gen != gen || b.client != cli || ctx.Err() != nil {
+		b.mu.Unlock()
+		return wire.Conversation{}, context.Canceled
+	}
+	if existing, ok := b.convs[conversation.ID]; ok {
+		conversation = existing
+	} else {
+		b.convs[conversation.ID] = conversation
+		b.reorderLocked()
+	}
 	b.saveStoreLocked()
 	b.emitLocked(wire.EventConversation, conversation)
 	b.mu.Unlock()

@@ -156,6 +156,22 @@ start pairing again.
 | Older history | Fetch older pages | Page cached history and request an older phone page | Fetch older pages | Fetch older pages | Page up to 500 retained local messages per chat; no phone-history import |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable | Unavailable |
 
+Use **+** beside the conversation search to choose a service contact, or
+select **Group**, choose at least two distinct contacts, and enter a group
+name. The picker uses contacts available from the connected service; manual
+recipient entry is not included. Reopening an existing chat preserves its
+activity and unread state until the normal read acknowledgement succeeds.
+
+Group creation contacts the provider and can notify or invite participants.
+Closing the picker does not undo a submitted request. If a request times out
+or reports an uncertain result, refresh and check the service before retrying
+so you do not create a second group. Google Messages requests an RCS group;
+recipient and phone support may be required. New encrypted Messenger chats
+must be started in Messenger and then refreshed in OmaChat. Existing encrypted
+direct chats can be reopened from the picker. Automated checks use synthetic
+contacts and do not establish live direct or group creation compatibility for
+any service.
+
 Threads open with the latest 60 messages; **Load older messages** pages back
 while preserving the reading position. WhatsApp pages cached history offline and
 can request an older page from the phone at the history boundary when connected;

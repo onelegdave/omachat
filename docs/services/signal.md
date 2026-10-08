@@ -63,3 +63,14 @@ OmaChat's cache is also local and is not an encrypted archive. Use full-disk
 encryption and normal user-account protections where local confidentiality
 matters. Keep `signal-cli` current as Signal's service changes, and do not use
 this integration for bulk or automated messaging.
+
+## Starting conversations
+
+The inbox **+** picker lists contacts from the connected Signal account. A
+direct selection opens a local chat without sending a message. A group request
+uses signal-cli to create a named group and may invite the selected contacts.
+Explicitly opened chats are saved locally and survive helper restarts. Reopening
+an active chat preserves its messages and unread state until it is acknowledged.
+If group creation reports an uncertain outcome, refresh and inspect Signal
+before retrying. Closing the picker cannot undo a request already submitted.
+Live creation and invitations remain unverified by the synthetic tests.

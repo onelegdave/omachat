@@ -20,6 +20,11 @@ func (b *Backend) ConversationTargets(ctx context.Context) ([]wire.ConversationT
 }
 
 func (b *Backend) CreateConversation(ctx context.Context, p wire.CreateConversationParams) (wire.Conversation, error) {
+	normalized, normalizeErr := wire.NormalizeCreateConversation(p)
+	if normalizeErr != nil {
+		return wire.Conversation{}, normalizeErr
+	}
+	p = normalized
 	ctx, finish, cli, epoch := b.operation(ctx)
 	defer finish()
 	creator, ok := cli.(ConversationClient)
@@ -50,12 +55,17 @@ func (b *Backend) CreateConversation(ctx context.Context, p wire.CreateConversat
 	dialog.Timestamp = time.Now().UnixMicro()
 	conversation := mapDialog(dialog)
 	b.mu.Lock()
-	if b.epoch != epoch {
+	if b.epoch != epoch || ctx.Err() != nil {
 		b.mu.Unlock()
 		return wire.Conversation{}, context.Canceled
 	}
-	b.convs[conversation.ID] = conversation
-	b.order = append([]string{conversation.ID}, b.order...)
+	if existing, ok := b.convs[conversation.ID]; ok {
+		conversation = existing
+	} else {
+		b.convs[conversation.ID] = conversation
+		b.order = append([]string{conversation.ID}, b.order...)
+	}
+	b.recountUnreadLocked()
 	_ = b.saveLocked()
 	b.mu.Unlock()
 	if b.publish != nil {
