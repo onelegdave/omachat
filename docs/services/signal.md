@@ -19,7 +19,8 @@ does not start a process until Signal is enabled in Settings > Services.
    device and scan OmaChat's QR code.
 
 OmaChat launches `signal-cli --data-dir ~/.local/share/omachat/signal-cli
---output=json jsonRpc` as a child of the shared helper. Disabling Signal stops
+--output=json jsonRpc --receive-mode=manual` as a child of the shared helper.
+It subscribes to messages after selecting the linked account. Disabling Signal stops
 the child and hides the tab without deleting keys or local messages.
 
 ## Current features
@@ -30,6 +31,13 @@ incoming and outgoing attachments with captions, voice notes, and emoji
 reactions including add, replace, remove, and phone-synced updates. Attachments
 download lazily into `~/.cache/omachat/media_signal/` and are subject to the
 shared 256 MiB cache budget.
+
+The local inbox keeps up to 500 messages per conversation. Threads open with
+the newest 60; **Load older messages** pages through the retained local history.
+This is a bounded cache, not a complete archive or phone-history import.
+This integration currently requires a numbered Signal account and uses one
+account at a time. Other accounts' receive events are ignored. An invalid,
+unreadable, or unsupported inbox cache blocks startup and is retained for recovery.
 
 The current shared OmaChat UI opens conversations after message activity has
 been observed. Starting a previously unseen direct conversation or selecting an

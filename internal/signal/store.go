@@ -29,14 +29,17 @@ func emptyStoredData() storedData {
 	}
 }
 
-func loadStoredData(path string) storedData {
+func loadStoredData(path string) (storedData, error) {
 	out := emptyStoredData()
 	b, err := os.ReadFile(path)
-	if err != nil || errors.Is(err, os.ErrNotExist) {
-		return out
+	if errors.Is(err, os.ErrNotExist) {
+		return out, nil
+	}
+	if err != nil {
+		return out, errors.New("could not read the Signal inbox; original cache retained")
 	}
 	if json.Unmarshal(b, &out) != nil || (out.Version != 1 && out.Version != cacheVersion) {
-		return emptyStoredData()
+		return emptyStoredData(), errors.New("Signal inbox is invalid or uses an unsupported version; original cache retained")
 	}
 	if out.Conversations == nil {
 		out.Conversations = map[string]wire.Conversation{}
@@ -114,7 +117,7 @@ func loadStoredData(path string) storedData {
 	}
 	out.Order = order
 	out.Version = cacheVersion
-	return out
+	return out, nil
 }
 
 func saveStoredData(path string, data storedData) error {

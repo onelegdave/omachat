@@ -47,19 +47,28 @@ type Backend struct {
 	expiryTimers   map[string]*time.Timer
 	client         Caller
 	cancel         context.CancelFunc
+	runCtx         context.Context
+	generation     uint64
+	pairing        bool
+	pairWG         sync.WaitGroup
+	storeErr       error
 }
 
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *Backend {
 	data := emptyStoredData()
+	var storeErr error
 	if paths != nil {
-		data = loadStoredData(paths.SignalStoreFile())
+		data, storeErr = loadStoredData(paths.SignalStoreFile())
 	}
 	b := &Backend{
 		log: log.With().Str("network", wire.NetworkSignal).Logger(), paths: paths, publish: publish,
 		status:  wire.Status{Network: wire.NetworkSignal, State: wire.StateUnpaired, PhoneOK: true},
 		account: data.Account, convs: data.Conversations, order: data.Order, messages: data.Messages,
 		reactionActors: data.ReactionActors, expirations: data.Expirations, expiryTimers: make(map[string]*time.Timer),
-		client: NewRPCClient(),
+		client: NewRPCClient(), storeErr: storeErr,
+	}
+	if storeErr != nil {
+		return b
 	}
 	b.mu.Lock()
 	b.pruneExpiredLocked(time.Now().UnixMilli())
@@ -89,8 +98,14 @@ func (b *Backend) setState(state wire.ConnState, detail string) {
 
 func (b *Backend) Start(parent context.Context) error {
 	b.mu.Lock()
+	if b.storeErr != nil {
+		err := b.storeErr
+		b.mu.Unlock()
+		return err
+	}
 	ctx, cancel := context.WithCancel(parent)
-	b.cancel = cancel
+	b.cancel, b.runCtx = cancel, ctx
+	b.generation++
 	client := b.client
 	b.mu.Unlock()
 	if b.paths == nil {
@@ -119,15 +134,39 @@ func (b *Backend) Start(parent context.Context) error {
 		return nil
 	}
 	b.mu.Lock()
-	b.account = accounts[0].Number
+	account := accounts[0].Number
+	if b.account != "" {
+		account = ""
+		for _, candidate := range accounts {
+			if candidate.Number == b.account {
+				account = candidate.Number
+				break
+			}
+		}
+	}
+	if account == "" {
+		b.mu.Unlock()
+		b.setState(wire.StateDisconnected, "No numbered Signal account matches the saved inbox. Original cache retained.")
+		return nil
+	}
+	b.account = account
 	b.status.SelfPhone = b.account
 	b.mu.Unlock()
+	receiveCtx, receiveCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer receiveCancel()
+	if err := client.Call(receiveCtx, "subscribeReceive", nil, nil); err != nil {
+		b.setState(wire.StateDisconnected, "Could not start receiving Signal messages")
+		return nil
+	}
 	b.setState(wire.StateConnected, "")
 	return b.Refresh(ctx)
 }
 
 func (b *Backend) Stop() {
 	b.mu.Lock()
+	b.generation++
+	b.runCtx = nil
+	b.pairing = false
 	if b.cancel != nil {
 		b.cancel()
 	}
@@ -140,22 +179,49 @@ func (b *Backend) Stop() {
 	if client != nil {
 		_ = client.Close()
 	}
+	b.pairWG.Wait()
 }
 
 func (b *Backend) StartPairing(ctx context.Context) (string, error) {
-	b.mu.RLock()
+	b.mu.Lock()
+	if b.runCtx == nil || b.runCtx.Err() != nil || b.pairing {
+		b.mu.Unlock()
+		return "", errors.New("Signal is not running or pairing is already in progress")
+	}
+	lifetime, generation := b.runCtx, b.generation
+	b.pairing = true
+	b.pairWG.Add(1)
 	client := b.client
-	b.mu.RUnlock()
+	b.mu.Unlock()
+	transferred := false
+	defer func() {
+		if !transferred {
+			b.mu.Lock()
+			if b.generation == generation {
+				b.pairing = false
+			}
+			b.mu.Unlock()
+			b.pairWG.Done()
+		}
+	}()
+	requestCtx, cancel := context.WithCancel(ctx)
+	stopCancel := context.AfterFunc(lifetime, cancel)
+	defer cancel()
+	defer stopCancel()
 	var started struct {
 		DeviceLinkURI string `json:"deviceLinkUri"`
 	}
-	if err := client.Call(ctx, "startLink", nil, &started); err != nil {
+	if err := client.Call(requestCtx, "startLink", nil, &started); err != nil {
 		return "", err
 	}
 	if started.DeviceLinkURI == "" {
 		return "", errors.New("signal-cli returned an empty device link")
 	}
 	b.mu.Lock()
+	if b.generation != generation || lifetime.Err() != nil {
+		b.mu.Unlock()
+		return "", errors.New("Signal pairing was stopped")
+	}
 	b.status.State, b.status.Error, b.status.QRURL = wire.StatePairing, "", started.DeviceLinkURI
 	status := b.status
 	b.mu.Unlock()
@@ -163,34 +229,59 @@ func (b *Backend) StartPairing(ctx context.Context) (string, error) {
 		b.publish(wire.Event{Event: wire.EventStatus, Network: wire.NetworkSignal, Data: status})
 		b.publish(wire.Event{Event: wire.EventQR, Network: wire.NetworkSignal, Data: map[string]string{"url": started.DeviceLinkURI}})
 	}
-	go b.finishPairing(started.DeviceLinkURI)
+	transferred = true
+	go b.finishPairing(lifetime, generation, client, started.DeviceLinkURI)
 	return started.DeviceLinkURI, nil
 }
 
-func (b *Backend) finishPairing(uri string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+func (b *Backend) finishPairing(lifetime context.Context, generation uint64, client Caller, uri string) {
+	defer b.pairWG.Done()
+	ctx, cancel := context.WithTimeout(lifetime, 2*time.Minute)
 	defer cancel()
-	b.mu.RLock()
-	client := b.client
-	b.mu.RUnlock()
 	var result struct {
 		Number string `json:"number"`
 	}
 	err := client.Call(ctx, "finishLink", map[string]any{"deviceLinkUri": uri, "deviceName": "OmaChat"}, &result)
-	if err != nil {
-		b.setState(wire.StateUnpaired, err.Error())
+	b.mu.Lock()
+	if b.generation != generation || lifetime.Err() != nil {
+		b.mu.Unlock()
 		return
 	}
-	b.mu.Lock()
-	b.account, b.status.SelfPhone = result.Number, result.Number
-	_ = b.saveLocked()
+	b.pairing = false
+	b.status.QRURL = ""
+	if err == nil && result.Number == "" {
+		err = errors.New("Signal linking did not return a numbered account")
+	}
+	if err == nil && b.account != "" && b.account != result.Number {
+		err = errors.New("The linked Signal account differs from the saved inbox. Original cache retained.")
+	}
+	if err != nil {
+		b.status.State, b.status.Error = wire.StateUnpaired, err.Error()
+	} else {
+		b.account, b.status.SelfPhone = result.Number, result.Number
+		b.status.State, b.status.Error = wire.StateConnected, ""
+		_ = b.saveLocked()
+	}
+	status := b.status
 	b.mu.Unlock()
-	b.setState(wire.StateConnected, "")
+	if b.publish != nil {
+		b.publish(wire.Event{Event: wire.EventStatus, Network: wire.NetworkSignal, Data: status})
+	}
+	if err != nil {
+		return
+	}
+	if err := client.Call(ctx, "subscribeReceive", nil, nil); err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		b.setState(wire.StateDisconnected, "Could not start receiving Signal messages")
+		return
+	}
 	_ = client.Call(ctx, "sendSyncRequest", map[string]any{"account": result.Number}, nil)
 	if err := b.Refresh(ctx); err != nil {
 		b.log.Warn().Err(err).Msg("Could not refresh Signal contacts after pairing")
 	}
-	if b.publish != nil {
+	if ctx.Err() == nil && b.publish != nil {
 		b.publish(wire.Event{Event: wire.EventPaired, Network: wire.NetworkSignal})
 	}
 }
@@ -291,11 +382,29 @@ func (b *Backend) Conversations(count int) []wire.Conversation {
 func (b *Backend) Messages(_ context.Context, p wire.MessagesParams) (wire.MessagesResult, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	items := append([]wire.Message(nil), b.messages[p.ConversationID]...)
+	items := make([]wire.Message, 0, len(b.messages[p.ConversationID]))
+	for _, message := range b.messages[p.ConversationID] {
+		if p.CursorTime > 0 && (message.Timestamp > p.CursorTime ||
+			(message.Timestamp == p.CursorTime && (p.CursorID == "" || message.ID >= p.CursorID))) {
+			continue
+		}
+		items = append(items, message)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Timestamp == items[j].Timestamp {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].Timestamp < items[j].Timestamp
+	})
+	hasMore := p.Count > 0 && int64(len(items)) > p.Count
 	if p.Count > 0 && int64(len(items)) > p.Count {
 		items = items[len(items)-int(p.Count):]
 	}
-	return wire.MessagesResult{ConversationID: p.ConversationID, Messages: items, HasMore: false, HistoryNotice: "Signal history is stored locally from the time this device is linked."}, nil
+	result := wire.MessagesResult{ConversationID: p.ConversationID, Messages: items, HasMore: hasMore, HistoryNotice: "Signal keeps up to 500 local messages per conversation from the time this device is linked."}
+	if len(items) > 0 {
+		result.CursorID, result.CursorTime = items[0].ID, items[0].Timestamp
+	}
+	return result, nil
 }
 
 func (b *Backend) Send(ctx context.Context, p wire.SendParams) (*wire.Message, error) {
@@ -402,13 +511,23 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaRes
 	if result.Data == "" {
 		return nil, errors.New("signal-cli returned an empty attachment")
 	}
+	// Serialize committing the file with deletion and expiry. A remote delete
+	// arriving during the RPC must not allow a late download to recreate media.
+	b.mu.Lock()
+	if _, _, exists := b.findAttachmentLocked(key); !exists {
+		b.mu.Unlock()
+		return nil, errors.New("Signal attachment was deleted or expired during download")
+	}
 	path, err := b.writeMedia(key, attachment, result.Data)
 	if err != nil {
+		b.mu.Unlock()
 		return nil, err
 	}
-	b.mu.Lock()
 	for conversation, messages := range b.messages {
 		for i := range messages {
+			// Published messages may still reference the previous attachment
+			// slice. Copy before updating the committed path.
+			messages[i].Attachments = append([]wire.Attachment(nil), messages[i].Attachments...)
 			for j := range messages[i].Attachments {
 				if messages[i].Attachments[j].Key == key {
 					messages[i].Attachments[j].Path = path
@@ -457,7 +576,7 @@ func (b *Backend) React(ctx context.Context, p wire.ReactParams) error {
 	if err := client.Call(ctx, "sendReaction", params, nil); err != nil {
 		return err
 	}
-	b.applyReaction(p.ConversationID, msg.Timestamp/1000, account, emoji, remove)
+	b.applyReaction(p.ConversationID, msg.Timestamp/1000, targetAuthor, account, emoji, remove)
 	return nil
 }
 
@@ -547,8 +666,21 @@ type syncDataMessage struct {
 }
 
 func (b *Backend) handleNotification(raw json.RawMessage) {
+	// Manual receive subscriptions wrap each envelope in a result object.
+	var subscription struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if json.Unmarshal(raw, &subscription) == nil && len(subscription.Result) > 0 {
+		raw = subscription.Result
+	}
 	var n notification
 	if json.Unmarshal(raw, &n) != nil {
+		return
+	}
+	b.mu.RLock()
+	account := b.account
+	b.mu.RUnlock()
+	if n.Account != "" && n.Account != account {
 		return
 	}
 	if n.Envelope.DataMessage != nil {
@@ -578,7 +710,7 @@ func (b *Backend) handleNotification(raw json.RawMessage) {
 		if peer == "" && !group {
 			return
 		}
-		b.handleDataMessage(convID, b.account, actorName, conversationName, true, d)
+		b.handleDataMessage(convID, account, actorName, conversationName, true, d)
 	}
 }
 
@@ -671,11 +803,17 @@ func (b *Backend) handleDataMessage(conversationID, actor, actorName, conversati
 		return
 	}
 	if data.Reaction != nil {
-		b.applyReaction(conversationID, data.Reaction.TargetSentTimestamp, actor, data.Reaction.Emoji, data.Reaction.IsRemove)
+		targetAuthor := first(data.Reaction.TargetAuthorUUID, data.Reaction.TargetAuthorNumber, data.Reaction.TargetAuthor)
+		b.mu.RLock()
+		if targetAuthor != "" && targetAuthor == b.selfUUID {
+			targetAuthor = b.account
+		}
+		b.mu.RUnlock()
+		b.applyReaction(conversationID, data.Reaction.TargetSentTimestamp, targetAuthor, actor, data.Reaction.Emoji, data.Reaction.IsRemove)
 		return
 	}
 	if data.RemoteDelete != nil {
-		b.redactMessage(conversationID, data.RemoteDelete.Timestamp)
+		b.redactMessage(conversationID, data.RemoteDelete.Timestamp, actor)
 		return
 	}
 	// View-once media must remain ephemeral. signal-cli has already delivered it
@@ -807,6 +945,9 @@ func messagePreview(message wire.Message) string {
 func (b *Backend) findAttachmentLocked(key string) (wire.Attachment, string, bool) {
 	for conversationID, messages := range b.messages {
 		for _, message := range messages {
+			if at := b.expirations[message.ID]; at > 0 && at <= time.Now().UnixMilli() {
+				continue
+			}
 			for _, attachment := range message.Attachments {
 				if attachment.Key == key {
 					return attachment, conversationID, true
@@ -863,12 +1004,26 @@ func (b *Backend) writeMedia(key string, attachment wire.Attachment, encoded str
 	return path, nil
 }
 
-func (b *Backend) applyReaction(conversationID string, targetTimestamp int64, actor, emoji string, remove bool) {
+func (b *Backend) applyReaction(conversationID string, targetTimestamp int64, targetAuthor, actor, emoji string, remove bool) {
 	b.mu.Lock()
 	items := b.messages[conversationID]
+	if targetAuthor == "" {
+		// Older client envelopes can omit the author. Apply only when the
+		// timestamp identifies exactly one message, never choose arbitrarily.
+		matches := 0
+		for _, item := range items {
+			if item.Timestamp/1000 == targetTimestamp {
+				matches++
+			}
+		}
+		if matches != 1 {
+			b.mu.Unlock()
+			return
+		}
+	}
 	var updated *wire.Message
 	for i := range items {
-		if items[i].Timestamp/1000 != targetTimestamp {
+		if items[i].Timestamp/1000 != targetTimestamp || (targetAuthor != "" && items[i].SenderID != targetAuthor) {
 			continue
 		}
 		actors := b.reactionActors[items[i].ID]
@@ -922,12 +1077,15 @@ func reactionsFromActors(actors map[string]string, account string) []wire.Reacti
 	return out
 }
 
-func (b *Backend) redactMessage(conversationID string, targetTimestamp int64) {
+func (b *Backend) redactMessage(conversationID string, targetTimestamp int64, targetAuthor string) {
+	if targetAuthor == "" {
+		return
+	}
 	b.mu.Lock()
 	items := b.messages[conversationID]
 	var updated *wire.Message
 	for i := range items {
-		if items[i].Timestamp/1000 != targetTimestamp {
+		if items[i].Timestamp/1000 != targetTimestamp || items[i].SenderID != targetAuthor {
 			continue
 		}
 		b.removeMessageMediaLocked(items[i])
@@ -995,12 +1153,14 @@ func (b *Backend) expireMessage(messageID string) {
 	b.mu.RUnlock()
 	if conversationID != "" {
 		var timestamp int64
+		var author string
 		b.mu.RLock()
 		if message, ok := b.findMessageLocked(conversationID, messageID); ok {
 			timestamp = message.Timestamp / 1000
+			author = message.SenderID
 		}
 		b.mu.RUnlock()
-		b.redactMessage(conversationID, timestamp)
+		b.redactMessage(conversationID, timestamp, author)
 	}
 }
 
@@ -1062,6 +1222,9 @@ func (b *Backend) recountUnreadLocked() {
 }
 
 func (b *Backend) saveLocked() error {
+	if b.storeErr != nil {
+		return b.storeErr
+	}
 	if b.paths == nil {
 		return nil
 	}

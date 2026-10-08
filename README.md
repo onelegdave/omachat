@@ -152,7 +152,7 @@ start pairing again.
 | Voice recording and playback | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay | Optional ffmpeg/ffplay |
 | Reactions | Yes | Yes | Yes (chat-dependent) | Yes | Yes |
 | Incoming static WebP stickers | No dedicated sticker support | Yes | Yes | Yes | Not yet |
-| Older history | Fetch older pages | Page cached history and request an older phone page | Fetch older pages | Fetch older pages | No phone-history import |
+| Older history | Fetch older pages | Page cached history and request an older phone page | Fetch older pages | Fetch older pages | Page up to 500 retained local messages per chat; no phone-history import |
 | Calling | Unavailable | Unavailable | Unavailable | Unavailable | Unavailable |
 
 Threads open with the latest 60 messages; **Load older messages** pages back

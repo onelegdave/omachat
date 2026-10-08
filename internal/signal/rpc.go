@@ -69,7 +69,9 @@ func (c *RPCClient) Start(parent context.Context, dataDir string, notify func(js
 		return nil
 	}
 	ctx, cancel := context.WithCancel(parent)
-	cmd := exec.CommandContext(ctx, "signal-cli", "--data-dir", dataDir, "--output=json", "jsonRpc")
+	// Begin receiving only after Backend has selected its account. Otherwise
+	// startup notifications can arrive before listAccounts has completed.
+	cmd := exec.CommandContext(ctx, "signal-cli", "--data-dir", dataDir, "--output=json", "jsonRpc", "--receive-mode=manual")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
@@ -127,7 +129,8 @@ func (c *RPCClient) readLoop(stdout io.Reader, notify func(json.RawMessage)) {
 			continue
 		}
 		if frame.Error != nil {
-			ch <- rpcReply{err: fmt.Errorf("signal-cli RPC %d: %s", frame.Error.Code, frame.Error.Message)}
+			// Upstream messages may contain private account or message data.
+			ch <- rpcReply{err: fmt.Errorf("signal-cli RPC failed (code %d); check Signal setup and retry", frame.Error.Code)}
 		} else {
 			ch <- rpcReply{result: frame.Result}
 		}
@@ -165,6 +168,9 @@ func (c *RPCClient) waitLoop() {
 }
 
 func (c *RPCClient) Call(ctx context.Context, method string, params any, out any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	id := strconv.FormatUint(c.nextID.Add(1), 10)
 	frame := map[string]any{"jsonrpc": "2.0", "id": id, "method": method}
 	if params != nil {
