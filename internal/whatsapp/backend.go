@@ -88,8 +88,15 @@ type Backend struct {
 
 	// mediaCommitStall is a test hook invoked after a download and before the
 	// generation-checked cache commit.
-	mediaCommitStall func()
-	convertGIF       func(context.Context, string) ([]byte, error)
+	mediaCommitStall  func()
+	convertGIF        func(context.Context, string) ([]byte, error)
+	downloadAvatarURL func(context.Context, string) ([]byte, error)
+	avatarPending     map[string]uint64
+	avatarAttempted   map[string]bool
+	avatarRefresh     map[string]bool
+	avatarEpoch       map[string]uint64
+	avatarQueue       []avatarFetchJob
+	avatarWorker      bool
 }
 
 // New creates an unstarted WhatsApp backend.
@@ -109,6 +116,11 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *B
 		rawMsgs:              make(map[string]*waE2E.Message),
 		reactionActors:       make(map[string]map[string]string),
 		convertGIF:           convertGIFToMP4,
+		downloadAvatarURL:    fetchWhatsAppAvatarImage,
+		avatarPending:        make(map[string]uint64),
+		avatarAttempted:      make(map[string]bool),
+		avatarRefresh:        make(map[string]bool),
+		avatarEpoch:          make(map[string]uint64),
 		status: wire.Status{
 			Network: wire.NetworkWhatsApp,
 			State:   wire.StateUnpaired,
@@ -1698,9 +1710,11 @@ func (b *Backend) handleEventFor(gen uint64, evt any) {
 		}
 		b.status.State = wire.StateConnected
 		b.status.Error = ""
+		clear(b.avatarAttempted)
 		b.mu.Unlock()
 		b.log.Info().Msg("WhatsApp connected")
 		b.publishStatus()
+		b.queueKnownAvatarFetches(gen)
 
 	case *events.Disconnected:
 		b.mu.Lock()
@@ -1759,6 +1773,10 @@ func (b *Backend) handleEventFor(gen uint64, evt any) {
 		if !b.handleOnDemandHistorySync(gen, e.Data, e.Notification) {
 			b.ingestHistorySync(gen, e.Data)
 		}
+		b.queueKnownAvatarFetches(gen)
+
+	case *events.Picture:
+		b.handlePictureEvent(gen, e)
 
 	case *events.Contact:
 		name := strings.TrimSpace(e.Action.GetFullName())
@@ -1927,6 +1945,7 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 	b.emitLocked(wire.EventConversation, updatedConv)
 	b.emitLocked(wire.EventStatus, st)
 	b.mu.Unlock()
+	b.queueAvatarFetches(gen, []string{msg.ConversationID})
 	return true
 }
 
@@ -2152,6 +2171,7 @@ func (b *Backend) ingestHistorySyncMode(gen uint64, data *waHistorySync.HistoryS
 	}
 	b.emitLocked(wire.EventStatus, st)
 	b.mu.Unlock()
+	b.queueKnownAvatarFetches(gen)
 	return persistenceErr
 }
 

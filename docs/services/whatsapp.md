@@ -28,6 +28,9 @@ CGO and a standard C compiler such as gcc or clang.
   WebP image attachments; there is no dedicated outgoing sticker picker.
 - Saved contact names are resolved from WhatsApp's synced contact data, and
   emoji reactions can be added, switched, removed, and received live.
+- Direct-contact and standard group profile pictures are fetched in the
+  background and cached locally when available. Privacy restrictions or
+  unavailable pictures leave the initials fallback in place.
 - Record and send cross-platform M4A audio clips with optional ffmpeg/ffplay.
   Standard audio clips are used instead of native PTT because linked-device
   OGG/Opus notes fail to play on iPhone.
@@ -43,6 +46,9 @@ default). Older cached messages are removed locally when space is needed; this
 does not delete messages from WhatsApp. Downloaded photos and videos use the
 separate media cache. Increasing the budget allows more history to accumulate
 but does not start a bulk download.
+
+Profile pictures are separate from the history allowance and share the WhatsApp
+media cache with attachments.
 
 The allowance covers retained message text and metadata, reaction state, raw
 attachment-download metadata, the conversation index, and bounded SQLite/index
@@ -66,7 +72,7 @@ unavailable in the WhatsApp panel.
 | Device database | `~/.local/share/omachat/whatsapp.db` |
 | Conversation index and legacy cache | `~/.local/share/omachat/whatsapp_store.json` |
 | Paged message-history store | `~/.local/share/omachat/whatsapp_history.sqlite` |
-| Media cache | `~/.cache/omachat/media_whatsapp/` |
+| Media cache (attachments and profile pictures) | `~/.cache/omachat/media_whatsapp/` |
 | Configuration | `~/.local/share/omachat/config.json` |
 
 WhatsApp state is separate from Google Messages (`session.json`, `media/`) and
@@ -81,8 +87,9 @@ device. Empty older-history pages can mean the phone has not supplied that
 history, rather than a download failure.
 
 Media downloads validate declared and actual sizes, use private cache paths,
-and avoid exposing untrusted filenames. Session and cache files are written
-with private permissions and atomic replacement where applicable.
+and avoid exposing untrusted filenames. Profile-picture requests run in the
+background, accept bounded HTTPS images from WhatsApp CDN domains, and use
+private atomic cache writes. Session and cache files use private permissions.
 
 ## Development checks
 

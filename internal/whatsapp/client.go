@@ -21,6 +21,7 @@ type Client interface {
 	Upload(ctx context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
 	DownloadAny(ctx context.Context, msg *waE2E.Message) ([]byte, error)
 	DownloadToFile(ctx context.Context, msg whatsmeow.DownloadableMessage, file whatsmeow.File) error
+	GetProfilePictureInfo(ctx context.Context, jid types.JID, params *whatsmeow.GetProfilePictureParams) (*types.ProfilePictureInfo, error)
 	Logout(ctx context.Context) error
 	AddEventHandler(handler whatsmeow.EventHandler) uint32
 	RemoveEventHandler(id uint32) bool

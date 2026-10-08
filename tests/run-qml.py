@@ -11,7 +11,7 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description="Run isolated native QML fixtures")
-parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings"])
+parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings"])
 args = parser.parse_args()
 go_cache = subprocess.check_output(["go", "env", "GOCACHE"], text=True,
                                  env=dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")).strip()
@@ -26,11 +26,13 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     (config / "Chat").symlink_to(repo)
     image = config / "demo.svg"
     image.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#80a0c0"/></svg>')
+    image_second = config / "demo-second.svg"
+    image_second.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#c080a0"/></svg>')
     (config / "shell.qml").write_text((repo / "tests/qml/shell.qml").read_text())
     runtime = config / "runtime"
     runtime.mkdir(mode=0o700)
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen" if headless else "wayland",
-               QT_QPA_PLATFORMTHEME="", QT_QUICK_CONTROLS_STYLE="Basic", OMACHAT_TEST_IMAGE=str(image),
+               QT_QPA_PLATFORMTHEME="", QT_QUICK_CONTROLS_STYLE="Basic", OMACHAT_TEST_IMAGE=str(image), OMACHAT_TEST_IMAGE_SECOND=str(image_second),
                XDG_CONFIG_HOME=str(config / "settings"), XDG_STATE_HOME=str(config / "state"),
                XDG_DATA_HOME=str(config / "data"), XDG_CACHE_HOME=str(config / "cache"),
                XDG_RUNTIME_DIR=str(runtime), GOPROXY="off", GOSUMDB="off", GOTOOLCHAIN="local", GOCACHE=go_cache)
@@ -120,7 +122,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
         raise SystemExit(1)
 
     for fixture, marker in (("auto-popout", "OMACHAT_AUTO_POPOUT"), ("review", "OMACHAT_REVIEW"), ("panel-keyboard", "OMACHAT_PANEL_KEYBOARD"), ("chat-view", "OMACHAT_CHAT_VIEW"), ("notifications", "OMACHAT_NOTIFICATIONS"), ("unpair", "OMACHAT_UNPAIR"), ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"), ("panel-emoji-search", "OMACHAT_PANEL_EMOJI_SEARCH"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"),
-                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES")):
+                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("avatar", "OMACHAT_AVATAR")):
         (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
         result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
         print(result.stdout)

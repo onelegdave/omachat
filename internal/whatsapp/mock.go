@@ -21,16 +21,17 @@ type MockClient struct {
 	connected   atomic.Bool
 	loggedIn    atomic.Bool
 
-	ConnectFunc        func() error
-	DisconnectFunc     func()
-	GetQRChannelFunc   func(ctx context.Context) (<-chan whatsmeow.QRChannelItem, error)
-	SendMessageFunc    func(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
-	UploadFunc         func(ctx context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
-	DownloadAnyFunc    func(ctx context.Context, msg *waE2E.Message) ([]byte, error)
-	DownloadToFileFunc func(ctx context.Context, msg whatsmeow.DownloadableMessage, file whatsmeow.File) error
-	LogoutFunc         func(ctx context.Context) error
-	MarkReadFunc       func(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptTypeExtra ...types.ReceiptType) error
-	RequestHistoryFunc func(ctx context.Context, anchor types.MessageInfo, count int) error
+	ConnectFunc               func() error
+	DisconnectFunc            func()
+	GetQRChannelFunc          func(ctx context.Context) (<-chan whatsmeow.QRChannelItem, error)
+	SendMessageFunc           func(ctx context.Context, to types.JID, message *waE2E.Message, extra ...whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error)
+	UploadFunc                func(ctx context.Context, plaintext []byte, appInfo whatsmeow.MediaType) (whatsmeow.UploadResponse, error)
+	DownloadAnyFunc           func(ctx context.Context, msg *waE2E.Message) ([]byte, error)
+	DownloadToFileFunc        func(ctx context.Context, msg whatsmeow.DownloadableMessage, file whatsmeow.File) error
+	GetProfilePictureInfoFunc func(ctx context.Context, jid types.JID, params *whatsmeow.GetProfilePictureParams) (*types.ProfilePictureInfo, error)
+	LogoutFunc                func(ctx context.Context) error
+	MarkReadFunc              func(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID, receiptTypeExtra ...types.ReceiptType) error
+	RequestHistoryFunc        func(ctx context.Context, anchor types.MessageInfo, count int) error
 }
 
 // NewMockClient constructs a MockClient.
@@ -156,6 +157,13 @@ func (m *MockClient) DownloadAny(ctx context.Context, msg *waE2E.Message) ([]byt
 		0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
 		0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
 	}, nil
+}
+
+func (m *MockClient) GetProfilePictureInfo(ctx context.Context, jid types.JID, params *whatsmeow.GetProfilePictureParams) (*types.ProfilePictureInfo, error) {
+	if m.GetProfilePictureInfoFunc != nil {
+		return m.GetProfilePictureInfoFunc(ctx, jid, params)
+	}
+	return nil, whatsmeow.ErrProfilePictureNotSet
 }
 
 func (m *MockClient) Logout(ctx context.Context) error {
