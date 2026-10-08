@@ -1,6 +1,6 @@
 # WhatsApp older-history retrieval and bounded cache
 
-Status: **In progress** — the storage-bounds slice is implemented; focused and full repository gates pass, and final independent review is pending. Interruption-safe migration recovery has not started. Native UI behavior and live-phone acceptance remain pending; do not treat the feature as finished.
+Status: **In progress** — storage bounds are committed as `74b2a01`; interruption-safe migration/recovery is implemented, all focused/full local gates pass, and independent review found no blockers. Its separate commit is pending. Native UI behavior and live-phone acceptance remain pending; do not treat the feature as finished.
 Branch inspected: `merged-and-extended`.
 Feature baseline: `f7d1d06 Add WhatsApp history paging and local installer`, preserving prior keyboard/emoji extensions and PR merges.
 This document is the execution handoff. Recheck the live worktree before implementing.
@@ -118,11 +118,18 @@ These are source-inspection findings, not test results:
   of an older unviewed chat, and budget shrink. A synthetic old-JSON migration
   test verifies the migrated row survives reopen without duplication. Raw attachment
   metadata is stored in SQLite and fetched on demand; reaction actors for hot
-  chats remain in the bounded JSON index. Still unresolved: interruption at
-  every migration/write boundary, fallback usability when SQLite is unavailable,
-  and crash recovery. The accounting is over logical file sizes, not allocated
+  chats remain in the bounded JSON index. Startup retries failed imports from the
+  untouched legacy source; SQLite upserts make replay idempotent, and the source
+  is retired only after every import batch succeeds. Atomic index replacement
+  syncs the temp file before rename and the parent directory after rename. If
+  directory sync reports an error, the rename may already be visible even though
+  the writer returns an error; this remains recoverable because SQLite commits
+  precede retirement and re-import uses idempotent upserts if the old index
+  survives a restart. Still unverified: actual process-kill/power-loss fault
+  injection at every OS boundary and fallback usability when SQLite is
+  unavailable. The accounting is over logical file sizes, not allocated
   filesystem blocks or process memory.
-- **Hardening contract (implemented; full gates passed, review/commit pending):** let `B` be the selected
+- **Hardening contract (bounds committed as `74b2a01`; migration recovery implemented, review/commit pending):** let `B` be the selected
   history budget, `I = min(8 MiB, B/8)` the maximum final JSON-index size,
   `R = 1 MiB` the SQLite journal/sector safety reserve, and
   `D = floor((B - 2I - R)/3)` the SQLite main-database page ceiling. The three
@@ -173,6 +180,15 @@ These are source-inspection findings, not test results:
   decoded-size amplification beyond its small JSON payload; the reader now
   validates array counts before decoding and budgets decoded message/raw/page
   container sizes. Both regression tests failed before their respective fixes.
+- **Migration-recovery regressions:** a synthetic database trigger aborts the
+  second legacy import batch after the first batch commits. The test confirms the
+  source JSON is byte-for-byte unchanged, retries startup after removing the
+  injected failure, verifies every message is present once and only message
+  payloads are retired from JSON, then reopens again and verifies the row count
+  remains stable. Separate atomic-write tests inject a temp-file sync failure
+  and verify the old source and cleanup, and assert file-sync → rename → directory-
+  sync ordering on success. These model interruption boundaries; they are not
+  an actual kill -9 or power-loss test.
 - **Baseline evidence:** `make test`, `make lint`, and the synthetic QML
   readability fixture passed before feature changes. The full `make test-ui`
   baseline passed its Node and Python phases and several QML fixtures, then
@@ -217,9 +233,10 @@ These are source-inspection findings, not test results:
   and atomic-index peaks. Existing legacy sources above the selected limit are
   preserved and may remain unavailable. The hot-history target is a payload
   estimate, not strict process memory; filesystem allocation blocks and other
-  transient allocations are not constrained. Legacy migration interruption and
-  crash-recovery tests remain pending, and migration's stated 2× disk peak is a
-  design allowance, not yet fault-injection evidence.
+  transient allocations are not constrained. Synthetic interruption/retry and
+  fsync-order tests now pass; migration's stated 2× disk peak is still a design
+  allowance rather than an OS-level fault-injection measurement, and fallback
+  behavior when SQLite is unavailable remains limited.
 - **Live-account boundary:** no WhatsApp account data, credentials, daemon
   socket, or live phone were accessed by the agent. User-reported partial manual
   testing: group history worked, while some direct-contact requests failed with

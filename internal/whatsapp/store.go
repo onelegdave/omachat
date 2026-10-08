@@ -179,6 +179,23 @@ func saveChatIndexInternal(path string, stored *StoredChatData, maxBytes, totalB
 }
 
 func writeHistoryIndexAtomically(path string, data []byte) error {
+	return writeHistoryIndexAtomicallyWithHooks(path, data, historyIndexWriteHooks{
+		syncFile: func(file *os.File) error { return file.Sync() },
+		rename:   os.Rename,
+		syncDir:  syncHistoryDirectory,
+	})
+}
+
+type historyIndexWriteHooks struct {
+	syncFile func(*os.File) error
+	rename   func(string, string) error
+	syncDir  func(string) error
+}
+
+func writeHistoryIndexAtomicallyWithHooks(path string, data []byte, hooks historyIndexWriteHooks) error {
+	if hooks.syncFile == nil || hooks.rename == nil || hooks.syncDir == nil {
+		return errors.New("WhatsApp history atomic-write hooks must be complete")
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -208,10 +225,29 @@ func writeHistoryIndexAtomically(path string, data []byte) error {
 		_ = f.Close()
 		return err
 	}
+	if err := hooks.syncFile(f); err != nil {
+		_ = f.Close()
+		return err
+	}
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := hooks.rename(tmp, path); err != nil {
+		return err
+	}
+	return hooks.syncDir(dir)
+}
+
+func syncHistoryDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := directory.Sync(); err != nil {
+		_ = directory.Close()
+		return err
+	}
+	return directory.Close()
 }
 
 func trimStoredHotMessages(stored *StoredChatData) {

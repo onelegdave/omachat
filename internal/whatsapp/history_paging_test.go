@@ -2,7 +2,9 @@ package whatsapp
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -162,6 +164,113 @@ func TestLegacyChatStoreMigratesThenRetiresDuplicatedPayloads(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("migration duplicated history rows after reopen: %d", count)
+	}
+}
+
+func TestLegacyMigrationResumesAfterInterruptedSQLiteBatch(t *testing.T) {
+	paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+	chatID := "migration@s.whatsapp.net"
+	messages := make([]wire.Message, 10)
+	for i := range messages {
+		messages[i] = wire.Message{
+			ID:             fmt.Sprintf("legacy-%03d", i),
+			ConversationID: chatID,
+			Timestamp:      int64(i + 1),
+			Text:           strings.Repeat("x", 1<<20),
+		}
+	}
+	legacy := &StoredChatData{
+		Conversations: map[string]wire.Conversation{chatID: {ID: chatID, Name: "Legacy"}},
+		Order:         []string{chatID},
+		Messages:      map[string][]wire.Message{chatID: messages},
+	}
+	if err := saveChatStore(paths.WhatsAppStoreFile(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	sourceBefore, err := os.ReadFile(paths.WhatsAppStoreFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite3", paths.WhatsAppHistoryFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE history_messages (
+		chat_id TEXT NOT NULL,
+		message_id TEXT NOT NULL,
+		ts INTEGER NOT NULL,
+		payload BLOB NOT NULL,
+		raw_payload BLOB,
+		PRIMARY KEY(chat_id, message_id)
+	)`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TRIGGER interrupt_legacy_migration BEFORE INSERT ON history_messages
+		WHEN NEW.message_id='legacy-005'
+		BEGIN SELECT RAISE(ABORT, 'synthetic interrupted migration'); END`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	interrupted := New(zerolog.Nop(), paths, nil)
+	t.Cleanup(interrupted.Stop)
+	if err := interrupted.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var partialCount int
+	if err := interrupted.historyStore.db.QueryRow(`SELECT COUNT(*) FROM history_messages`).Scan(&partialCount); err != nil {
+		t.Fatal(err)
+	}
+	if partialCount <= 0 || partialCount >= len(messages) {
+		t.Fatalf("interrupted migration stored %d rows, want a non-empty partial batch", partialCount)
+	}
+	sourceAfter, err := os.ReadFile(paths.WhatsAppStoreFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(sourceAfter) != string(sourceBefore) {
+		t.Fatal("interrupted migration changed the legacy source before all rows were stored")
+	}
+	if _, err := interrupted.historyStore.db.Exec(`DROP TRIGGER interrupt_legacy_migration`); err != nil {
+		t.Fatal(err)
+	}
+	interrupted.Stop()
+
+	recovered := New(zerolog.Nop(), paths, nil)
+	t.Cleanup(recovered.Stop)
+	if err := recovered.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var recoveredCount int
+	if err := recovered.historyStore.db.QueryRow(`SELECT COUNT(*) FROM history_messages`).Scan(&recoveredCount); err != nil {
+		t.Fatal(err)
+	}
+	if recoveredCount != len(messages) {
+		t.Fatalf("recovery retained %d history rows, want %d", recoveredCount, len(messages))
+	}
+	indexed, err := loadChatStore(paths.WhatsAppStoreFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(indexed.Messages[chatID]) != 0 || indexed.Conversations[chatID].Name != "Legacy" {
+		t.Fatalf("successful recovery did not retire message payloads while preserving metadata: %+v", indexed)
+	}
+	recovered.Stop()
+
+	reopened := New(zerolog.Nop(), paths, nil)
+	t.Cleanup(reopened.Stop)
+	if err := reopened.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.historyStore.db.QueryRow(`SELECT COUNT(*) FROM history_messages`).Scan(&recoveredCount); err != nil {
+		t.Fatal(err)
+	}
+	if recoveredCount != len(messages) {
+		t.Fatalf("reopen duplicated or lost migrated rows: got %d, want %d", recoveredCount, len(messages))
 	}
 }
 

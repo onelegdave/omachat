@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -338,6 +339,73 @@ func TestHistoryArtifactBytesRejectsSymlinkedOwnedTemp(t *testing.T) {
 	}
 	if _, err := historyArtifactBytes(indexPath); err == nil {
 		t.Fatal("counted an owned temporary symlink as a regular history artifact")
+	}
+}
+
+func TestHistoryIndexAtomicWritePreservesSourceWhenTempSyncFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "whatsapp_store.json")
+	original := []byte(`{"version":"legacy"}`)
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	syncErr := errors.New("synthetic temp sync failure")
+	err := writeHistoryIndexAtomicallyWithHooks(path, []byte(`{"version":"replacement"}`), historyIndexWriteHooks{
+		syncFile: func(*os.File) error { return syncErr },
+		rename:   os.Rename,
+		syncDir:  func(string) error { t.Fatal("directory sync ran after temp sync failed"); return nil },
+	})
+	if !errors.Is(err, syncErr) {
+		t.Fatalf("atomic write error = %v, want temp sync failure", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("failed temp sync changed legacy source to %q", got)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), historyIndexTempPrefix) {
+			t.Fatalf("failed atomic write left temporary artifact %q", entry.Name())
+		}
+	}
+}
+
+func TestHistoryIndexAtomicWriteSyncsDirectoryAfterDurableRename(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "whatsapp_store.json")
+	var order []string
+	err := writeHistoryIndexAtomicallyWithHooks(path, []byte(`{"version":"durable"}`), historyIndexWriteHooks{
+		syncFile: func(file *os.File) error {
+			order = append(order, "file-sync")
+			return file.Sync()
+		},
+		rename: func(oldPath, newPath string) error {
+			order = append(order, "rename")
+			return os.Rename(oldPath, newPath)
+		},
+		syncDir: func(path string) error {
+			order = append(order, "directory-sync")
+			got, err := os.ReadFile(filepath.Join(path, "whatsapp_store.json"))
+			if err != nil {
+				return err
+			}
+			if string(got) != `{"version":"durable"}` {
+				return fmt.Errorf("directory sync observed unexpected replacement contents %q", got)
+			}
+			return syncHistoryDirectory(path)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"file-sync", "rename", "directory-sync"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("durability operation order = %v, want %v", order, want)
 	}
 }
 
