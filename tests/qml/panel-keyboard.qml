@@ -92,6 +92,32 @@ ShellRoot {
         check(list.activeFocus,"opening the panel focuses its retained conversation list")
         list.currentIndex=0
         list.forceActiveFocus()
+        panel.activeService="whatsapp"
+        keyboard.keyClick(Qt.Key_Tab,Qt.ControlModifier,0)
+        check(panel.activeService==="telegram","Ctrl+Tab switches to the next enabled service")
+        keyboard.keyClick(Qt.Key_Tab,Qt.ControlModifier|Qt.ShiftModifier,0)
+        check(panel.activeService==="telegram","Ctrl+Shift+Tab does not switch services")
+        panel.activeService="whatsapp"
+        fake.enabledServices=["whatsapp","signal"]
+        panel.activeService="signal"
+        keyboard.keyClick(Qt.Key_Tab,Qt.ControlModifier|Qt.ShiftModifier,0)
+        check(panel.activeService==="signal","Ctrl+Shift+Tab does not switch from Signal")
+        keyboard.keyClick(Qt.Key_Tab,Qt.ControlModifier|Qt.ShiftModifier,0)
+        check(panel.activeService==="signal","Ctrl+Shift+Tab does not switch from WhatsApp")
+        fake.enabledServices=["gmessages","whatsapp","telegram"]
+        panel.activeService="gmessages"
+        keyboard.keyClick(Qt.Key_2,Qt.ControlModifier,0)
+        check(panel.activeService==="whatsapp","Ctrl+2 selects the second enabled tab rather than a fixed provider")
+        keyboard.keyClick(Qt.Key_1,Qt.ControlModifier,0)
+        check(panel.activeService==="gmessages","Ctrl+1 selects the first enabled tab")
+        fake.enabledServices=["whatsapp","signal"]
+        panel.activeService="whatsapp"
+        keyboard.keyClick(Qt.Key_1,Qt.ControlModifier,0)
+        check(panel.activeService==="whatsapp","Ctrl+1 selects WhatsApp when it is the first enabled tab")
+        keyboard.keyClick(Qt.Key_2,Qt.ControlModifier,0)
+        check(panel.activeService==="signal","Ctrl+2 selects Signal when it is the second enabled tab")
+        fake.enabledServices=["gmessages","whatsapp","telegram"]
+        panel.activeService="gmessages"
         keyboard.keyClick(Qt.Key_Down,Qt.NoModifier,0)
         check(list.currentIndex===1,"actual panel forwards arrow keys")
         keyboard.keyClick(Qt.Key_Return,Qt.NoModifier,0)

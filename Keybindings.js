@@ -12,11 +12,11 @@ var ACTIONS = [
   { id: "emojiPicker", label: "Open emoji picker", category: "Conversation", context: "global", defaultShortcut: "Ctrl+E", keywords: "emoji reaction" },
   { id: "attach", label: "Attach file or photo", category: "Conversation", context: "global", defaultShortcut: "Ctrl+O", keywords: "upload image media" },
   { id: "refresh", label: "Refresh conversations", category: "Application", context: "navigation", defaultShortcut: "r", alternateShortcut: "Ctrl+R", keywords: "sync reload" },
-  { id: "service.gmessages", label: "Switch to Google Messages", category: "Services", context: "navigation", defaultShortcut: "1", alternateShortcut: "Ctrl+1", keywords: "google messages" },
-  { id: "service.whatsapp", label: "Switch to WhatsApp", category: "Services", context: "navigation", defaultShortcut: "2", alternateShortcut: "Ctrl+2", keywords: "" },
-  { id: "service.telegram", label: "Switch to Telegram", category: "Services", context: "navigation", defaultShortcut: "3", alternateShortcut: "Ctrl+3", keywords: "" },
-  { id: "service.messenger", label: "Switch to Messenger", category: "Services", context: "navigation", defaultShortcut: "4", alternateShortcut: "Ctrl+4", keywords: "facebook meta" },
-  { id: "service.signal", label: "Switch to Signal", category: "Services", context: "navigation", defaultShortcut: "5", alternateShortcut: "Ctrl+5", keywords: "" }
+  { id: "service.gmessages", label: "Switch to Google Messages", category: "Services", context: "navigation", defaultShortcut: "1", keywords: "google messages" },
+  { id: "service.whatsapp", label: "Switch to WhatsApp", category: "Services", context: "navigation", defaultShortcut: "2", keywords: "" },
+  { id: "service.telegram", label: "Switch to Telegram", category: "Services", context: "navigation", defaultShortcut: "3", keywords: "" },
+  { id: "service.messenger", label: "Switch to Messenger", category: "Services", context: "navigation", defaultShortcut: "4", keywords: "facebook meta" },
+  { id: "service.signal", label: "Switch to Signal", category: "Services", context: "navigation", defaultShortcut: "5", keywords: "" }
 ]
 
 var RESERVED = ["Tab", "Backtab", "Left", "Right", "Up", "Down", "Home", "End", "PageUp", "PageDown", "Enter", "Return", "Escape", "Space", "Backspace", "Delete", "Shift", "Ctrl", "Alt", "Meta"]

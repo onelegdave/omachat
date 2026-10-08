@@ -305,6 +305,14 @@ Panel {
     }
   }
 
+  function switchService(direction) {
+    if (root.serviceTabs.length < 2) return
+    var current = root.serviceTabs.findIndex(function(tab) { return tab.value === root.activeService })
+    if (current < 0) current = 0
+    var next = (current + direction + root.serviceTabs.length) % root.serviceTabs.length
+    root.setActiveService(root.serviceTabs[next].value)
+  }
+
   function activateKeyboardAction(actionId) {
     if (actionId.indexOf("service.") === 0) {
       root.setActiveService(actionId.substring("service.".length))
@@ -358,6 +366,22 @@ Panel {
     if (root.settingsOpen && bodyLoader.item && bodyLoader.item.isCapturingShortcut
         && bodyLoader.item.isCapturingShortcut()) return
     if (inbox && inbox.hasKeyboardModal && inbox.hasKeyboardModal()) return
+    if ((event.modifiers & Qt.ControlModifier) !== 0
+        && (event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ShiftModifier)) === 0
+        && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+      var tabIndex = event.key - Qt.Key_1
+      if (tabIndex < root.serviceTabs.length)
+        root.setActiveService(root.serviceTabs[tabIndex].value)
+      event.accepted = true
+      return
+    }
+    if ((event.modifiers & Qt.ControlModifier) !== 0
+        && (event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ShiftModifier)) === 0
+        && event.key === Qt.Key_Tab) {
+      root.switchService(1)
+      event.accepted = true
+      return
+    }
     var result = Keybindings.resolve(chord, editing ? "editing" : "navigation", {
       overrides: root.shortcutOverrides,
       enabledServices: root.serviceTabs.map(function(tab) { return tab.value })
