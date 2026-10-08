@@ -275,6 +275,16 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		}
 		return wire.Response{ID: req.ID, OK: true}
 	}
+	if req.Method == wire.MethodSetUnifiedInboxPreference {
+		p, err := decodeParams[wire.SetUnifiedInboxPreferenceParams](req.Params)
+		if err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+		if err := d.SetUnifiedInboxEnabled(p.Enabled); err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+		return wire.Response{ID: req.ID, OK: true, Result: d.PluginConfig()}
+	}
 	if globalSetting(req.Method) {
 		return d.dispatchGMessages(ctx, req)
 	}

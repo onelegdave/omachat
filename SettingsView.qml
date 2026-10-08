@@ -14,6 +14,7 @@ Flickable {
   signal scaleSaved(real scale)
   signal windowPreferencesSaved(bool alwaysPopout, string popoutMode)
   signal keyboardShortcutsSaved(var shortcuts)
+  signal unifiedInboxPreferenceSaved(bool enabled)
   signal emojiSearchPreferenceSaved(bool keepPreviousEmojiSearchText)
   property int whatsappHistoryCacheMB: 128
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
@@ -65,6 +66,9 @@ Flickable {
   property bool savingEmojiSearchPreference: false
   property string emojiSearchPreferenceStatusText: ""
   property var keyboardShortcuts: ({})
+  property bool unifiedInboxEnabled: false
+  property bool savingUnifiedInboxPreference: false
+  property string unifiedInboxPreferenceStatusText: ""
 
   property bool telegramConfigured: false
   property int telegramApiId: 0
@@ -101,6 +105,23 @@ Flickable {
       root.whatsappHistoryCacheMB = Number(res.whatsappHistoryCacheMB) || 128
       root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
       root.keyboardShortcuts = res.keyboardShortcuts || ({})
+      root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
+    }, "gmessages")
+  }
+
+  function saveUnifiedInboxPreference(enabled) {
+    if (!service || savingUnifiedInboxPreference) return
+    savingUnifiedInboxPreference = true
+    unifiedInboxPreferenceStatusText = ""
+    service.call("setUnifiedInboxPreference", {enabled: enabled === true}, function(ok, res) {
+      root.savingUnifiedInboxPreference = false
+      if (!ok || !res) {
+        root.unifiedInboxPreferenceStatusText = String(res || "Could not save unified inbox preference.")
+        root.load()
+        return
+      }
+      root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
+      root.unifiedInboxPreferenceSaved(root.unifiedInboxEnabled)
     }, "gmessages")
   }
 
@@ -262,6 +283,7 @@ Flickable {
           {label:"Updates", section:updatesSection},
           {label:"Services", section:serviceChoices},
           {label:"Notifications", section:notificationsSection},
+          {label:"Inbox", section:unifiedInboxSection},
           {label:"Appearance", section:windowSection},
           {label:"Keyboard", section:keyboardSection},
           {label:"Emoji picker", section:emojiPickerSection},
@@ -302,6 +324,78 @@ Flickable {
       service:root.service
       fontFamily:root.fontFamily
       uiScale:root.uiScale
+    }
+
+    Column {
+      id: unifiedInboxSection
+      objectName: "unifiedInboxSection"
+      width: parent.width
+      spacing: Style.space(8)
+      Text {
+        width: parent.width
+        text: "Inbox"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+      Item {
+        id: unifiedInboxSwitch
+        objectName: "unifiedInboxSwitch"
+        width: parent.width
+        implicitHeight: Math.max(unifiedInboxLabels.implicitHeight, unifiedInboxToggle.implicitHeight)
+        enabled: !root.savingUnifiedInboxPreference
+        activeFocusOnTab: true
+        opacity: enabled ? 1 : 0.45
+        Keys.onReturnPressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Keys.onEnterPressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Keys.onSpacePressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Column {
+          id: unifiedInboxLabels
+          anchors.left: parent.left
+          anchors.right: unifiedInboxToggle.left
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            text: "Unified inbox"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Show all enabled services in one conversation list. Toggle with Ctrl+Shift+A."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.caption)
+          }
+        }
+        ToggleSwitch {
+          id: unifiedInboxToggle
+          objectName: "unifiedInboxToggle"
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          checked: root.unifiedInboxEnabled
+          busy: root.savingUnifiedInboxPreference
+          interactive: unifiedInboxSwitch.enabled
+          hasCursor: unifiedInboxSwitch.activeFocus
+          foreground: root.foreground
+          accent: root.accentColor
+          onToggled: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        }
+      }
+      Text {
+        width: parent.width
+        visible: root.unifiedInboxPreferenceStatusText !== ""
+        wrapMode: Text.Wrap
+        text: root.unifiedInboxPreferenceStatusText
+        color: root.urgentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
+      }
     }
 
     KeyboardShortcutsView {

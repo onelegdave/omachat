@@ -33,6 +33,7 @@ func (d *Daemon) PluginConfig() wire.ConfigResult {
 		TelegramConfigured:       credErr == nil,
 		TelegramAPIID:            cfg.TelegramAPIID,
 		KeepPreviousEmojiSearchText: cfg.KeepPreviousEmojiSearchText,
+		UnifiedInboxEnabled:         cfg.UnifiedInboxEnabled,
 		WhatsAppHistoryCacheMB:      cfg.WhatsAppHistoryCacheMB,
 	}
 }
@@ -51,6 +52,10 @@ func (d *Daemon) SetKeyboardShortcuts(shortcuts map[string]string) error {
 
 func (d *Daemon) SetKeepPreviousEmojiSearchText(keep bool) error {
 	return d.config.SetKeepPreviousEmojiSearchText(keep)
+}
+
+func (d *Daemon) SetUnifiedInboxEnabled(enabled bool) error {
+	return d.config.SetUnifiedInboxEnabled(enabled)
 }
 
 func (d *Daemon) SetWhatsAppHistoryCacheMB(size int) error {

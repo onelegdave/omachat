@@ -12,12 +12,26 @@ var ACTIONS = [
   { id: "emojiPicker", label: "Open emoji picker", category: "Conversation", context: "global", defaultShortcut: "Ctrl+E", keywords: "emoji reaction" },
   { id: "attach", label: "Attach file or photo", category: "Conversation", context: "global", defaultShortcut: "Ctrl+O", keywords: "upload image media" },
   { id: "refresh", label: "Refresh conversations", category: "Application", context: "navigation", defaultShortcut: "r", alternateShortcut: "Ctrl+R", keywords: "sync reload" },
+  { id: "toggleUnifiedInbox", label: "Toggle unified inbox", category: "Navigation", context: "global", defaultShortcut: "Ctrl+Shift+A", keywords: "all services combined conversations" },
   { id: "service.gmessages", label: "Switch to Google Messages", category: "Services", context: "navigation", defaultShortcut: "1", keywords: "google messages" },
   { id: "service.whatsapp", label: "Switch to WhatsApp", category: "Services", context: "navigation", defaultShortcut: "2", keywords: "" },
   { id: "service.telegram", label: "Switch to Telegram", category: "Services", context: "navigation", defaultShortcut: "3", keywords: "" },
   { id: "service.messenger", label: "Switch to Messenger", category: "Services", context: "navigation", defaultShortcut: "4", keywords: "facebook meta" },
   { id: "service.signal", label: "Switch to Signal", category: "Services", context: "navigation", defaultShortcut: "5", keywords: "" }
 ]
+
+function buildUnifiedConversations(sources) {
+  var rows = []
+  ;(sources || []).forEach(function(source) {
+    ;(source.conversations || []).forEach(function(conversation) {
+      rows.push(Object.assign({}, conversation, {
+        network: source.network,
+        key: source.network + ":" + conversation.id
+      }))
+    })
+  })
+  return rows.sort(function(a, b) { return Number(b.timestamp || 0) - Number(a.timestamp || 0) })
+}
 
 var RESERVED = ["Tab", "Backtab", "Left", "Right", "Up", "Down", "Home", "End", "PageUp", "PageDown", "Enter", "Return", "Escape", "Space", "Backspace", "Delete", "Shift", "Ctrl", "Alt", "Meta"]
 

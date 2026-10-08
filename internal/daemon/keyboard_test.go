@@ -9,6 +9,21 @@ import (
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
+func TestUnifiedInboxPreferenceRPCPersistsWithAllServicesDisabled(t *testing.T) {
+	d := freshSelectionDaemon(t)
+	if err := d.config.SetEnabledServices([]string{}); err != nil {
+		t.Fatal(err)
+	}
+	response := d.dispatch(context.Background(), wire.Request{Method: wire.MethodSetUnifiedInboxPreference,
+		Params: wire.SetUnifiedInboxPreferenceParams{Enabled: true}})
+	if !response.OK || !d.PluginConfig().UnifiedInboxEnabled {
+		t.Fatalf("unified inbox preference was not saved: %+v", response)
+	}
+	if !store.NewConfigStore(d.paths.ConfigFile()).Get().UnifiedInboxEnabled {
+		t.Fatal("unified inbox preference did not persist to config")
+	}
+}
+
 func TestKeyboardShortcutRPCWorksWithAllServicesDisabled(t *testing.T) {
 	d := freshSelectionDaemon(t)
 	if err := d.config.SetEnabledServices([]string{}); err != nil {

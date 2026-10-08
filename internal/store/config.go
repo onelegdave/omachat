@@ -29,6 +29,7 @@ type Config struct {
 	BrowserProfile string `json:"browserProfile,omitempty"`
 
 	KeyboardShortcuts           map[string]string `json:"keyboardShortcuts,omitempty"`
+	UnifiedInboxEnabled         bool              `json:"unifiedInboxEnabled,omitempty"`
 	KeepPreviousEmojiSearchText bool              `json:"keepPreviousEmojiSearchText,omitempty"`
 	WhatsAppHistoryCacheMB      int               `json:"whatsappHistoryCacheMB,omitempty"`
 
@@ -411,7 +412,7 @@ var defaultKeyboardShortcuts = map[string][]string{
 	"help": {"?", "Ctrl+Shift+p"}, "search": {"/", "Ctrl+f"}, "compose": {"i"},
 	"history": {"m"}, "nextUnread": {"u"}, "newConversation": {"Ctrl+n"},
 	"settings": {"Ctrl+,"}, "emojiPicker": {"Ctrl+e"}, "attach": {"Ctrl+o"},
-	"refresh": {"r", "Ctrl+r"}, "service.gmessages": {"1"}, "service.whatsapp": {"2"},
+	"refresh": {"r", "Ctrl+r"}, "toggleUnifiedInbox": {"Ctrl+Shift+a"}, "service.gmessages": {"1"}, "service.whatsapp": {"2"},
 	"service.telegram": {"3"}, "service.messenger": {"4"}, "service.signal": {"5"},
 }
 
@@ -520,6 +521,14 @@ func (c *ConfigStore) SetKeyboardShortcuts(shortcuts map[string]string) error {
 		}
 		cfg["keyboardShortcuts"] = copyOfShortcuts
 		loaded.KeyboardShortcuts = copyOfShortcuts
+	})
+}
+
+// SetUnifiedInboxEnabled persists the user's unified inbox preference.
+func (c *ConfigStore) SetUnifiedInboxEnabled(enabled bool) error {
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["unifiedInboxEnabled"] = enabled
+		loaded.UnifiedInboxEnabled = enabled
 	})
 }
 

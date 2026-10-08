@@ -14,6 +14,28 @@ test('default action registry documents stable ids and sensible bindings', () =>
   assert.equal(byId.compose.defaultShortcut, 'i');
   assert.equal(byId.nextUnread.defaultShortcut, 'u');
   assert.ok(byId.settings && byId.newConversation);
+  assert.equal(byId.toggleUnifiedInbox.defaultShortcut, 'Ctrl+Shift+A');
+});
+
+test('unified inbox toggle shortcut resolves globally and is listed in keyboard help', () => {
+  const actions = plain(keyboard.actionsForQuery('unified', {}, ['gmessages']));
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].id, 'toggleUnifiedInbox');
+  assert.equal(keyboard.resolve({text:'a',key:65,ctrl:true,shift:true}, 'editing', {}).id, 'toggleUnifiedInbox');
+});
+
+test('unified conversations preserve service identity even when provider ids collide', () => {
+  const build = keyboard.buildUnifiedConversations;
+  assert.equal(typeof build, 'function');
+  const rows = plain(build([
+    {network:'whatsapp', conversations:[{id:'same',name:'A',timestamp:20},{id:'newer',timestamp:40}]},
+    {network:'signal', conversations:[{id:'same',name:'A',timestamp:30}]}
+  ]));
+  assert.deepEqual(rows.map(row => [row.network, row.id, row.key]), [
+    ['whatsapp', 'newer', 'whatsapp:newer'],
+    ['signal', 'same', 'signal:same'],
+    ['whatsapp', 'same', 'whatsapp:same']
+  ]);
 });
 
 test('shift-letter shortcuts remain stable after normalization and resolve from real key codes', () => {

@@ -20,6 +20,8 @@ Panel {
   readonly property var barIdentity: hostWidget || root
 
   property string activeService: "gmessages"
+  property bool unifiedInboxEnabled: false
+  property bool savingUnifiedInboxPreference: false
   property var notificationManager: null
   property string pendingConversationID: ""
   property string pendingConversationNetwork: ""
@@ -71,7 +73,7 @@ Panel {
     { value: "messenger", label: "Messenger", icon: "󰈎", tooltip: "Facebook Messenger" }
   ]
   property int unreadRevision: 0
-  readonly property var serviceTabs: {
+  readonly property var providerTabs: {
     var revision = unreadRevision
     return allServiceTabs.filter(function(tab) {
     return !root.service || !Array.isArray(root.service.enabledServices) || root.service.enabledServices.indexOf(tab.value) >= 0
@@ -105,7 +107,17 @@ Panel {
     function onConversationsFBChanged() { root.unreadRevision++; root.selectPendingConversation() }
     function onPaired(network) { root.rememberConversation(network, "") }
   }
-  readonly property bool noServices: serviceTabs.length === 0
+  readonly property var serviceTabs: unifiedInboxEnabled
+    ? [{value:"all", label:"All", icon:"󰭹", tooltip:"All services", unread:0}].concat(providerTabs)
+    : providerTabs
+  readonly property var unifiedConversations: Keybindings.buildUnifiedConversations(
+    providerTabs.map(function(tab) {
+      return {network:tab.value, conversations:root.service && root.service.conversationsFor
+        ? root.service.conversationsFor(tab.value) : []}
+    }))
+  readonly property bool unifiedActive: activeService === "all"
+  readonly property var activeInboxItem: unifiedActive ? unifiedInboxLoader.item : inboxLoader.item
+  readonly property bool noServices: providerTabs.length === 0
   onServiceTabsChanged: syncActiveService()
   function syncActiveService() {
     if (serviceTabs.some(function(tab) { return tab.value === root.activeService })) return
@@ -118,9 +130,9 @@ Panel {
   readonly property bool telegramLive: activeService === "telegram"
 
   readonly property var chat: service
-  readonly property int unread: service ? (typeof service.unreadFor === "function" ? service.unreadFor(activeService) : (service.unread || 0)) : 0
-  readonly property string connState: service ? (typeof service.stateFor === "function" ? service.stateFor(activeService) : (service.state || "")) : ""
-  readonly property var activeStatus: service ? (typeof service.statusFor === "function" ? service.statusFor(activeService) : service.status) : null
+  readonly property int unread: service && !unifiedActive ? (typeof service.unreadFor === "function" ? service.unreadFor(activeService) : (service.unread || 0)) : 0
+  readonly property string connState: service && !unifiedActive ? (typeof service.stateFor === "function" ? service.stateFor(activeService) : (service.state || "")) : ""
+  readonly property var activeStatus: service && !unifiedActive ? (typeof service.statusFor === "function" ? service.statusFor(activeService) : service.status) : null
 
   function readableInk(surface, preferred, minRatio) {
     return Model.readableInk(surface, preferred, minRatio)
@@ -156,8 +168,11 @@ Panel {
 
   function refresh() {
     if (noServices) return
-    if (service && service.refreshConversations) service.refreshConversations(activeService)
-    if (inboxLoader.item) inboxLoader.item.refreshThread()
+    if (service && service.refreshConversations) {
+      if (unifiedActive) providerTabs.forEach(function(tab) { service.refreshConversations(tab.value) })
+      else service.refreshConversations(activeService)
+    }
+    if (!unifiedActive && inboxLoader.item && inboxLoader.item.refreshThread) inboxLoader.item.refreshThread()
   }
 
   function cancelRestartResume() {
@@ -293,16 +308,38 @@ Panel {
     popoutModeProcess.running = true
   }
 
-  function setActiveService(v) {
+  function setActiveService(v, preserveSettings) {
     if (!serviceTabs.some(function(tab) { return tab.value === v })) return
-    root.settingsOpen = false
+    if (preserveSettings !== true) root.settingsOpen = false
     pendingConversationID = ""
     root.activeService = v
-    saveChatView({lastService: v}, v)
+    if (v !== "all") saveChatView({lastService: v}, v)
     if (root.service) {
-      root.service.currentNetwork = v
-      if (v === "gmessages" || v === "whatsapp" || v === "telegram" || v === "messenger") root.service.loadConversations(v)
+      if (v !== "all") root.service.currentNetwork = v
+      if (v === "all") root.providerTabs.forEach(function(tab) { root.service.loadConversations(tab.value) })
+      else root.service.loadConversations(v)
     }
+  }
+
+  function setUnifiedInboxEnabled(enabled) {
+    if (!service || savingUnifiedInboxPreference) return
+    savingUnifiedInboxPreference = true
+    service.call("setUnifiedInboxPreference", {enabled: enabled === true}, function(ok, res) {
+      root.savingUnifiedInboxPreference = false
+      if (!ok || !res) return
+      root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
+      if (root.unifiedInboxEnabled && !root.unifiedActive) root.setActiveService("all")
+      else if (!root.unifiedInboxEnabled && root.unifiedActive)
+        root.setActiveService(root.providerTabs.length ? root.providerTabs[0].value : "")
+    }, "gmessages")
+  }
+
+  function openUnifiedConversation(row) {
+    if (!row || !row.network || !row.id) return
+    setActiveService(row.network)
+    pendingConversationNetwork = row.network
+    pendingConversationID = row.id
+    Qt.callLater(selectPendingConversation)
   }
 
   function switchService(direction) {
@@ -321,9 +358,10 @@ Panel {
     if (actionId === "help") { actionMenu.open(); return }
     if (actionId === "settings") { root.settingsOpen = !root.settingsOpen; Qt.callLater(root.focusInitialControl); return }
     if (actionId === "refresh") { root.refresh(); return }
-    if (root.settingsOpen || !inboxLoader.item) return
-    if (typeof inboxLoader.item.handleKeyboardAction === "function")
-      inboxLoader.item.handleKeyboardAction(actionId)
+    if (actionId === "toggleUnifiedInbox") { root.setUnifiedInboxEnabled(!root.unifiedInboxEnabled); return }
+    if (root.settingsOpen || !root.activeInboxItem) return
+    if (typeof root.activeInboxItem.handleKeyboardAction === "function")
+      root.activeInboxItem.handleKeyboardAction(actionId)
   }
 
   function focusInitialControl() {
@@ -331,15 +369,15 @@ Panel {
       bodyLoader.item.focusInitialControl()
       return
     }
-    if (inboxLoader.visible && inboxLoader.item && inboxLoader.item.focusConversationList) {
-      inboxLoader.item.focusConversationList()
+    if (activeInboxItem && (inboxLoader.visible || unifiedInboxLoader.visible) && activeInboxItem.focusConversationList) {
+      activeInboxItem.focusConversationList()
       return
     }
     keyCatcher.forceActiveFocus()
   }
 
   function routeKeyboardEvent(event) {
-    var inbox = inboxLoader.visible ? inboxLoader.item : null
+    var inbox = (inboxLoader.visible || unifiedInboxLoader.visible) ? activeInboxItem : null
     var editing = !!(inbox && inbox.isKeyboardEditing && inbox.isKeyboardEditing())
     var chord = {
       text: event.text,
@@ -566,6 +604,7 @@ Panel {
       root.alwaysPopout = res.alwaysPopout === true
       root.keepPreviousEmojiSearchText = res.keepPreviousEmojiSearchText === true
       root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
+      root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
       root.panelConfigLoaded = true
       if (root.openPendingConfig) root.open()
     }, "gmessages")
@@ -847,7 +886,7 @@ Panel {
     bar: root.bar
     open: root.opened
     centerOnBar: true
-    focusTarget: inboxLoader.visible && inboxLoader.item ? inboxLoader.item.focusTarget : keyCatcher
+    focusTarget: root.activeInboxItem && (inboxLoader.visible || unifiedInboxLoader.visible) ? (root.unifiedActive ? root.activeInboxItem.keyboardInitialFocus : root.activeInboxItem.focusTarget) : keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(920))
     contentHeight: panel.cappedContentHeight(Style.space(580))
 
@@ -1173,8 +1212,21 @@ Panel {
         anchors.bottom: parent.bottom
         anchors.topMargin: Style.space(10)
         active: root.service && (root.service.connected || root.service.restartingServices === true) && (parent.anyAccountReady || !root.needsPair)
-        visible: active && root.service.connected && !root.service.restartingServices && !root.noServices && (root.serviceLive || root.telegramLive) && !root.settingsOpen && !root.needsPair
+        visible: active && root.service.connected && !root.service.restartingServices && !root.noServices && (root.serviceLive || root.telegramLive) && !root.unifiedActive && !root.settingsOpen && !root.needsPair
         sourceComponent: inboxView
+      }
+
+      Loader {
+        id: unifiedInboxLoader
+        objectName: "unifiedInboxLoader"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: headerSep.bottom
+        anchors.bottom: parent.bottom
+        anchors.topMargin: Style.space(10)
+        active: root.service && (root.service.connected || root.service.restartingServices === true)
+        visible: active && root.service.connected && !root.service.restartingServices && !root.noServices && root.unifiedActive && !root.settingsOpen
+        sourceComponent: unifiedInboxView
       }
 
       Loader {
@@ -1187,6 +1239,7 @@ Panel {
         anchors.topMargin: Style.space(10)
         sourceComponent: {
           if (root.settingsOpen) return settingsView
+          if (root.unifiedActive) return null
           if (!root.service) return missingServiceView
           if (!root.service.connected) return helperView
           if (root.noServices) return servicesOffView
@@ -1227,6 +1280,7 @@ Panel {
       service: root.service
       alwaysPopout: root.alwaysPopout
       keepPreviousEmojiSearchText: root.keepPreviousEmojiSearchText
+      unifiedInboxEnabled: root.unifiedInboxEnabled
       popoutMode: root.popoutMode
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -1236,6 +1290,11 @@ Panel {
         root.applyWindowPreferences(always, mode)
       }
       onEmojiSearchPreferenceSaved: function(keep) { root.keepPreviousEmojiSearchText = keep }
+      onUnifiedInboxPreferenceSaved: function(enabled) {
+        root.unifiedInboxEnabled = enabled
+        if (enabled) root.setActiveService("all", true)
+        else if (root.unifiedActive) root.setActiveService(root.providerTabs.length ? root.providerTabs[0].value : "", true)
+      }
       onKeyboardShortcutsSaved: function(shortcuts) {
         var validated = Keybindings.validateOverrides(shortcuts || ({}))
         if (validated.ok) root.shortcutOverrides = validated.overrides
@@ -1523,6 +1582,22 @@ Panel {
       fontFamily: root.fontFamily
       uiScale: root.uiScale
       onOpenSettingsRequested: root.settingsOpen = true
+    }
+  }
+
+  Component {
+    id: unifiedInboxView
+    UnifiedInbox {
+      conversations: root.unifiedConversations.map(function(row) {
+        var copy = Object.assign({}, row)
+        var tab = root.allServiceTabs.find(function(candidate) { return candidate.value === row.network })
+        copy.networkLabel = tab ? tab.label : row.network
+        return copy
+      })
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      uiScale: root.uiScale
+      onConversationActivated: function(row) { root.openUnifiedConversation(row) }
     }
   }
 

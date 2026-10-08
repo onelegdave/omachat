@@ -13,6 +13,9 @@ ShellRoot {
     property bool connected: true
     property string currentNetwork: "gmessages"
     property var enabledServices: ["gmessages", "whatsapp", "telegram"]
+    property bool unifiedInboxEnabled: false
+    property int loadCount: 0
+    property var loadedNetworks: []
     property bool servicesConfigLoaded: true
     property bool serviceSelectionRequired: false
     property bool savingServices: false
@@ -39,12 +42,17 @@ ShellRoot {
     function statusFor(net) { return status }
     function stateFor(net) { return "connected" }
     function conversationsFor(net) { return conversations }
+    function isServiceEnabled(net) { return enabledServices.indexOf(net)>=0 }
     function unreadFor(net) { return net === "gmessages" ? 1 : 0 }
-    function loadConversations(net) {}
+    function loadConversations(net) { loadedNetworks=loadedNetworks.concat([net]); loadCount++ }
     function refreshConversations(net) {}
     function call(method, params, callback, network) {
       if (!callback) return
-      if (method === "config") callback(true,{uiScale:1.1,enabledServices:enabledServices,keyboardShortcuts:keyboardShortcuts})
+      if (method === "config") callback(true,{uiScale:1.1,enabledServices:enabledServices,keyboardShortcuts:keyboardShortcuts, unifiedInboxEnabled:unifiedInboxEnabled})
+      else if (method === "setUnifiedInboxPreference") {
+        unifiedInboxEnabled=params.enabled
+        callback(true,{unifiedInboxEnabled:unifiedInboxEnabled})
+      }
       else if (method === "setKeyboardShortcuts") {
         for (var id in params.shortcuts) {
           if (typeof params.shortcuts[id] !== "string") { callback(false,"shortcut RPC requires string values"); return }
@@ -117,6 +125,28 @@ ShellRoot {
         keyboard.keyClick(Qt.Key_2,Qt.ControlModifier,0)
         check(panel.activeService==="signal","Ctrl+2 selects Signal when it is the second enabled tab")
         fake.enabledServices=["gmessages","whatsapp","telegram"]
+        panel.unifiedInboxEnabled=true
+        check(panel.serviceTabs[0].value==="all" && panel.serviceTabs[0].label==="All","unified inbox appears as the first labeled tab when enabled")
+        panel.activeService="gmessages"
+        keyboard.keyClick(Qt.Key_1,Qt.ControlModifier,0)
+        check(panel.activeService==="all","Ctrl+1 selects the unified inbox when enabled")
+        keyboard.keyClick(Qt.Key_2,Qt.ControlModifier,0)
+        check(panel.activeService==="gmessages","provider shortcuts shift one position when unified inbox is enabled")
+        var beforeUnifiedLoad=fake.loadCount
+        panel.setActiveService("all")
+        check(fake.loadCount===beforeUnifiedLoad+3 && fake.loadedNetworks.slice(-3).join(",")==="gmessages,whatsapp,telegram","opening unified inbox loads all enabled providers")
+        check(panel.unifiedConversations.length===12 && panel.unifiedConversations.some(function(row){return row.network==="gmessages" && row.key==="gmessages:demo-alex"}),"unified list combines cached provider conversations and tags each entry")
+        var unifiedLoader=inspect.findChild(panel,"unifiedInboxLoader")
+        check(unifiedLoader.visible && unifiedLoader.item.conversations.length===12,"enabled unified inbox presents the aggregate conversation list")
+        var selectedUnifiedNetwork=unifiedLoader.item.conversations[0].network
+        unifiedLoader.item.conversationActivated(unifiedLoader.item.conversations[0])
+        check(panel.activeService===selectedUnifiedNetwork,"activating a unified row switches to its provider thread")
+        panel.setActiveService("all")
+        keyboard.keyClick(Qt.Key_A,Qt.ControlModifier|Qt.ShiftModifier,0)
+        check(!panel.unifiedInboxEnabled,"configurable toggle shortcut turns unified inbox off")
+        keyboard.keyClick(Qt.Key_1,Qt.ControlModifier,0)
+        check(panel.activeService==="gmessages","Ctrl+1 returns to first provider when unified inbox is disabled")
+        panel.unifiedInboxEnabled=true
         panel.activeService="gmessages"
         keyboard.keyClick(Qt.Key_Down,Qt.NoModifier,0)
         check(list.currentIndex===1,"actual panel forwards arrow keys")
@@ -163,6 +193,12 @@ ShellRoot {
         Qt.callLater(function() {
         try {
         var settings=inspect.findChild(panel,"bodyLoader").item
+        var unifiedSwitch=inspect.findChild(settings,"unifiedInboxSwitch")
+        check(unifiedSwitch!==null,"Settings exposes the unified inbox toggle")
+        settings.saveUnifiedInboxPreference(true)
+        check(fake.unifiedInboxEnabled && panel.unifiedInboxEnabled && panel.activeService==="all","Settings toggle saves the persistent preference and opens unified inbox")
+        settings.saveUnifiedInboxPreference(false)
+        check(!fake.unifiedInboxEnabled && !panel.unifiedInboxEnabled && panel.activeService==="gmessages","Settings toggle disables unified inbox and restores provider tabs")
         var preferences=inspect.findChild(settings,"keyboardShortcutsSection")
         preferences.replaceShortcut("search","Ctrl+Alt+f")
         preferences.replaceShortcut("compose","Ctrl+Alt+i")

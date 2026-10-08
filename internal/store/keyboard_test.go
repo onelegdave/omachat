@@ -58,6 +58,25 @@ func TestEmptyKeyboardShortcutsRestoreDefaults(t *testing.T) {
 	}
 }
 
+func TestUnifiedInboxPreferencePersists(t *testing.T) {
+	config := NewConfigStore((&Paths{Data: t.TempDir()}).ConfigFile())
+	if config.Get().UnifiedInboxEnabled {
+		t.Fatal("unified inbox must default to off")
+	}
+	if err := config.SetUnifiedInboxEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	if !NewConfigStore(config.path).Get().UnifiedInboxEnabled {
+		t.Fatal("unified inbox preference was not persisted")
+	}
+	if err := config.SetUnifiedInboxEnabled(false); err != nil {
+		t.Fatal(err)
+	}
+	if NewConfigStore(config.path).Get().UnifiedInboxEnabled {
+		t.Fatal("disabled preference was not persisted")
+	}
+}
+
 func TestDefaultServiceShortcutsKeepNumberKeysOnly(t *testing.T) {
 	for id, shortcuts := range defaultKeyboardShortcuts {
 		if !strings.HasPrefix(id, "service.") {
