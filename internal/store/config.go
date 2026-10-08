@@ -411,8 +411,8 @@ var defaultKeyboardShortcuts = map[string][]string{
 	"help": {"?", "Ctrl+Shift+p"}, "search": {"/", "Ctrl+f"}, "compose": {"i"},
 	"history": {"m"}, "nextUnread": {"u"}, "newConversation": {"Ctrl+n"},
 	"settings": {"Ctrl+,"}, "emojiPicker": {"Ctrl+e"}, "attach": {"Ctrl+o"},
-	"refresh": {"r", "Ctrl+r"}, "service.gmessages": {"1", "Ctrl+1"}, "service.whatsapp": {"2", "Ctrl+2"},
-	"service.telegram": {"3", "Ctrl+3"}, "service.messenger": {"4", "Ctrl+4"}, "service.signal": {"5", "Ctrl+5"},
+	"refresh": {"r", "Ctrl+r"}, "service.gmessages": {"1"}, "service.whatsapp": {"2"},
+	"service.telegram": {"3"}, "service.messenger": {"4"}, "service.signal": {"5"},
 }
 
 func normalizeKeyboardShortcut(value string) (string, error) {

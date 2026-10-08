@@ -2,6 +2,7 @@ package store
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +55,18 @@ func TestEmptyKeyboardShortcutsRestoreDefaults(t *testing.T) {
 	}
 	if got := config.Get().KeyboardShortcuts; len(got) != 0 {
 		t.Fatalf("empty assignment did not restore defaults: %#v", got)
+	}
+}
+
+func TestDefaultServiceShortcutsKeepNumberKeysOnly(t *testing.T) {
+	for id, shortcuts := range defaultKeyboardShortcuts {
+		if !strings.HasPrefix(id, "service.") {
+			continue
+		}
+		for _, shortcut := range shortcuts {
+			if strings.HasPrefix(shortcut, "Ctrl+") {
+				t.Errorf("%s has fixed provider shortcut %q", id, shortcut)
+			}
+		}
 	}
 }
