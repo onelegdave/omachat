@@ -33,7 +33,7 @@ ShellRoot {
     property var statusTG: ({state:"connected", phoneOK:true})
     property int unread: 1
     property var conversations: [
-      {id:"demo-alex",name:"Alex Rivera",initials:"AR",avatarColor:"#4c80b8",preview:"See you at the trailhead!",timestamp:root.now,unread:false},
+      {id:"demo-alex",name:"Alex Rivera",initials:"AR",avatarColor:"#4c80b8",preview:"See you at the trailhead!\nI’ll be there at 9.",timestamp:root.now,unread:false},
       {id:"demo-jordan",name:"Jordan Lee",initials:"JL",avatarColor:"#aa7350",preview:"The photos look great.",timestamp:root.now-3600000000,unread:true},
       {id:"demo-sam",name:"Sam Ortega",initials:"SO",avatarColor:"#608969",preview:"Coffee tomorrow?",timestamp:root.now-7200000000,unread:false},
       {id:"demo-riley",name:"Riley Chen",initials:"RC",avatarColor:"#936b9d",preview:"Thanks for the recommendation.",timestamp:root.now-10800000000,unread:false}
@@ -86,6 +86,16 @@ ShellRoot {
     var children = item.children || []
     for (var i = 0; i < children.length; i++) {
       var found = visualChild(children[i], name)
+      if (found) return found
+    }
+    return null
+  }
+  function visualTextStartingWith(item, prefix) {
+    if (!item) return null
+    if (item.text !== undefined && String(item.text).indexOf(prefix) === 0) return item
+    var children = item.children || []
+    for (var i = 0; i < children.length; i++) {
+      var found = visualTextStartingWith(children[i], prefix)
       if (found) return found
     }
     return null
@@ -143,6 +153,10 @@ ShellRoot {
         check(unifiedLoader.visible && unifiedLoader.item.conversations.length===12,"enabled unified inbox presents the aggregate conversation list")
         var unifiedList=root.visualChild(unifiedLoader.item,"unifiedConvList")
         var firstUnifiedRow=unifiedList.itemAtIndex(0)
+        var alexUnifiedIndex=unifiedLoader.item.conversations.findIndex(function(row){return row.key==="gmessages:demo-alex"})
+        var alexUnifiedRow=unifiedList.itemAtIndex(alexUnifiedIndex)
+        var alexPreview=root.visualTextStartingWith(alexUnifiedRow,"See you at the trailhead!")
+        check(alexPreview && alexPreview.text==="See you at the trailhead! I’ll be there at 9.","unified inbox flattens multiline previews so they cannot overlap the contact name")
         var selectedUnifiedNetwork=unifiedLoader.item.conversations[0].network
         keyboard.mouseClick(firstUnifiedRow,18,18,Qt.LeftButton,Qt.NoModifier,0)
         var unifiedDetails=inspect.findChild(unifiedLoader.item,"unifiedDetailInbox")

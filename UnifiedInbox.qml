@@ -268,7 +268,7 @@ Item {
           anchors.rightMargin: Style.space(8)
           anchors.bottom: parent.bottom
           anchors.bottomMargin: Style.space(7)
-          text: convItem.modelData.preview || ""
+          text: Model.previewText(convItem.modelData)
           color: Model.readableInk(Color.popups.background, Color.muted)
           elide: Text.ElideRight
           font.family: root.fontFamily
