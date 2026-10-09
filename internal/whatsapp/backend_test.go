@@ -614,13 +614,12 @@ func TestWhatsAppHistorySync(t *testing.T) {
 	}
 
 	chatStr := "15557778888@s.whatsapp.net"
-	chatName := "History Sync Friend"
 	syncEvt := &events.HistorySync{
 		Data: &waHistorySync.HistorySync{
 			Conversations: []*waHistorySync.Conversation{
 				{
 					ID:   proto.String(chatStr),
-					Name: proto.String(chatName),
+					Name: proto.String("History Sync Friend"),
 					Messages: []*waHistorySync.HistorySyncMsg{
 						{
 							Message: &waWeb.WebMessageInfo{
@@ -647,7 +646,7 @@ func TestWhatsAppHistorySync(t *testing.T) {
 	mock.TriggerEvent(syncEvt)
 
 	convs := backend.Conversations(5)
-	if len(convs) != 1 || convs[0].ID != chatStr || convs[0].Name != chatName {
+	if len(convs) != 1 || convs[0].ID != chatStr || convs[0].Name != "15557778888" {
 		t.Fatalf("unexpected conversations after history sync: %+v", convs)
 	}
 	if convs[0].Preview != "Synced historical text" {

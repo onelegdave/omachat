@@ -125,3 +125,85 @@ func TestContactEventOverridesPushNameWithSavedContactName(t *testing.T) {
 		t.Fatalf("contact sync kept push name %q instead of saved name %q", got, syntheticSavedContactName)
 	}
 }
+
+func TestCommitFromMeDoesNotUseOwnerPushNameAsConversationName(t *testing.T) {
+	backend, _, _ := historyBackendWithAnchorChat(t, time.Second, syntheticDirectPNChat)
+	backend.device = syntheticHistoryDevice()
+	backend.commitMessage(backend.gen, wire.Message{
+		ID: "sent-from-phone", ConversationID: syntheticDirectPNChat,
+		FromMe: true, SenderName: "Owner WhatsApp Name", Timestamp: 1,
+	}, nil)
+	if got := backend.convs[syntheticDirectPNChat].Name; got != syntheticPNJID.User {
+		t.Fatalf("outgoing message named conversation %q; want contact number %q", got, syntheticPNJID.User)
+	}
+}
+
+func TestCommitMessageUsesPhoneNumberInsteadOfPushNameWithoutSavedContact(t *testing.T) {
+	backend, _, _ := historyBackendWithAnchorChat(t, time.Second, "777888999@s.whatsapp.net")
+	jid, _ := types.ParseJID("777888999@s.whatsapp.net")
+	backend.commitMessage(backend.gen, wire.Message{
+		ID: "incoming-no-contact", ConversationID: jid.String(), SenderID: jid.String(),
+		SenderName: "WhatsApp Profile Name", Timestamp: 1,
+	}, nil)
+	if got := backend.convs[jid.String()].Name; got != jid.User {
+		t.Fatalf("conversation name = %q; want phone number %q", got, jid.User)
+	}
+}
+
+func TestHistorySyncUsesPhoneNumberInsteadOfWhatsAppProfileNameWithoutSavedContact(t *testing.T) {
+	backend, _, _ := historyBackendWithAnchorChat(t, time.Second, "777888999@s.whatsapp.net")
+	data := &waHistorySync.HistorySync{Conversations: []*waHistorySync.Conversation{{
+		ID: proto.String("777888999@s.whatsapp.net"), Name: proto.String("WhatsApp Profile Name"),
+	}}}
+	if err := backend.ingestHistorySyncMode(backend.gen, data, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := backend.convs["777888999@s.whatsapp.net"].Name; got != "777888999" {
+		t.Fatalf("history conversation name = %q; want phone number", got)
+	}
+}
+
+func TestCommitMessageReusesExistingPNLIDConversation(t *testing.T) {
+	backend, _, _ := historyBackendWithAnchorChat(t, time.Second, syntheticDirectLIDChat)
+	backend.device = syntheticHistoryDevice()
+	_ = seedNamedConversation(t, backend, syntheticLIDJID, syntheticSavedContactName)
+	backend.commitMessage(backend.gen, wire.Message{
+		ID: "sent-from-phone-alias", ConversationID: syntheticDirectPNChat,
+		FromMe: true, Timestamp: 2,
+	}, nil)
+	if got := backend.Conversations(0); len(got) != 1 || got[0].ID != syntheticDirectLIDChat {
+		t.Fatalf("PN/LID messages created duplicate conversation: %#v", got)
+	}
+	if got := backend.messages[syntheticDirectLIDChat]; len(got) != 1 || got[0].ConversationID != syntheticDirectLIDChat {
+		t.Fatalf("alias message not stored under existing conversation: %#v", got)
+	}
+}
+
+func TestReconcileConversationAliasesMergesPersistedRowsAndHistory(t *testing.T) {
+	backend, _, _ := historyBackendWithAnchorChat(t, time.Second, syntheticDirectLIDChat)
+	backend.device = syntheticHistoryDevice()
+	oldID, newID := syntheticDirectLIDChat, syntheticDirectPNChat
+	backend.mu.Lock()
+	backend.convs[oldID] = wire.Conversation{ID: oldID, Name: syntheticSavedContactName, Timestamp: 2, Preview: "newer"}
+	backend.convs[newID] = wire.Conversation{ID: newID, Name: syntheticSavedContactName, Timestamp: 1, Preview: "older"}
+	backend.order = []string{oldID, newID}
+	gen := backend.gen
+	backend.mu.Unlock()
+	if err := backend.historyStore.put(context.Background(), []wire.Message{
+		{ID: "lid-message", ConversationID: oldID, Text: "from LID", Timestamp: 2},
+		{ID: "pn-message", ConversationID: newID, Text: "from PN", Timestamp: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	backend.reconcileConversationAliases(gen, backend.device)
+	if got := backend.Conversations(0); len(got) != 1 || got[0].ID != newID || got[0].Preview != "newer" {
+		t.Fatalf("merged conversations = %#v", got)
+	}
+	page, err := backend.historyStore.page(context.Background(), newID, 10, "", 0)
+	if err != nil || len(page.Messages) != 3 {
+		t.Fatalf("merged history = %+v, err=%v", page, err)
+	}
+	if _, exists := backend.convs[oldID]; exists {
+		t.Fatal("old alias conversation remains")
+	}
+}

@@ -677,3 +677,28 @@ func lastMessageID(messages []wire.Message) string {
 	}
 	return messages[len(messages)-1].ID
 }
+
+func TestHistoryStoreRekeysChatAndPreservesMessages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), historyDatabaseFileName)
+	store, err := openHistoryStore(path, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.close()
+	oldID, newID := "52707872268448@lid", "491773867431@s.whatsapp.net"
+	message := wire.Message{ID: "old-chat-message", ConversationID: oldID, Text: "fixture", Timestamp: 10}
+	if err := store.put(context.Background(), []wire.Message{message}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.rekeyChat(context.Background(), oldID, newID); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.page(context.Background(), newID, 10, "", 0)
+	if err != nil || len(page.Messages) != 1 || page.Messages[0].ConversationID != newID {
+		t.Fatalf("rekeyed page = %+v, err=%v", page, err)
+	}
+	oldPage, err := store.page(context.Background(), oldID, 10, "", 0)
+	if err != nil || len(oldPage.Messages) != 0 {
+		t.Fatalf("old chat still has rows: page=%+v err=%v", oldPage, err)
+	}
+}

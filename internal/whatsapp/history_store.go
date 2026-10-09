@@ -198,6 +198,76 @@ func (s *historyStore) maxBytesLimit() int64 {
 }
 func (s *historyStore) close() error { return s.db.Close() }
 
+func (s *historyStore) rekeyChat(ctx context.Context, oldID, newID string) error {
+	if oldID == "" || newID == "" || oldID == newID {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT message_id,payload,raw_payload FROM history_messages WHERE chat_id=?`, oldID)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id      string
+		payload []byte
+		raw     []byte
+	}
+	var messages []row
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.id, &item.payload, &item.raw); err != nil {
+			rows.Close()
+			return err
+		}
+		messages = append(messages, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, item := range messages {
+		var message wire.Message
+		if err := json.Unmarshal(item.payload, &message); err != nil {
+			return fmt.Errorf("decode WhatsApp message during chat rekey: %w", err)
+		}
+		var duplicate bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM history_messages WHERE chat_id=? AND message_id=?)`, newID, item.id).Scan(&duplicate); err != nil {
+			return err
+		}
+		if duplicate {
+			if _, err := tx.ExecContext(ctx, `UPDATE history_messages SET raw_payload=COALESCE(raw_payload,?) WHERE chat_id=? AND message_id=?`, item.raw, newID, item.id); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM history_messages WHERE chat_id=? AND message_id=?`, oldID, item.id); err != nil {
+				return err
+			}
+			continue
+		}
+		message.ConversationID = newID
+		payload, err := json.Marshal(message)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE history_messages SET chat_id=?,payload=? WHERE chat_id=? AND message_id=?`, newID, payload, oldID, item.id); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO history_chat_state(chat_id,last_viewed,last_evicted,evicted_before) SELECT ?,last_viewed,last_evicted,evicted_before FROM history_chat_state WHERE chat_id=? ON CONFLICT(chat_id) DO UPDATE SET last_viewed=max(last_viewed,excluded.last_viewed),last_evicted=max(last_evicted,excluded.last_evicted),evicted_before=max(evicted_before,excluded.evicted_before)`, newID, oldID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM history_chat_state WHERE chat_id=?`, oldID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *historyStore) put(ctx context.Context, messages []wire.Message, rawByMessage ...map[string][]byte) error {
 	if len(messages) == 0 {
 		return nil

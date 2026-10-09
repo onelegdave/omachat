@@ -372,6 +372,7 @@ func (b *Backend) Start(ctx context.Context) error {
 	gen = b.gen
 	b.mu.Unlock()
 	b.refreshConversationNames(deviceStore)
+	b.reconcileConversationAliases(gen, deviceStore)
 
 	if !isPaired {
 		b.setState(wire.StateUnpaired, "")
@@ -468,9 +469,6 @@ func (b *Backend) refreshConversationNames(device *waStore.Device) {
 		if name := lookupSavedContactName(ctx, device, jid); name != "" {
 			b.updateSavedContactName(gen, name, jid)
 			continue
-		}
-		if name := lookupContactName(ctx, device, jid); name != "" {
-			b.updateConversationNames(gen, name, jid)
 		}
 	}
 }
@@ -1856,6 +1854,19 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 		b.mu.Unlock()
 		return false
 	}
+	if jid, err := types.ParseJID(msg.ConversationID); err == nil && b.device != nil && b.device.LIDs != nil {
+		ctx := b.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		for _, alias := range jidIdentityAliases(ctx, b.device, jid) {
+			id := alias.String()
+			if _, exists := b.convs[id]; exists {
+				msg.ConversationID = id
+				break
+			}
+		}
+	}
 	if raw != nil && msg.ID != "" && !isViewOnce(raw) && !isEphemeralWrapped(raw) {
 		b.rawMsgs[rawMediaKey(msg.ConversationID, msg.ID)] = raw
 	}
@@ -1892,10 +1903,7 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 	conv, ok := b.convs[msg.ConversationID]
 	if !ok {
 		jid, _ := types.ParseJID(msg.ConversationID)
-		nameHint := strings.TrimSpace(msg.SenderName)
-		if sender, err := types.ParseJID(msg.SenderID); jid.Server == types.GroupServer || (err == nil && nameHint == sender.User) {
-			nameHint = ""
-		}
+		nameHint := ""
 		name := formatConversationName(jid, nameHint)
 		conv = wire.Conversation{
 			ID:          msg.ConversationID,
@@ -1903,12 +1911,6 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 			AvatarColor: avatarColor(msg.ConversationID),
 			Initials:    initials(name),
 			IsGroup:     jid.Server == types.GroupServer,
-		}
-	} else if !msg.FromMe && strings.TrimSpace(msg.SenderName) != "" {
-		jid, _ := types.ParseJID(msg.ConversationID)
-		if isFallbackConversationName(jid, conv.Name) {
-			conv.Name = strings.TrimSpace(msg.SenderName)
-			conv.Initials = initials(conv.Name)
 		}
 	}
 	msg.Reactions = reactionsFromActors(b.reactionActors[rawMediaKey(msg.ConversationID, msg.ID)])
@@ -1982,17 +1984,15 @@ func (b *Backend) ingestHistorySyncMode(gen uint64, data *waHistorySync.HistoryS
 	savedNames := make(map[string]string)
 	for _, c := range data.GetConversations() {
 		chatID := c.GetID()
-		if _, err := types.ParseJID(chatID); err != nil {
+		jid, err := types.ParseJID(chatID)
+		if err != nil {
 			continue
 		}
 		contactJID := historyConversationContactJID(c)
 		savedName := lookupSavedContactName(ctx, device, contactJID)
 		name := savedName
-		if name == "" {
+		if name == "" && (jid.Server == types.GroupServer || jid.Server == types.HiddenUserServer) {
 			name = strings.TrimSpace(c.GetName())
-		}
-		if name == "" {
-			name = lookupContactName(ctx, device, contactJID)
 		}
 		if savedName != "" {
 			savedNames[chatID] = savedName
