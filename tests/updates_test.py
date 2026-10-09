@@ -88,6 +88,21 @@ class UpdatesTest(unittest.TestCase):
         self.assertEqual(helper.read_text(), 'old')
         self.assertEqual(list((self.root / 'bin').glob('.omachatd-*')), [])
 
+    def test_build_stages_outside_watched_plugin_tree(self):
+        cache_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(cache_tmp.cleanup)
+        cache = Path(cache_tmp.name)
+        with patch.dict('os.environ', {'XDG_CACHE_HOME': str(cache)}):
+            def compile(argv, **kwargs):
+                output = Path(argv[argv.index('-o') + 1])
+                self.assertFalse(output.is_relative_to(self.root))
+                self.assertTrue(output.is_relative_to(cache))
+                output.write_text('new')
+            with patch.object(u.subprocess, 'run', side_effect=compile):
+                u.build()
+        self.assertTrue((cache / 'omachat/build.lock').exists())
+        self.assertEqual(list((self.root / 'bin').glob('.omachatd-*')), [])
+
     def test_build_replacement_and_mid_build_change(self):
         def compile(argv, **kwargs):
             self.assertEqual(kwargs['env']['GOPROXY'], 'off')

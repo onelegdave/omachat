@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -13,6 +14,15 @@ Column {
   property bool dirty: false
   property string resultText: ""
   property bool resultIsError: false
+  property bool checkingSignalCLI: false
+  property bool signalInstallPromptOpen: false
+  property var pendingSignalChoice: []
+  property var launch: function(argv) { installLauncher.command = argv; installLauncher.running = true }
+  property var probeSignalCLI: function() { signalProbe.running = true }
+  readonly property string dependencyScriptPath: {
+    var url=String(Qt.resolvedUrl("scripts/dependencies.py"))
+    return url.indexOf("file://") === 0 ? decodeURIComponent(url.substring(7)) : url
+  }
   readonly property bool ready: service && service.servicesConfigLoaded === true
   readonly property bool saving: service && service.savingServices === true
   readonly property color ink: Model.readableInk(Color.popups.background, Color.popups.text, 7)
@@ -27,18 +37,56 @@ Column {
     if (!ready || saving) return
     var next=selected.filter(function(n) { return n !== net })
     if(enabled) next.push(net)
-    selected=["gmessages","whatsapp","telegram","messenger"].filter(function(n) { return next.indexOf(n)>=0 })
+    selected=["gmessages","whatsapp","telegram","messenger","signal"].filter(function(n) { return next.indexOf(n)>=0 })
     dirty=true
     resultText=""
   }
-  function save() {
+  function persist(choice) {
     if (!ready || saving || typeof service.setEnabledServices !== "function") return
     resultText=""
-    service.setEnabledServices(selected.slice(),function(ok,res) {
+    service.setEnabledServices(choice.slice(),function(ok,res) {
       root.resultIsError=!ok
       if(ok) { root.reload(); root.resultText="Service choices saved." }
       else root.resultText=String(res)
     })
+  }
+  function save() {
+    if (!ready || saving || checkingSignalCLI) return
+    var choice=selected.slice()
+    var enablingSignal=choice.indexOf("signal")>=0 && service.enabledServices.indexOf("signal")<0
+    if (!enablingSignal) { persist(choice); return }
+    pendingSignalChoice=choice
+    checkingSignalCLI=true
+    resultText="Checking for signal-cli..."
+    probeSignalCLI()
+  }
+  function acceptSignalProbe(code) {
+    if (!checkingSignalCLI) return
+    checkingSignalCLI=false
+    if (code === 0) {
+      var choice=pendingSignalChoice.slice()
+      pendingSignalChoice=[]
+      persist(choice)
+    } else {
+      resultText=""
+      signalInstallPromptOpen=true
+    }
+  }
+  function confirmSignalInstall() {
+    signalInstallPromptOpen=false
+    var choice=pendingSignalChoice.slice()
+    pendingSignalChoice=[]
+    resultText="Opening a terminal to install signal-cli. Review and confirm the package transaction there."
+    launch(["omarchy","launch","terminal","python3",dependencyScriptPath,"--install","signalcli"])
+    persist(choice)
+  }
+  function cancelSignalInstall() {
+    signalInstallPromptOpen=false
+    pendingSignalChoice=[]
+    selected=service.enabledServices.slice()
+    dirty=false
+    resultIsError=false
+    resultText="Nothing was installed. Your saved service choices were not changed."
   }
   onServiceChanged: reload()
   Component.onCompleted: reload()
@@ -55,7 +103,7 @@ Column {
   }
   Text {
     width: parent.width; wrapMode: Text.Wrap
-    text: "Turn off any service you do not want. Applying changes briefly restarts the shared helper, so other enabled services reconnect too. A disabled service does not start again and its tab is hidden. Credentials are kept; Unpair is separate. You may turn off all services. No dependencies are installed."
+    text: "Turn off any service you do not want. Applying changes briefly restarts the shared helper, so other enabled services reconnect too. A disabled service does not start again and its tab is hidden. Credentials are kept; Unpair is separate. You may turn off all services. If Signal is enabled without signal-cli, OmaChat asks before opening its installer."
     color: root.ink; font.family: root.fontFamily; font.pixelSize: root.fs(Style.font.body)
   }
   Text {
@@ -68,7 +116,8 @@ Column {
       {id:"gmessages",name:"Google Messages",hint:"Browser pairing needs SQLite, libsecret, and an unlocked keyring."},
       {id:"whatsapp",name:"WhatsApp",hint:"QR pairing needs qrencode and your phone's Linked devices screen."},
       {id:"telegram",name:"Telegram",hint:"Needs your API credentials, qrencode, and your phone's Devices screen."},
-      {id:"messenger",name:"Messenger",hint:"Browser pairing needs SQLite, libsecret, an unlocked keyring, and an active Facebook or Messenger login."}
+      {id:"messenger",name:"Messenger",hint:"Browser pairing needs SQLite, libsecret, an unlocked keyring, and an active Facebook or Messenger login."},
+      {id:"signal",name:"Signal",hint:"Starts the optional signal-cli service only while enabled; pairing uses your phone's Linked devices screen."}
     ]
     Column {
       required property var modelData
@@ -94,8 +143,8 @@ Column {
     width:parent.width; spacing:Style.space(8)
     Button {
       objectName:"saveServicesButton"
-      text:root.saving ? "Applying..." : "Apply service choices"
-      enabled:root.ready && !root.saving && (root.dirty || root.service.serviceSelectionRequired)
+      text:root.checkingSignalCLI ? "Checking Signal..." : (root.saving ? "Applying..." : "Apply service choices")
+      enabled:root.ready && !root.saving && !root.checkingSignalCLI && !root.signalInstallPromptOpen && (root.dirty || root.service.serviceSelectionRequired)
       bordered:true; foreground:root.ink; fontFamily:root.fontFamily
       onClicked:root.save()
     }
@@ -111,4 +160,34 @@ Column {
     visible:text !== ""
     color:root.resultIsError || (root.service && root.service.servicesError) ? root.errorInk : root.ink; font.family:root.fontFamily; font.pixelSize:root.fs(Style.font.body)
   }
+  Process {
+    id: signalProbe
+    command:["signal-cli","--version"]
+    onExited:function(code) { root.acceptSignalProbe(code) }
+  }
+  Process {
+    id: installLauncher
+    onExited:function(code) {
+      if(code!==0) {
+        root.resultIsError=true
+        root.resultText="Could not open the signal-cli installer. Signal remains selected but cannot start until signal-cli is installed."
+      }
+    }
+  }
+  ConfirmDialog {
+    id: signalInstallDialog
+    objectName:"signalInstallDialog"
+    anchors.fill:parent
+    z:100
+    opened:root.signalInstallPromptOpen
+    message:"Signal needs the external signal-cli dependency. Do you want to install signal-cli?\n\nInstall and enable opens a terminal showing the AUR package source and command. The package manager asks for confirmation again before changing the system."
+    confirmText:"Install and enable"
+    cancelText:"Cancel"
+    foreground:root.ink
+    background:Color.popups.background
+    fontFamily:root.fontFamily
+    onConfirmed:root.confirmSignalInstall()
+    onCanceled:root.cancelSignalInstall()
+  }
+  onSignalInstallPromptOpenChanged:if(signalInstallPromptOpen) signalInstallDialog.forceActiveFocus()
 }

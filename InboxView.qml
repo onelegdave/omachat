@@ -5,23 +5,33 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "EmojiSearch.js" as EmojiSearch
 
 Item {
   id: root
 
   property var service: null
+  readonly property var keyboardInitialFocus: sidebarVisible ? convList : messageList
   property color foreground: Model.readableInk(Color.popups.background, Color.popups.text, 7)
   property string fontFamily: Style.font.family
   property real uiScale: 1
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
   property var host: null
   property var settings: null
+  property var keyboardActionRouter: null
   property string network: "gmessages"
+  property bool detailOnly: false
+  property string detailConversationID: ""
+  property bool sidebarCollapsed: false
+  property var lastConversations: ({})
+  readonly property bool sidebarVisible: !sidebarCollapsed || selectedConvID === ""
+  signal conversationSelected(string network, string id)
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
   readonly property bool isMessenger: network === "messenger"
+  readonly property bool isSignal: network === "signal"
   readonly property bool reactionsSupported: true
-  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : "Google Messages"))
+  property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : (isSignal ? "Signal" : "Google Messages")))
 
   readonly property color dim: Model.readableInk(panelBg, Color.muted)
   readonly property color errorInk: Model.readableInk(panelBg, Color.urgent)
@@ -97,6 +107,7 @@ Item {
   property double historyCursorTime: 0
   property string historyError: ""
   property string historyNotice: ""
+  property string historyFetchState: ""
   property var historyCursors: ({})
   property int historyRequest: 0
   property int viewportRevision: 0
@@ -114,8 +125,21 @@ Item {
   property bool copied: false
   property bool composerFocus: false
   property bool linkConfirmOpen: false
+  property bool newChatOpen: false
+  property bool newChatGroup: false
+  property bool newChatLoading: false
+  property string newChatError: ""
+  property var newChatTargets: []
+  property var newChatSelected: ({})
   property string pendingUrl: ""
   property var emojiList: []
+  property var emojiBundleRows: []
+  property var emojiSearchIndex: null
+  property var emojiSearchResults: []
+  property string emojiSearchQuery: ""
+  property bool keepPreviousEmojiSearchText: false
+  property bool emojiSearchDataLoaded: false
+  property var emojiPickerOpener: null
   readonly property var reactionChoices: ["❤️", "👍", "👎", "😂", "😮", "😢"]
   readonly property var fallbackEmoji: [
     { e: "😀", k: "grinning" }, { e: "😂", k: "laugh tears" },
@@ -148,6 +172,17 @@ Item {
     for (var i = 0; i < conversations.length; i++) if (conversations[i].unread === true) n++
     return n
   }
+
+  readonly property var visibleNewChatTargets: {
+    var query = newChatSearch ? newChatSearch.text.trim().toLowerCase() : ""
+    if (query === "") return newChatTargets
+    return newChatTargets.filter(function(target) {
+      return String(target.name || "").toLowerCase().indexOf(query) >= 0
+        || String(target.detail || "").toLowerCase().indexOf(query) >= 0
+    })
+  }
+
+  readonly property int newChatSelectionCount: Object.keys(newChatSelected).length
 
 
   property var _selectedByNet: ({})
@@ -186,14 +221,35 @@ Item {
     reactingTo = ""
     threadError = ""
 
-    var restoredID = _selectedByNet[network] || ""
     selectedConvID = ""
     messages = []
     grouped = []
-    if (restoredID) {
-      selectConversation(restoredID)
-    } else {
-      if (composer) composer.text = ""
+    if (composer) composer.text = ""
+    if (root.detailOnly) Qt.callLater(root.restoreConversation)
+    else restoreConversation()
+  }
+
+  onConversationsChanged: restoreConversation()
+  onDetailConversationIDChanged: {
+    if (!root.detailOnly || !root.detailConversationID || root.detailConversationID === root.selectedConvID) return
+    if (root.conversations.some(function(conv) { return conv.id === root.detailConversationID }))
+      root.selectConversation(root.detailConversationID, false)
+  }
+  onLastConversationsChanged: restoreConversation()
+  Component.onCompleted: restoreConversation()
+
+  function restoreConversation() {
+    if (!composer || selectedConvID !== "") return
+    var sessionID = _selectedByNet[network] || ""
+    var id = root.detailOnly ? root.detailConversationID : (sessionID || lastConversations[network] || "")
+    var canRestore = root.detailOnly
+      ? conversations.some(function(conv) { return conv.id === id })
+      : (sessionID || conversations.some(function(conv) { return conv.id === id }))
+    if (id && canRestore) {
+      selectConversation(id, false)
+      if (panelOpen && !sidebarVisible) Qt.callLater(function() {
+        if (root.panelOpen && root.selectedConvID === id && !root.composerFocus) messageList.forceActiveFocus()
+      })
     }
   }
 
@@ -209,8 +265,205 @@ Item {
     return fallback
   }
 
-  function selectConversation(id) {
-    if (id === selectedConvID || sendingMedia) return
+  function isKeyboardEditing() {
+    return composerFocus || linkConfirmOpen || newChatOpen || emojiPickerOpen
+  }
+
+  function hasKeyboardModal() { return linkConfirmOpen || newChatOpen || emojiPickerOpen }
+
+  function updateEmojiSearchResults() {
+    if (emojiSearchIndex) emojiSearchResults = EmojiSearch.search(emojiSearchIndex, emojiSearchQuery)
+    else emojiSearchResults = fallbackEmoji.slice()
+    if (emojiGrid) emojiGrid.currentIndex = emojiSearchResults.length ? 0 : -1
+  }
+
+  function rebuildEmojiSearchIndex() {
+    var rows = []
+    var byGlyph = Object.create(null)
+    function add(source) {
+      if (!source || !Array.isArray(source)) return
+      for (var i = 0; i < source.length; i++) {
+        var item = source[i] || {}
+        var glyph = String(item.e || "")
+        if (!glyph) continue
+        var key = "$" + glyph.replace(/[\uFE0E\uFE0F]/g, "")
+        var row = byGlyph[key]
+        if (!row) {
+          row = { e: glyph, label: String(item.label || ""), keywords: [], aliases: [] }
+          byGlyph[key] = row
+          rows.push(row)
+        } else if (!row.label && item.label) row.label = String(item.label)
+        var words = Array.isArray(item.keywords) ? item.keywords : String(item.k || "").split(/\s+/)
+        words.forEach(function(word) {
+          if (word && row.keywords.indexOf(String(word)) < 0) row.keywords.push(String(word))
+        })
+        ;(Array.isArray(item.aliases) ? item.aliases : []).forEach(function(alias) {
+          if (alias && row.aliases.indexOf(String(alias)) < 0) row.aliases.push(String(alias))
+        })
+      }
+    }
+    add(emojiBundleRows)
+    add(emojiList)
+    add(fallbackEmoji)
+    emojiSearchIndex = EmojiSearch.buildIndex(rows)
+    updateEmojiSearchResults()
+  }
+
+  function closeEmojiPicker() {
+    emojiPickerOpen = false
+    emojiPickerForReact = false
+    var opener = emojiPickerOpener
+    emojiPickerOpener = null
+    if (opener && opener.forceActiveFocus) opener.forceActiveFocus()
+    else if (composer.enabled) composer.forceActiveFocus()
+  }
+
+  function openEmojiPicker(opener, forReaction) {
+    emojiPickerForReact = forReaction === true
+    emojiPickerOpener = opener || null
+    var query = EmojiSearch.searchTextForOpen(emojiSearchField.text, keepPreviousEmojiSearchText)
+    emojiSearchField.text = query
+    emojiSearchQuery = query
+    emojiPickerOpen = true
+    updateEmojiSearchResults()
+  }
+
+  function focusEmojiGrid() {
+    if (emojiGrid.count < 1) return
+    emojiGrid.currentIndex = EmojiSearch.gridIndexForFocus(emojiGrid.currentIndex, emojiGrid.count)
+    emojiGrid.forceActiveFocus()
+  }
+
+  function focusConversationList() {
+    if (!sidebarVisible) {
+      if (messageList) messageList.forceActiveFocus()
+      return
+    }
+    if (!convList || convList.count < 1) return
+    var selectedIndex = -1
+    for (var i = 0; i < visibleConversations.length; i++) {
+      if (visibleConversations[i].id === selectedConvID) { selectedIndex = i; break }
+    }
+    convList.currentIndex = selectedIndex >= 0 ? selectedIndex : Math.max(0, convList.currentIndex)
+    convList.forceActiveFocus()
+  }
+
+  function moveConversationCursor(delta) {
+    if (!convList || convList.count < 1) return
+    var current = convList.currentIndex < 0 ? 0 : convList.currentIndex
+    convList.currentIndex = Math.max(0, Math.min(convList.count - 1, current + delta))
+    convList.forceActiveFocus()
+  }
+
+  function openFocusedConversation() {
+    var conversation = visibleConversations[convList.currentIndex]
+    if (!conversation) return
+    selectConversation(conversation.id)
+    if (composer.enabled) composer.forceActiveFocus()
+    else if (messageList.count > 0) messageList.forceActiveFocus()
+    else convList.forceActiveFocus()
+  }
+
+  function leaveKeyboardEditor() {
+    if (emojiPickerOpen) {
+      closeEmojiPicker()
+      return
+    }
+    if (linkConfirmOpen) {
+      cancelOpenUrl()
+      if (composer.enabled) composer.forceActiveFocus()
+      return
+    }
+    if (newChatOpen) {
+      newChatOpen = false
+      focusConversationList()
+      return
+    }
+    if (composerFocus) focusConversationList()
+  }
+
+  function handleKeyboardAction(actionId) {
+    if (actionId === "search") {
+      searchField.forceActiveFocus()
+      searchField.selectAll()
+    } else if (actionId === "compose") {
+      if (composer.enabled) composer.forceActiveFocus()
+    } else if (actionId === "history") {
+      messageList.forceActiveFocus()
+      if (messageList.count > 0) messageList.currentIndex = messageList.count - 1
+    } else if (actionId === "nextUnread") {
+      if (conversations.length === 0) return
+      var start = -1
+      for (var i = 0; i < conversations.length; i++) {
+        if (conversations[i].id === selectedConvID) { start = i; break }
+      }
+      for (var step = 1; step <= conversations.length; step++) {
+        var index = (start + step + conversations.length) % conversations.length
+        if (conversations[index].unread) {
+          convList.currentIndex = index
+          selectConversation(conversations[index].id)
+          focusConversationList()
+          return
+        }
+      }
+    } else if (actionId === "newConversation") {
+      openNewChat()
+    } else if (actionId === "emojiPicker") {
+      if (composer.enabled) {
+        openEmojiPicker(composer, false)
+      }
+    } else if (actionId === "attach") {
+      if (composer.enabled && !sendingMedia) attachFromDisk()
+    }
+  }
+
+  function openNewChat() {
+    if (!service || newChatLoading) return
+    newChatOpen = true
+    newChatGroup = false
+    newChatError = ""
+    newChatTargets = []
+    newChatSelected = ({})
+    newChatLoading = true
+    service.call("conversationTargets", null, function(ok, result) {
+      newChatLoading = false
+      if (!newChatOpen) return
+      if (!ok) { newChatError = String(result); return }
+      newChatTargets = result || []
+      Qt.callLater(function() { if (root.newChatOpen) newChatSearch.forceActiveFocus() })
+    }, network)
+  }
+
+  function toggleNewChatTarget(id) {
+    var selected = Object.assign({}, newChatSelected)
+    if (!newChatGroup) selected = ({})
+    if (selected[id]) delete selected[id]
+    else selected[id] = true
+    newChatSelected = selected
+  }
+
+  function createNewChat() {
+    if (!service || newChatLoading || newChatSelectionCount < 1) return
+    if (newChatGroup && newChatSelectionCount < 2) {
+      newChatError = "Select at least two contacts for a group."
+      return
+    }
+    var name = newChatGroup ? newChatName.text.trim() : ""
+    if (newChatGroup && name === "") { newChatError = "Enter a group name."; return }
+    newChatLoading = true
+    newChatError = ""
+    service.call("createConversation", { targetIDs: Object.keys(newChatSelected), name: name }, function(ok, result) {
+      newChatLoading = false
+      if (!ok) { newChatError = String(result); return }
+      newChatOpen = false
+      if (service.loadConversations) service.loadConversations(network)
+      if (result && result.id) selectConversation(String(result.id))
+    }, network)
+  }
+
+  function selectConversation(id, remember) {
+    if (sendingMedia) return
+    if (id === selectedConvID) return
     var saved = Object.assign({}, _draftsByNet)
     if (selectedConvID) {
       var netDrafts = Object.assign({}, saved[network] || {})
@@ -231,6 +484,7 @@ Item {
     historyCursorTime = 0
     historyError = ""
     historyNotice = ""
+    historyFetchState = ""
     historyCursors = ({})
     stopPlayback()
     if (recording) stopRecording(false)
@@ -239,6 +493,10 @@ Item {
     reactingTo = ""
     pendingAttachment = ""
     selectedConvID = id
+    var nextSel = Object.assign({}, _selectedByNet)
+    nextSel[network] = id
+    _selectedByNet = nextSel
+    if (remember !== false) conversationSelected(network, id)
     var currentNetDrafts = _draftsByNet[network] || {}
     composer.text = currentNetDrafts[id] || ""
     attachCaption.text = ""
@@ -302,7 +560,7 @@ Item {
     var time = Number(res.cursorTime || 0)
     var key = JSON.stringify([id, time])
     historyCursorStalled = false
-    hasOlder = res.hasMore === true && id !== ""
+    hasOlder = (res.hasMore === true || res.canFetchOlder === true || res.historyFetchState === "loading") && id !== ""
     if (hasOlder && older && historyCursors[key]) {
       hasOlder = false
       historyCursorStalled = true
@@ -342,6 +600,7 @@ Item {
       displayMessages(Model.mergePage(messages, combined, false), initial || messageList.atYEnd)
       historyError = ""
       historyNotice = String(res.historyNotice || "")
+      historyFetchState = String(res.historyFetchState || "")
       if (!historyExpanded || historyCursorStalled) {
         readHistoryCursor(res, false)
       }
@@ -350,7 +609,7 @@ Item {
   }
 
   function loadOlderMessages() {
-    if (!service || selectedConvID === "" || loadingMessages || loadingOlder || !hasOlder) return
+    if (!service || selectedConvID === "" || loadingMessages || loadingOlder || historyFetchState === "loading" || !hasOlder) return
     loadingOlder = true
     historyError = ""
     var request = ++historyRequest
@@ -362,6 +621,23 @@ Item {
       if (source !== service || target !== selectedConvID || generation !== selectionGeneration || request !== historyRequest) return
       loadingOlder = false
       if (!ok) { historyError = "Could not load older messages. Try again."; return }
+      historyFetchState = String(res.historyFetchState || "")
+      if (historyFetchState === "loading") {
+        hasOlder = true
+        historyNotice = "Requesting older history from your phone…"
+        return
+      }
+      if (historyFetchState === "unavailable") {
+        hasOlder = false
+        historyNotice = String(res.historyNotice || "Your phone did not provide an older history page.")
+        return
+      }
+      if (historyFetchState === "failed") {
+        hasOlder = true
+        historyError = String(res.historyNotice || "Could not load older messages. Try again.")
+        return
+      }
+      historyNotice = String(res.historyNotice || "")
       displayMessages(Model.mergePage(messages, res.messages || [], true), false)
       historyExpanded = true
       readHistoryCursor(res, true)
@@ -369,13 +645,18 @@ Item {
   }
 
   function markThreadRead() {
-    if (!panelOpen || !service || selectedConvID === "" || messages.length === 0) return
+    if (!panelOpen || !service || selectedConvID === "" || !selectedConv || selectedConv.unread !== true) return
     var last = null
     for (var i = messages.length - 1; i >= 0; i--) {
       if (messages[i].id && !messages[i].provisional) { last = messages[i]; break }
     }
-    if (!last) return
-    service.call("markRead", { conversationID: selectedConvID, messageID: last.id }, null, root.network)
+    // Telegram retains a dialog watermark even when its top item is a service
+    // event that OmaChat does not render. Messenger likewise supports
+    // conversation-level acknowledgement without a rendered message ID.
+    if (!last && !root.isTelegram && !root.isMessenger) return
+    service.call("markRead", { conversationID: selectedConvID, messageID: last ? last.id : "" }, function(ok, error) {
+      if (!ok) root.threadError = String(error)
+    }, root.network)
   }
 
   function sendMessage(rawText) {
@@ -413,14 +694,28 @@ Item {
 
   function chooseEmoji(emoji) {
     if (!emoji) return
-    if (root.emojiPickerForReact && root.reactingTo) root.react(root.reactingTo, emoji)
-    else composer.text += emoji
+    var isReaction = root.emojiPickerForReact && root.reactingTo
+    var opener = root.emojiPickerOpener
+    if (isReaction) root.react(root.reactingTo, emoji)
+    else {
+      var start = composer.selectionStart >= 0 ? composer.selectionStart : composer.cursorPosition
+      var end = composer.selectionEnd >= start ? composer.selectionEnd : start
+      if (end > start) composer.remove(start, end)
+      composer.insert(start, emoji)
+      composer.cursorPosition = start + emoji.length
+    }
     root.emojiPickerOpen = false
     root.emojiPickerForReact = false
-    composer.forceActiveFocus()
+    root.emojiPickerOpener = null
+    if (!isReaction || !opener || !opener.forceActiveFocus) composer.forceActiveFocus()
+    else opener.forceActiveFocus()
   }
 
-  onEmojiPickerOpenChanged: if (emojiPickerOpen) Qt.callLater(function() { emojiGrid.forceActiveFocus() })
+  onEmojiPickerOpenChanged: if (emojiPickerOpen) Qt.callLater(function() {
+    if (root.emojiPickerOpen) emojiSearchField.forceActiveFocus()
+  })
+  onEmojiSearchQueryChanged: updateEmojiSearchResults()
+  onEmojiSearchIndexChanged: updateEmojiSearchResults()
 
   function storeLocalSends(net, convID, rows) {
     var next = Object.assign({}, root._pendingSends)
@@ -769,6 +1064,8 @@ Item {
   onStatusTGChanged: if (statusTG && statusTG.state === "unpaired") root.clearNetwork("telegram")
   readonly property var statusFB: service && typeof service.statusFor === "function" ? service.statusFor("messenger") : (service ? service.statusFB : null)
   onStatusFBChanged: if (statusFB && statusFB.state === "unpaired") root.clearNetwork("messenger")
+  readonly property var statusSG: service && typeof service.statusFor === "function" ? service.statusFor("signal") : (service ? service.statusSG : null)
+  onStatusSGChanged: if (statusSG && statusSG.state === "unpaired") root.clearNetwork("signal")
   readonly property var statusGM: service && typeof service.statusFor === "function" ? service.statusFor("gmessages") : (service ? service.status : null)
   onStatusGMChanged: if (statusGM && statusGM.state === "unpaired") root.clearNetwork("gmessages")
 
@@ -782,10 +1079,25 @@ Item {
     function onPaired(net) {
       root.clearNetwork(net)
     }
+    function onHistoryUpdated(update, net) {
+      if (net !== root.network || !update || update.conversationID !== root.selectedConvID) return
+      root.historyFetchState = String(update.state || "")
+      root.historyNotice = String(update.notice || "")
+      if (update.state === "complete") {
+        root.historyError = ""
+        if (root.hasOlder && !root.loadingOlder) Qt.callLater(function() { root.loadOlderMessages() })
+      } else if (update.state === "failed") {
+        root.hasOlder = true
+        root.historyError = root.historyNotice || "Could not load older messages. Try again."
+      } else if (update.state === "unavailable") {
+        root.hasOlder = false
+      }
+    }
   }
 
   function clearNetwork(net) {
     var targetNet = net || root.network
+    conversationSelected(targetNet, "")
     var epochs = Object.assign({}, root._networkEpochs)
     epochs[targetNet] = (epochs[targetNet] || 0) + 1
     root._networkEpochs = epochs
@@ -948,16 +1260,40 @@ Item {
       } catch (e) {
         root.emojiList = root.fallbackEmoji
       }
+      root.rebuildEmojiSearchIndex()
     }
-    onLoadFailed: root.emojiList = root.fallbackEmoji
+    onLoadFailed: { root.emojiList = root.fallbackEmoji; root.rebuildEmojiSearchIndex() }
+  }
+
+  FileView {
+    path: Qt.resolvedUrl("data/emoji-search.json")
+    onLoaded: {
+      try {
+        var parsed = JSON.parse(text())
+        if (!Array.isArray(parsed) || parsed.length < 1000) throw new Error("incomplete bundled emoji data")
+        root.emojiBundleRows = parsed
+        root.emojiSearchDataLoaded = true
+      } catch (e) {
+        root.emojiBundleRows = []
+        root.emojiSearchDataLoaded = false
+      }
+      root.rebuildEmojiSearchIndex()
+    }
+    onLoadFailed: {
+      root.emojiBundleRows = []
+      root.emojiSearchDataLoaded = false
+      root.rebuildEmojiSearchIndex()
+    }
   }
 
   Item {
     id: listPane
+    objectName: "conversationSidebar"
     anchors.left: parent.left
     anchors.top: parent.top
     anchors.bottom: parent.bottom
-    width: Math.round(parent.width * 0.32)
+    width: visible ? Math.round(parent.width * 0.32) : 0
+    visible: !root.detailOnly && root.sidebarVisible
 
     PanelSectionHeader {
       id: inboxHeader
@@ -974,7 +1310,8 @@ Item {
       id: searchField
         objectName: "searchField"
       anchors.left: parent.left
-      anchors.right: parent.right
+      anchors.right: newChatButton.left
+      anchors.rightMargin: Style.space(6)
       anchors.top: inboxHeader.bottom
       anchors.topMargin: Style.space(6)
       placeholderText: "Search conversations"
@@ -983,6 +1320,19 @@ Item {
       foreground: root.foreground
       onTextChanged: root.searchQuery = text
       onActiveFocusChanged: root.composerFocus = activeFocus
+    }
+
+    Button {
+      id: newChatButton
+      objectName: "newChatButton"
+      anchors.right: parent.right
+      anchors.verticalCenter: searchField.verticalCenter
+      width: Style.space(34)
+      height: Style.space(34)
+      text: "+"
+      enabled: root.service && !root.newChatLoading
+      Accessible.name: "New conversation"
+      onClicked: root.openNewChat()
     }
 
     Rectangle {
@@ -1000,19 +1350,24 @@ Item {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         onClicked: {
-          for (var i = 0; i < root.conversations.length; i++) {
-            if (root.conversations[i].unread === true) {
-              root.selectConversation(root.conversations[i].id)
-              convList.positionViewAtIndex(i, ListView.Contain)
-              return
+          searchField.text = ""
+          Qt.callLater(function() {
+            for (var i = 0; i < root.visibleConversations.length; i++) {
+              if (root.visibleConversations[i].unread === true) {
+                if (root.visibleConversations[i].id === root.selectedConvID) root.markThreadRead()
+                else root.selectConversation(root.visibleConversations[i].id)
+                convList.currentIndex = i
+                convList.positionViewAtIndex(i, ListView.Contain)
+                return
+              }
             }
-          }
+          })
         }
       }
 
       Text {
         anchors.centerIn: parent
-        text: root.unreadConversations === 1 ? "1 unread" : root.unreadConversations + " unread"
+        text: root.unreadConversations === 1 ? "Next unread (1)" : "Next unread (" + root.unreadConversations + ")"
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.caption)
@@ -1027,12 +1382,8 @@ Item {
       keyNavigationEnabled: true
       Accessible.role: Accessible.List
       Accessible.name: "Conversations"
-      Keys.onReturnPressed: {
-        if (currentItem && currentItem.modelData) root.selectConversation(currentItem.modelData.id)
-      }
-      Keys.onEnterPressed: {
-        if (currentItem && currentItem.modelData) root.selectConversation(currentItem.modelData.id)
-      }
+      Keys.onReturnPressed: root.openFocusedConversation()
+      Keys.onEnterPressed: root.openFocusedConversation()
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: unreadChip.visible ? unreadChip.bottom : searchField.bottom
@@ -1138,18 +1489,20 @@ Item {
 
   Rectangle {
     id: paneRule
+    visible: !root.detailOnly && root.sidebarVisible
     anchors.left: listPane.right
     anchors.top: parent.top
     anchors.bottom: parent.bottom
-    anchors.leftMargin: Style.space(8)
-    width: 1
+    anchors.leftMargin: visible ? Style.space(8) : 0
+    width: visible ? 1 : 0
     color: Color.popups.border
   }
 
   Item {
     id: threadPane
-    anchors.left: paneRule.right
-    anchors.leftMargin: Style.space(10)
+    objectName: "threadPane"
+    anchors.left: root.detailOnly ? parent.left : paneRule.right
+    anchors.leftMargin: !root.detailOnly && root.sidebarVisible ? Style.space(10) : 0
     anchors.right: parent.right
     anchors.top: parent.top
     anchors.bottom: parent.bottom
@@ -1236,12 +1589,12 @@ Item {
       Button {
         focusable: true
         Accessible.role: Accessible.Button
-        Accessible.name: root.loadingOlder ? "Loading older messages..." : "Load older messages"
+        Accessible.name: root.loadingOlder || root.historyFetchState === "loading" ? "Loading older messages..." : (root.historyFetchState === "failed" ? "Retry older messages" : "Load older messages")
         objectName: "loadOlderButton"
         anchors.verticalCenter: parent.verticalCenter
         visible: root.hasOlder || root.loadingOlder
-        enabled: !root.loadingOlder && !root.loadingMessages
-        text: root.loadingOlder ? "Loading older messages..." : "Load older messages"
+        enabled: !root.loadingOlder && !root.loadingMessages && root.historyFetchState !== "loading"
+        text: root.loadingOlder || root.historyFetchState === "loading" ? "Loading older messages..." : (root.historyFetchState === "failed" ? "Retry older messages" : "Load older messages")
         foreground: root.foreground
         fontFamily: root.fontFamily
         onClicked: root.loadOlderMessages()
@@ -1251,7 +1604,7 @@ Item {
         objectName: "historyStatus"
         anchors.verticalCenter: parent.verticalCenter
         width: Math.max(0, parent.width - (parent.children[0].visible ? parent.children[0].width + parent.spacing : 0))
-        text: root.historyError || root.historyNotice || (!root.hasOlder && !root.loadingMessages ? (root.isWhatsApp ? "Showing cached WhatsApp history. On-demand phone history is not requested in this version." : "All available history loaded") : "")
+        text: root.historyError || root.historyNotice || (root.historyFetchState === "loading" ? "Requesting older history from your phone…" : (!root.hasOlder && !root.loadingMessages ? (root.isWhatsApp ? "No older cached messages are available." : "All available history loaded") : ""))
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
         color: root.historyError ? root.errorInk : root.dim
@@ -1263,6 +1616,18 @@ Item {
     ListView {
       id: messageList
       objectName: "messageList"
+      property real previousHistoryContentY: contentY
+      property bool historyAutoBlocked: false
+      onContentYChanged: {
+        var previous = previousHistoryContentY
+        previousHistoryContentY = contentY
+        if (!root.isWhatsApp || !moving) return
+        if (contentY > height * 0.15) historyAutoBlocked = false
+        else if (!historyAutoBlocked && contentY < previous && root.hasOlder && !root.loadingOlder && !root.loadingMessages) {
+          historyAutoBlocked = true
+          Qt.callLater(function() { root.loadOlderMessages() })
+        }
+      }
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: historyControls.bottom
@@ -1684,6 +2049,8 @@ Item {
               }
             }
             Button {
+              id: moreEmojiReactionButton
+              objectName: "moreEmojiReactionButton"
               focusable: true
               Accessible.role: Accessible.Button
               Accessible.name: "+"
@@ -1693,8 +2060,7 @@ Item {
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: {
-                root.emojiPickerForReact = true
-                root.emojiPickerOpen = true
+                root.openEmojiPicker(moreEmojiReactionButton, true)
               }
             }
           }
@@ -1930,14 +2296,19 @@ Item {
         fontFamily: root.fontFamily
         enabled: composer.enabled
         onClicked: {
-          root.emojiPickerForReact = false
-          root.emojiPickerOpen = !root.emojiPickerOpen
+          if (root.emojiPickerOpen) root.closeEmojiPicker()
+          else root.openEmojiPicker(emojiButton, false)
         }
       }
 
       TextField {
         id: composer
         objectName: "composer"
+        Keys.priority: Keys.BeforeItem
+        Keys.onPressed: function(event) {
+          if ((event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) !== 0
+              && root.keyboardActionRouter) root.keyboardActionRouter(event)
+        }
         placeholderTextColor: root.dim
         font.pixelSize: fs(Style.font.body)
         anchors.left: emojiButton.right
@@ -1962,51 +2333,112 @@ Item {
 
 
     Rectangle {
+      id: emojiPicker
+      objectName: "emojiPicker"
       visible: root.emojiPickerOpen && root.selectedConvID !== ""
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.bottom: composerRow.top
       anchors.bottomMargin: Style.space(6)
-      height: visible ? Style.space(280) : 0
+      height: visible ? Style.space(312) : 0
       radius: Style.space(8)
       color: Color.popups.background
       border.width: 1
       border.color: Color.popups.border
       clip: true
 
+      TextField {
+        id: emojiSearchField
+        objectName: "emojiSearchField"
+        Accessible.name: "Search emoji by name, keyword, alias, or glyph"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Style.space(8)
+        height: Style.space(36)
+        placeholderText: "Search emoji"
+        placeholderTextColor: root.dim
+        foreground: root.foreground
+        font.pixelSize: fs(Style.font.body)
+        onTextChanged: root.emojiSearchQuery = text
+        Keys.onDownPressed: function(event) {
+          root.focusEmojiGrid()
+          event.accepted = true
+        }
+        Keys.onTabPressed: function(event) {
+          root.focusEmojiGrid()
+          event.accepted = true
+        }
+        Keys.onReturnPressed: function(event) {
+          if (emojiGrid.count > 0) root.chooseEmoji(emojiGrid.model[0].e)
+          event.accepted = true
+        }
+        Keys.onEnterPressed: function(event) {
+          if (emojiGrid.count > 0) root.chooseEmoji(emojiGrid.model[0].e)
+          event.accepted = true
+        }
+      }
+
       GridView {
         id: emojiGrid
         objectName: "emojiGrid"
         activeFocusOnTab: true
         keyNavigationEnabled: true
-        Keys.onReturnPressed: if (currentItem) root.chooseEmoji(currentItem.text)
-        Keys.onEnterPressed: if (currentItem) root.chooseEmoji(currentItem.text)
-        Keys.onEscapePressed: { root.emojiPickerOpen = false; composer.forceActiveFocus() }
+        Keys.onReturnPressed: if (currentIndex >= 0 && currentIndex < count) root.chooseEmoji(model[currentIndex].e)
+        Keys.onEnterPressed: if (currentIndex >= 0 && currentIndex < count) root.chooseEmoji(model[currentIndex].e)
+        Keys.onEscapePressed: root.closeEmojiPicker()
+        Keys.onUpPressed: function(event) {
+          var columns = Math.max(1, Math.floor(emojiGrid.width / emojiGrid.cellWidth))
+          if (EmojiSearch.gridUpReturnsToSearch(emojiGrid.currentIndex, columns)) {
+            emojiSearchField.forceActiveFocus()
+            event.accepted = true
+          } else {
+            event.accepted = false
+          }
+        }
         highlight: Rectangle { color: "transparent"; border.width: 2; border.color: Color.accent }
         highlightFollowsCurrentItem: true
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: emojiSearchField.bottom
+        anchors.bottom: parent.bottom
         anchors.margins: Style.space(8)
+        anchors.topMargin: Style.space(4)
         cellWidth: Style.space(52)
         cellHeight: Style.space(52)
-        model: root.emojiList
+        model: root.emojiSearchResults
         clip: true
         delegate: Text {
           required property var modelData
+          Accessible.name: (modelData.label || modelData.k || "Emoji") + " " + modelData.e
+          Accessible.role: Accessible.ListItem
           width: Style.space(52)
           height: Style.space(52)
           horizontalAlignment: Text.AlignHCenter
           verticalAlignment: Text.AlignVCenter
-          text: modelData.e || modelData.emoji || ""
+          text: modelData.e || ""
+          ToolTip.visible: hoverHandler.hovered
+          ToolTip.text: modelData.label || modelData.k || "Emoji"
           font.pixelSize: fs(Style.space(32))
           renderType: Text.NativeRendering
+          HoverHandler { id: hoverHandler }
           MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: {
-              root.chooseEmoji(parent.text)
-            }
+            onClicked: root.chooseEmoji(parent.text)
           }
         }
+      }
+
+      Text {
+        id: emojiNoResults
+        objectName: "emojiNoResults"
+        anchors.centerIn: emojiGrid
+        visible: root.emojiSearchQuery.length > 0 && emojiGrid.count === 0
+        text: "No emoji found"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
       }
     }
 
@@ -2051,6 +2483,149 @@ Item {
     Keys.onPressed: function(event) {
       if (handleKey(event)) event.accepted = true
     }
+  }
+
+  Popup {
+    id: newChatOverlay
+    objectName: "newChatOverlay"
+    anchors.centerIn: Overlay.overlay
+    width: Math.min(root.width - Style.space(32), Style.space(480))
+    height: Math.min(root.height - Style.space(32), Style.space(520))
+    visible: root.newChatOpen
+    modal: true
+    focus: true
+    padding: Style.space(16)
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    z: 100
+    onOpened: Qt.callLater(function() { newChatSearch.forceActiveFocus() })
+    onClosed: { root.newChatOpen = false; root.focusConversationList() }
+    background: Rectangle {
+      radius: Style.space(10)
+      color: root.panelBg
+      border.width: 1
+      border.color: Color.popups.border
+    }
+    contentItem: Column {
+        spacing: Style.space(10)
+
+        Text {
+          text: root.newChatGroup ? "New group" : "New conversation"
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.title)
+          font.bold: true
+        }
+
+        Row {
+          spacing: Style.space(8)
+          Button { focusable: true; text: "Direct"; enabled: root.newChatGroup; onClicked: { root.newChatGroup = false; root.newChatSelected = ({}) } }
+          Button { focusable: true; text: "Group"; enabled: !root.newChatGroup; onClicked: { root.newChatGroup = true; root.newChatSelected = ({}) } }
+        }
+
+        TextField {
+          id: newChatName
+          objectName: "newChatName"
+          width: parent.width
+          visible: root.newChatGroup
+          placeholderText: "Group name"
+          foreground: root.foreground
+          font.pixelSize: fs(Style.font.body)
+        }
+
+        TextField {
+          id: newChatSearch
+          objectName: "newChatSearch"
+          width: parent.width
+          placeholderText: "Search contacts"
+          foreground: root.foreground
+          font.pixelSize: fs(Style.font.body)
+          Keys.onDownPressed: {
+            if (newChatTargetList.count > 0) {
+              newChatTargetList.currentIndex = Math.max(0, newChatTargetList.currentIndex)
+              newChatTargetList.forceActiveFocus()
+            }
+          }
+        }
+
+        ListView {
+          id: newChatTargetList
+          objectName: "newChatTargetList"
+          activeFocusOnTab: true
+          keyNavigationEnabled: true
+          Accessible.role: Accessible.List
+          Accessible.name: "Conversation contacts"
+          function toggleCurrent() {
+            var target = root.visibleNewChatTargets[currentIndex]
+            if (target) root.toggleNewChatTarget(String(target.id))
+          }
+          Keys.onSpacePressed: toggleCurrent()
+          Keys.onReturnPressed: { toggleCurrent(); if (!root.newChatGroup) root.createNewChat() }
+          Keys.onEnterPressed: { toggleCurrent(); if (!root.newChatGroup) root.createNewChat() }
+          width: parent.width
+          height: parent.height - y - newChatActions.height - Style.space(34)
+          clip: true
+          spacing: Style.space(2)
+          model: root.visibleNewChatTargets
+
+          delegate: Rectangle {
+            required property int index
+            required property var modelData
+            width: newChatTargetList.width
+            height: Style.space(48)
+            radius: Style.space(5)
+            color: root.newChatSelected[String(modelData.id)] ? root.selectedFill : "transparent"
+            border.width: newChatTargetList.activeFocus && newChatTargetList.currentIndex === index ? 2 : 0
+            border.color: Color.accent
+            Accessible.role: Accessible.ListItem
+            Accessible.name: modelData.name
+            Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(10)
+              anchors.right: check.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: modelData.name + (modelData.detail ? "  ·  " + modelData.detail : "")
+              color: root.newChatSelected[String(modelData.id)] ? root.selectedInk : root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: fs(Style.font.bodySmall)
+              elide: Text.ElideRight
+            }
+            Text {
+              id: check
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.newChatSelected[String(modelData.id)] ? "✓" : ""
+              color: root.selectedInk
+              font.pixelSize: fs(Style.font.body)
+            }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleNewChatTarget(String(modelData.id)) }
+          }
+        }
+
+        Text {
+          width: parent.width
+          visible: root.newChatLoading || root.newChatError !== "" || (!root.newChatLoading && root.newChatTargets.length === 0)
+          text: root.newChatLoading ? "Loading contacts…" : (root.newChatError || "No contacts available.")
+          color: root.newChatError !== "" ? root.errorInk : root.dim
+          wrapMode: Text.WordWrap
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.caption)
+        }
+
+        Row {
+          id: newChatActions
+          anchors.right: parent.right
+          spacing: Style.space(8)
+          Button { focusable: true; text: "Cancel"; onClicked: root.newChatOpen = false }
+          Button {
+            focusable: true
+            objectName: "createConversationButton"
+            text: root.newChatGroup ? "Create group" : "Start chat"
+            enabled: !root.newChatLoading && root.newChatSelectionCount > 0
+            onClicked: root.createNewChat()
+          }
+        }
+      }
   }
 
   onLinkConfirmOpenChanged: if (linkConfirmOpen) linkDialog.forceActiveFocus()

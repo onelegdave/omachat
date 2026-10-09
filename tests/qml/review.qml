@@ -40,6 +40,8 @@ ShellRoot {
  Timer {
   running:true;repeat:true;interval:120
   onTriggered: {
+   // QtTest key events pump a nested event loop; finish this step first.
+   stop()
    try {
     var list=inspect.findChild(inbox,"convList")
     var req
@@ -101,8 +103,11 @@ ShellRoot {
      inbox.emojiPickerOpen=true
      break
     case 5:
+     var emojiSearchField=inspect.findChild(inbox,"emojiSearchField")
      var emojiGrid=inspect.findChild(inbox,"emojiGrid")
-     check(emojiGrid && emojiGrid.activeFocus,"emoji picker receives keyboard focus")
+     check(emojiSearchField && emojiSearchField.activeFocus,"emoji picker search receives keyboard focus")
+     keyboard.keyClick(Qt.Key_Down,Qt.NoModifier,0)
+     check(emojiGrid && emojiGrid.activeFocus,"Down moves from emoji search into the grid")
      keyboard.keyClick(Qt.Key_Right,Qt.NoModifier,0)
      keyboard.keyClick(Qt.Key_Return,Qt.NoModifier,0)
      check(!inbox.emojiPickerOpen && inspect.findChild(inbox,"composer").text.length>0,"keyboard selects an emoji")
@@ -111,8 +116,9 @@ ShellRoot {
      inbox.clearNetwork("telegram")
      check(!inbox.mediaPaths["tg:42:7"],"unpair clears Telegram image references")
      console.log("OMACHAT_REVIEW_PASS")
-     stop();Qt.quit();break
+     Qt.quit();return
     }
+    start()
    } catch(e) {console.error("OMACHAT_REVIEW_FAIL",e.message,e.stack || e);stop();Qt.quit()}
   }
  }

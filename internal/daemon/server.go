@@ -149,6 +149,9 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	if d.fb != nil {
 		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkMessenger, Data: d.fb.Status()})
 	}
+	if d.sg != nil {
+		_ = w.send(wire.Event{Event: wire.EventStatus, Network: wire.NetworkSignal, Data: d.sg.Status()})
+	}
 
 	go func() {
 		for {
@@ -189,7 +192,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 			defer func() { <-slots }()
 			// A pre-change config snapshot must not be written after the setter's
 			// restart-required acknowledgement on another concurrent request.
-			if globalSetting(req.Method) || req.Method == wire.MethodSetEnabledServices {
+			if globalSetting(req.Method) || req.Method == wire.MethodSetEnabledServices || req.Method == wire.MethodUnpair {
 				d.configResponseMu.Lock()
 				defer d.configResponseMu.Unlock()
 			}
@@ -232,6 +235,33 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 	if req.Method == wire.MethodSetEnabledServices {
 		return d.handleSetEnabledServices(req)
 	}
+	if req.Method == wire.MethodSetNotifications || req.Method == wire.MethodNotifyMessage || req.Method == wire.MethodTestNotification {
+		return d.handleNotificationRequest(ctx, req)
+	}
+	if req.Method == wire.MethodSetChatView {
+		p, err := decodeParams[wire.SetChatViewParams](req.Params)
+		if err == nil {
+			network := req.Network
+			if network == "" {
+				network = wire.NetworkGMessages
+			}
+			err = d.config.SetChatView(network, p.ConversationID, p.LastService, p.SidebarCollapsed)
+		}
+		if err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+		return wire.Response{ID: req.ID, OK: true}
+	}
+	if req.Method == wire.MethodSetUnifiedInboxPreference {
+		p, err := decodeParams[wire.SetUnifiedInboxPreferenceParams](req.Params)
+		if err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+		if err := d.SetUnifiedInboxEnabled(p.Enabled); err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+		return wire.Response{ID: req.ID, OK: true, Result: d.PluginConfig()}
+	}
 	if globalSetting(req.Method) {
 		return d.dispatchGMessages(ctx, req)
 	}
@@ -244,17 +274,148 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 			return wire.Response{ID: req.ID, Error: err.Error()}
 		}
 	}
+	var resp wire.Response
 	switch req.Network {
 	case wire.NetworkWhatsApp:
-		return d.dispatchWhatsApp(ctx, req)
+		resp = d.dispatchWhatsApp(ctx, req)
 	case wire.NetworkTelegram:
-		return d.dispatchTelegram(ctx, req)
+		resp = d.dispatchTelegram(ctx, req)
 	case wire.NetworkMessenger:
-		return d.dispatchMessenger(ctx, req)
+		resp = d.dispatchMessenger(ctx, req)
+	case wire.NetworkSignal:
+		resp = d.dispatchSignal(ctx, req)
 	case "", wire.NetworkGMessages:
-		return d.dispatchGMessages(ctx, req)
+		resp = d.dispatchGMessages(ctx, req)
 	default:
 		return wire.Response{ID: req.ID, OK: false, Error: "unknown network: " + req.Network}
+	}
+	if req.Method == wire.MethodUnpair && resp.OK {
+		d.notifications.dismiss(ctx, network)
+		empty := ""
+		if err := d.config.SetChatView(network, &empty, nil, nil); err != nil {
+			return wire.Response{ID: req.ID, Error: "unpaired, but could not clear the remembered conversation: " + err.Error()}
+		}
+	}
+	return resp
+}
+
+func (d *Daemon) dispatchSignal(ctx context.Context, req wire.Request) wire.Response {
+	fail := func(err error) wire.Response { return wire.Response{ID: req.ID, Error: err.Error()} }
+	ok := func(result any) wire.Response { return wire.Response{ID: req.ID, OK: true, Result: result} }
+	if d.sg == nil {
+		return fail(errors.New("Signal backend not initialized"))
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	switch req.Method {
+	case wire.MethodStatus:
+		return ok(d.sg.Status())
+	case wire.MethodConversations:
+		p, err := decodeParams[wire.ConversationsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(d.sg.Conversations(p.Count))
+	case wire.MethodConversationTargets:
+		res, err := d.sg.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodMessages:
+		p, err := decodeParams[wire.MessagesParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.Messages(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodSend:
+		p, err := decodeParams[wire.SendParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.Send(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodSendMedia:
+		p, err := decodeParams[wire.SendMediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.SendMedia(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodMedia:
+		p, err := decodeParams[wire.MediaParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.sg.Media(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodPickImage:
+		path, err := d.PickFile(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(wire.PickImageResult{Path: path})
+	case wire.MethodReact:
+		p, err := decodeParams[wire.ReactParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.sg.React(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodMarkRead:
+		p, err := decodeParams[wire.MarkReadParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.sg.MarkRead(ctx, p); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodStartPairing:
+		qr, err := d.sg.StartPairing(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(map[string]string{"url": qr})
+	case wire.MethodRefresh:
+		if err := d.sg.Refresh(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodUnpair:
+		if err := d.sg.Unpair(ctx); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+	case wire.MethodConfig:
+		return ok(d.PluginConfig())
+	default:
+		return fail(fmt.Errorf("unknown method %q for network signal", req.Method))
 	}
 }
 
@@ -275,6 +436,22 @@ func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		return ok(d.fb.Conversations(p.Count))
+	case wire.MethodConversationTargets:
+		res, err := d.fb.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.fb.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)
 		if err != nil {
@@ -431,6 +608,24 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 		}
 		return ok(d.Conversations(p.Count))
 
+	case wire.MethodConversationTargets:
+		res, err := d.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)
 		if err != nil {
@@ -564,6 +759,46 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 		}
 		return ok(d.PluginConfig())
 
+	case wire.MethodSetWindowPreferences:
+		p, err := decodeParams[wire.SetWindowPreferencesParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetWindowPreferences(p.AlwaysPopout, p.PopoutMode); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetKeyboardShortcuts:
+		p, err := decodeParams[wire.SetKeyboardShortcutsParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetKeyboardShortcuts(p.Shortcuts); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetEmojiSearchPreference:
+		p, err := decodeParams[wire.SetEmojiSearchPreferenceParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetKeepPreviousEmojiSearchText(p.KeepPreviousEmojiSearchText); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetWhatsAppHistoryCache:
+		p, err := decodeParams[wire.SetWhatsAppHistoryCacheParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetWhatsAppHistoryCacheMB(p.SizeMB); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
 	case wire.MethodConfig:
 		return ok(d.PluginConfig())
 
@@ -612,6 +847,24 @@ func (d *Daemon) dispatchWhatsApp(ctx context.Context, req wire.Request) wire.Re
 			return fail(err)
 		}
 		return ok(d.wa.Conversations(p.Count))
+
+	case wire.MethodConversationTargets:
+		res, err := d.wa.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.wa.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
 
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)
@@ -761,6 +1014,24 @@ func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Re
 			return fail(err)
 		}
 		return ok(d.tg.Conversations(p.Count))
+
+	case wire.MethodConversationTargets:
+		res, err := d.tg.ConversationTargets(ctx)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
+
+	case wire.MethodCreateConversation:
+		p, err := decodeParams[wire.CreateConversationParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		res, err := d.tg.CreateConversation(ctx, p)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(res)
 
 	case wire.MethodMessages:
 		p, err := decodeParams[wire.MessagesParams](req.Params)

@@ -134,16 +134,20 @@ def update_state(action):
 def build():
     target = ROOT / 'bin'
     target.mkdir(exist_ok=True)
-    with (target / '.build.lock').open('a') as lock:
+    cache = Path(os.environ.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'omachat'
+    cache.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (cache / 'build.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         source = source_id()
         release = installed()
-        fd, name = tempfile.mkstemp(dir=target, prefix='.omachatd-')
+        fd, name = tempfile.mkstemp(dir=cache, prefix='.omachatd-')
         os.close(fd)
         try:
             env = dict(os.environ, GOPROXY='off', GOSUMDB='off', GOTOOLCHAIN='local', CGO_ENABLED='1')
             flags = '-X main.version=' + release + ' -X github.com/onelegdave/omachat/internal/buildinfo.SourceID=' + source
-            subprocess.run(['go', 'build', '-mod=vendor', '-ldflags', flags, '-o', name, './cmd/omachatd'],
+            # SourceID above is the reproducible build identity. Avoid Go's VCS
+            # stamping because installed plugins are not necessarily Git trees.
+            subprocess.run(['go', 'build', '-buildvcs=false', '-mod=vendor', '-ldflags', flags, '-o', name, './cmd/omachatd'],
                            cwd=ROOT, env=env, check=True)
             if source_id() != source or installed() != release:
                 raise RuntimeError('Source changed during the build. Please rebuild again.')

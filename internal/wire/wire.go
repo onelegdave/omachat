@@ -19,6 +19,7 @@ const (
 	NetworkWhatsApp  = "whatsapp"
 	NetworkTelegram  = "telegram"
 	NetworkMessenger = "messenger"
+	NetworkSignal    = "signal"
 )
 
 // KnownNetworks lists all supported network identifiers.
@@ -27,12 +28,13 @@ var KnownNetworks = []string{
 	NetworkWhatsApp,
 	NetworkTelegram,
 	NetworkMessenger,
+	NetworkSignal,
 }
 
 // IsKnownNetwork reports whether net is recognized by the daemon.
 func IsKnownNetwork(net string) bool {
 	switch net {
-	case NetworkGMessages, NetworkWhatsApp, NetworkTelegram, NetworkMessenger:
+	case NetworkGMessages, NetworkWhatsApp, NetworkTelegram, NetworkMessenger, NetworkSignal:
 		return true
 	default:
 		return false
@@ -60,45 +62,59 @@ type Event struct {
 	Event   string `json:"event"`
 	Network string `json:"network,omitempty"`
 	Data    any    `json:"data,omitempty"`
+	Notify  bool   `json:"notify,omitempty"`
 }
 
 // Event names.
 const (
-	EventStatus       = "status"
-	EventConversation = "conversation"
-	EventMessage      = "message"
-	EventQR           = "qr"
-	EventEmoji        = "emoji"
-	EventPaired       = "paired"
+	EventStatus           = "status"
+	EventConversation     = "conversation"
+	EventMessage          = "message"
+	EventQR               = "qr"
+	EventEmoji            = "emoji"
+	EventPaired           = "paired"
+	EventHistory          = "history"
+	EventNotificationOpen = "notificationOpen"
 )
 
 // Method names.
 const (
-	MethodSetEnabledServices = "setEnabledServices"
-	MethodStatus             = "status"
-	MethodConversations      = "conversations"
-	MethodMessages           = "messages"
-	MethodSend               = "send"
-	MethodMarkRead           = "markRead"
-	MethodStartPairing       = "startPairing"
-	MethodGaiaPairing        = "gaiaPairing"
+	MethodSetEnabledServices  = "setEnabledServices"
+	MethodStatus              = "status"
+	MethodConversations       = "conversations"
+	MethodConversationTargets = "conversationTargets"
+	MethodCreateConversation  = "createConversation"
+	MethodMessages            = "messages"
+	MethodSend                = "send"
+	MethodMarkRead            = "markRead"
+	MethodStartPairing        = "startPairing"
+	MethodGaiaPairing         = "gaiaPairing"
 	// MethodPairFromBrowser lets the widget pair on its own: the daemon finds
 	// the browser profile and reads the cookies itself, so pairing never
 	// requires dropping to a terminal.
-	MethodPairFromBrowser        = "pairFromBrowser"
-	MethodSendMedia              = "sendMedia"
-	MethodPickImage              = "pickImage"
-	MethodListProfiles           = "listProfiles"
-	MethodSetProfile             = "setProfile"
-	MethodReact                  = "react"
-	MethodDiscardCapture         = "discardCapture"
-	MethodSetUiScale             = "setUiScale"
-	MethodConfig                 = "config"
-	MethodUnpair                 = "unpair"
-	MethodMedia                  = "media"
-	MethodAvatar                 = "avatar"
-	MethodRefresh                = "refresh"
-	MethodSetTelegramCredentials = "setTelegramCredentials"
+	MethodPairFromBrowser           = "pairFromBrowser"
+	MethodSendMedia                 = "sendMedia"
+	MethodPickImage                 = "pickImage"
+	MethodListProfiles              = "listProfiles"
+	MethodSetProfile                = "setProfile"
+	MethodReact                     = "react"
+	MethodDiscardCapture            = "discardCapture"
+	MethodSetUiScale                = "setUiScale"
+	MethodSetChatView               = "setChatView"
+	MethodSetWindowPreferences      = "setWindowPreferences"
+	MethodSetKeyboardShortcuts      = "setKeyboardShortcuts"
+	MethodSetEmojiSearchPreference  = "setEmojiSearchPreference"
+	MethodSetUnifiedInboxPreference = "setUnifiedInboxPreference"
+	MethodSetWhatsAppHistoryCache   = "setWhatsAppHistoryCache"
+	MethodSetNotifications          = "setNotifications"
+	MethodNotifyMessage             = "notifyMessage"
+	MethodTestNotification          = "testNotification"
+	MethodConfig                    = "config"
+	MethodUnpair                    = "unpair"
+	MethodMedia                     = "media"
+	MethodAvatar                    = "avatar"
+	MethodRefresh                   = "refresh"
+	MethodSetTelegramCredentials    = "setTelegramCredentials"
 )
 
 // ConnState describes where the daemon is in its lifecycle. The plugin keys
@@ -257,6 +273,18 @@ type ConversationsParams struct {
 	Count int `json:"count"`
 }
 
+// ConversationTarget is a contact that can be selected when starting a chat.
+type ConversationTarget struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type CreateConversationParams struct {
+	TargetIDs []string `json:"targetIDs"`
+	Name      string   `json:"name,omitempty"`
+}
+
 type MessagesParams struct {
 	ConversationID string `json:"conversationID"`
 	Count          int64  `json:"count"`
@@ -265,12 +293,20 @@ type MessagesParams struct {
 }
 
 type MessagesResult struct {
-	ConversationID string    `json:"conversationID"`
-	Messages       []Message `json:"messages"`
-	CursorID       string    `json:"cursorID,omitempty"`
-	CursorTime     int64     `json:"cursorTime,omitempty"`
-	HasMore        bool      `json:"hasMore"`
-	HistoryNotice  string    `json:"historyNotice,omitempty"`
+	ConversationID    string    `json:"conversationID"`
+	Messages          []Message `json:"messages"`
+	CursorID          string    `json:"cursorID,omitempty"`
+	CursorTime        int64     `json:"cursorTime,omitempty"`
+	HasMore           bool      `json:"hasMore"`
+	HistoryNotice     string    `json:"historyNotice,omitempty"`
+	CanFetchOlder     bool      `json:"canFetchOlder,omitempty"`
+	HistoryFetchState string    `json:"historyFetchState,omitempty"`
+}
+
+type HistoryUpdate struct {
+	ConversationID string `json:"conversationID"`
+	State          string `json:"state"`
+	Notice         string `json:"notice,omitempty"`
 }
 
 type SendParams struct {
@@ -382,12 +418,23 @@ func (p *SetTelegramCredentialsParams) UnmarshalJSON(data []byte) error {
 // ConfigResult is safe to show in the panel. The Telegram API hash stays in
 // the daemon config file and is never sent to QML.
 type ConfigResult struct {
-	EnabledServices          []string `json:"enabledServices"`
-	ServiceSelectionRequired bool     `json:"serviceSelectionRequired"`
-	RestartRequired          bool     `json:"restartRequired"`
-	UiScale                  float64  `json:"uiScale"`
-	TelegramConfigured       bool     `json:"telegramConfigured"`
-	TelegramAPIID            int      `json:"telegramApiId,omitempty"`
+	EnabledServices             []string          `json:"enabledServices"`
+	ServiceSelectionRequired    bool              `json:"serviceSelectionRequired"`
+	RestartRequired             bool              `json:"restartRequired"`
+	UiScale                     float64           `json:"uiScale"`
+	AlwaysPopout                bool              `json:"alwaysPopout"`
+	PopoutMode                  string            `json:"popoutMode"`
+	KeyboardShortcuts           map[string]string `json:"keyboardShortcuts"`
+	KeepPreviousEmojiSearchText bool              `json:"keepPreviousEmojiSearchText"`
+	UnifiedInboxEnabled         bool              `json:"unifiedInboxEnabled"`
+	WhatsAppHistoryCacheMB      int               `json:"whatsappHistoryCacheMB"`
+	NotificationsEnabled        bool              `json:"notificationsEnabled"`
+	NotificationPreviews        bool              `json:"notificationPreviews"`
+	LastService                 string            `json:"lastService"`
+	SidebarCollapsed            bool              `json:"sidebarCollapsed"`
+	LastConversations           map[string]string `json:"lastConversations"`
+	TelegramConfigured          bool              `json:"telegramConfigured"`
+	TelegramAPIID               int               `json:"telegramApiId,omitempty"`
 }
 
 type SetEnabledServicesParams struct {
@@ -396,6 +443,48 @@ type SetEnabledServicesParams struct {
 
 type SetUiScaleParams struct {
 	Scale float64 `json:"scale"`
+}
+
+type SetWindowPreferencesParams struct {
+	AlwaysPopout bool   `json:"alwaysPopout"`
+	PopoutMode   string `json:"popoutMode"`
+}
+
+type SetKeyboardShortcutsParams struct {
+	Shortcuts map[string]string `json:"shortcuts"`
+}
+
+type SetEmojiSearchPreferenceParams struct {
+	KeepPreviousEmojiSearchText bool `json:"keepPreviousEmojiSearchText"`
+}
+
+type SetUnifiedInboxPreferenceParams struct {
+	Enabled bool `json:"enabled"`
+}
+
+type SetWhatsAppHistoryCacheParams struct {
+	SizeMB int `json:"sizeMB"`
+}
+
+type SetChatViewParams struct {
+	LastService      *string `json:"lastService,omitempty"`
+	SidebarCollapsed *bool   `json:"sidebarCollapsed,omitempty"`
+	ConversationID   *string `json:"conversationID,omitempty"`
+}
+
+type SetNotificationsParams struct {
+	Enabled  *bool `json:"enabled,omitempty"`
+	Previews *bool `json:"previews,omitempty"`
+}
+
+type NotifyMessageParams struct {
+	Message          Message `json:"message"`
+	ConversationName string  `json:"conversationName,omitempty"`
+}
+
+type NotificationTarget struct {
+	Network        string `json:"network"`
+	ConversationID string `json:"conversationID"`
 }
 
 // DiscardCaptureParams removes a webcam capture the user rejected.

@@ -28,9 +28,24 @@ type Config struct {
 	// choose automatically.
 	BrowserProfile string `json:"browserProfile,omitempty"`
 
+	KeyboardShortcuts           map[string]string `json:"keyboardShortcuts,omitempty"`
+	UnifiedInboxEnabled         bool              `json:"unifiedInboxEnabled,omitempty"`
+	KeepPreviousEmojiSearchText bool              `json:"keepPreviousEmojiSearchText,omitempty"`
+	WhatsAppHistoryCacheMB      int               `json:"whatsappHistoryCacheMB,omitempty"`
+
 	// UiScale multiplies panel type. 1 is the theme default. 0 means unset
 	// and is treated as 1 when read.
-	UiScale float64 `json:"uiScale,omitempty"`
+	UiScale              float64           `json:"uiScale,omitempty"`
+	NotificationsEnabled *bool             `json:"notificationsEnabled,omitempty"`
+	NotificationPreviews bool              `json:"notificationPreviews,omitempty"`
+	LastService          string            `json:"lastService,omitempty"`
+	SidebarCollapsed     bool              `json:"sidebarCollapsed,omitempty"`
+	LastConversations    map[string]string `json:"lastConversations,omitempty"`
+
+	// AlwaysPopout opens OmaChat in its standalone window instead of the
+	// anchored bar panel. PopoutMode is "floating" or "tiled".
+	AlwaysPopout bool   `json:"alwaysPopout,omitempty"`
+	PopoutMode   string `json:"popoutMode,omitempty"`
 
 	// TelegramAPIID is the application api_id from my.telegram.org.
 	TelegramAPIID int `json:"telegramApiID,omitempty"`
@@ -127,11 +142,88 @@ func (c *ConfigStore) Get() Config {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	out := c.loaded
+	if out.WhatsAppHistoryCacheMB != 64 && out.WhatsAppHistoryCacheMB != 128 && out.WhatsAppHistoryCacheMB != 256 && out.WhatsAppHistoryCacheMB != 512 {
+		out.WhatsAppHistoryCacheMB = 128
+	}
 	if out.EnabledServices != nil {
 		services := append([]string{}, (*out.EnabledServices)...)
 		out.EnabledServices = &services
 	}
+	if out.KeyboardShortcuts != nil {
+		shortcuts := make(map[string]string, len(out.KeyboardShortcuts))
+		for id, shortcut := range out.KeyboardShortcuts {
+			shortcuts[id] = shortcut
+		}
+		out.KeyboardShortcuts = shortcuts
+	}
+	if out.NotificationsEnabled != nil {
+		enabled := *out.NotificationsEnabled
+		out.NotificationsEnabled = &enabled
+	}
+	if out.LastConversations != nil {
+		conversations := make(map[string]string, len(out.LastConversations))
+		for network, id := range out.LastConversations {
+			conversations[network] = id
+		}
+		out.LastConversations = conversations
+	}
 	return out
+}
+
+func (c Config) NotificationsOn() bool {
+	return c.NotificationsEnabled == nil || *c.NotificationsEnabled
+}
+
+func (c *ConfigStore) SetNotifications(enabled, previews *bool) error {
+	if enabled == nil && previews == nil {
+		return errors.New("notification preferences are required")
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		if enabled != nil {
+			value := *enabled
+			cfg["notificationsEnabled"] = value
+			loaded.NotificationsEnabled = &value
+		}
+		if previews != nil {
+			cfg["notificationPreviews"] = *previews
+			loaded.NotificationPreviews = *previews
+		}
+	})
+}
+
+// SetChatView merges only supplied view preferences so service switches cannot
+// overwrite another service's remembered conversation.
+func (c *ConfigStore) SetChatView(network string, conversationID, lastService *string, sidebarCollapsed *bool) error {
+	knownService := func(service string) bool {
+		return service == "gmessages" || service == "whatsapp" || service == "telegram" || service == "messenger" || service == "signal"
+	}
+	if lastService != nil && !knownService(*lastService) {
+		return errors.New("unknown last service")
+	}
+	if conversationID != nil && (!knownService(network) || len(*conversationID) > 1024) {
+		return errors.New("invalid remembered conversation")
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		if lastService != nil {
+			cfg["lastService"] = *lastService
+			loaded.LastService = *lastService
+		}
+		if sidebarCollapsed != nil {
+			cfg["sidebarCollapsed"] = *sidebarCollapsed
+			loaded.SidebarCollapsed = *sidebarCollapsed
+		}
+		if conversationID != nil {
+			if loaded.LastConversations == nil {
+				loaded.LastConversations = make(map[string]string)
+			}
+			if *conversationID == "" {
+				delete(loaded.LastConversations, network)
+			} else {
+				loaded.LastConversations[network] = *conversationID
+			}
+			cfg["lastConversations"] = loaded.LastConversations
+		}
+	})
 }
 
 // EnabledServices preserves legacy installations while fresh installs require a choice.
@@ -241,7 +333,7 @@ func (c *ConfigStore) SetEnabledServices(services []string) error {
 	}
 	seen := make(map[string]bool)
 	for _, service := range services {
-		if service != "gmessages" && service != "whatsapp" && service != "telegram" && service != "messenger" {
+		if service != "gmessages" && service != "whatsapp" && service != "telegram" && service != "messenger" && service != "signal" {
 			return fmt.Errorf("unknown service %q", service)
 		}
 		if seen[service] {
@@ -250,7 +342,7 @@ func (c *ConfigStore) SetEnabledServices(services []string) error {
 		seen[service] = true
 	}
 	canonical := []string{}
-	for _, service := range []string{"gmessages", "whatsapp", "telegram", "messenger"} {
+	for _, service := range []string{"gmessages", "whatsapp", "telegram", "messenger", "signal"} {
 		if seen[service] {
 			canonical = append(canonical, service)
 		}
@@ -282,6 +374,162 @@ func (c *ConfigStore) SetUiScale(scale float64) error {
 	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
 		cfg["uiScale"] = scale
 		loaded.UiScale = scale
+	})
+}
+
+// SetWindowPreferences persists how OmaChat opens from the bar.
+func (c *ConfigStore) SetWindowPreferences(alwaysPopout bool, mode string) error {
+	if mode != "floating" && mode != "tiled" {
+		return fmt.Errorf("invalid pop-out mode %q", mode)
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["alwaysPopout"] = alwaysPopout
+		cfg["popoutMode"] = mode
+		loaded.AlwaysPopout = alwaysPopout
+		loaded.PopoutMode = mode
+	})
+}
+
+// SetKeepPreviousEmojiSearchText persists whether the emoji picker keeps its last query.
+func (c *ConfigStore) SetKeepPreviousEmojiSearchText(keep bool) error {
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["keepPreviousEmojiSearchText"] = keep
+		loaded.KeepPreviousEmojiSearchText = keep
+	})
+}
+
+// SetWhatsAppHistoryCacheMB persists the local WhatsApp history budget.
+func (c *ConfigStore) SetWhatsAppHistoryCacheMB(size int) error {
+	if size != 64 && size != 128 && size != 256 && size != 512 {
+		return fmt.Errorf("invalid WhatsApp history cache size %d MB", size)
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["whatsappHistoryCacheMB"] = size
+		loaded.WhatsAppHistoryCacheMB = size
+	})
+}
+
+var defaultKeyboardShortcuts = map[string][]string{
+	"help": {"?", "Ctrl+Shift+p"}, "search": {"/", "Ctrl+f"}, "compose": {"i"},
+	"history": {"m"}, "nextUnread": {"u"}, "newConversation": {"Ctrl+n"},
+	"settings": {"Ctrl+,"}, "emojiPicker": {"Ctrl+e"}, "attach": {"Ctrl+o"},
+	"refresh": {"r", "Ctrl+r"}, "toggleUnifiedInbox": {"Ctrl+Shift+a"}, "service.gmessages": {"1"}, "service.whatsapp": {"2"},
+	"service.telegram": {"3"}, "service.messenger": {"4"}, "service.signal": {"5"},
+}
+
+func normalizeKeyboardShortcut(value string) (string, error) {
+	parts := strings.Split(strings.TrimSpace(value), "+")
+	if len(parts) == 0 || len(parts) > 4 {
+		return "", fmt.Errorf("invalid shortcut")
+	}
+	modifiers := map[string]bool{}
+	for _, part := range parts[:len(parts)-1] {
+		key := strings.ToLower(strings.TrimSpace(part))
+		aliases := map[string]string{"ctrl": "Ctrl", "control": "Ctrl", "alt": "Alt", "option": "Alt", "meta": "Meta", "super": "Meta", "shift": "Shift"}
+		modifier, ok := aliases[key]
+		if !ok || modifiers[modifier] {
+			return "", fmt.Errorf("invalid or duplicated modifier")
+		}
+		modifiers[modifier] = true
+	}
+	key := strings.TrimSpace(parts[len(parts)-1])
+	if len(key) != 1 || strings.ContainsRune("+ 	\r\n", rune(key[0])) {
+		return "", fmt.Errorf("shortcut key must be one printable character")
+	}
+	key = strings.ToLower(key)
+	if strings.ContainsRune("?/,.-", rune(key[0])) {
+		delete(modifiers, "Shift")
+	}
+	var prefix []string
+	for _, modifier := range []string{"Ctrl", "Alt", "Meta", "Shift"} {
+		if modifiers[modifier] {
+			prefix = append(prefix, modifier)
+		}
+	}
+	return strings.Join(append(prefix, key), "+"), nil
+}
+
+func isReservedKeyboardShortcut(shortcut string) bool {
+	return strings.Contains(" Tab Backtab Left Right Up Down Home End PageUp PageDown Enter Return Escape Space Backspace Delete ", " "+shortcut+" ")
+}
+
+func hasKeyboardModifier(shortcut string) bool {
+	return strings.HasPrefix(shortcut, "Ctrl+") || strings.HasPrefix(shortcut, "Alt+") || strings.HasPrefix(shortcut, "Meta+")
+}
+
+func validateKeyboardShortcuts(shortcuts map[string]string) error {
+	if len(shortcuts) > len(defaultKeyboardShortcuts) {
+		return fmt.Errorf("too many shortcut assignments")
+	}
+	for id := range shortcuts {
+		if _, ok := defaultKeyboardShortcuts[id]; !ok {
+			return fmt.Errorf("unknown keyboard action %q", id)
+		}
+	}
+	effective := make(map[string][]string, len(defaultKeyboardShortcuts))
+	for id, defaults := range defaultKeyboardShortcuts {
+		custom, ok := shortcuts[id]
+		if !ok {
+			effective[id] = defaults
+			continue
+		}
+		if strings.TrimSpace(custom) == "" {
+			effective[id] = nil
+			continue
+		}
+		normalized, err := normalizeKeyboardShortcut(custom)
+		if err != nil {
+			return fmt.Errorf("invalid shortcut for %s: %w", id, err)
+		}
+		if isReservedKeyboardShortcut(strings.Split(normalized, "+")[len(strings.Split(normalized, "+"))-1]) {
+			return fmt.Errorf("shortcut %q is reserved for keyboard navigation", normalized)
+		}
+		effective[id] = []string{normalized}
+	}
+	ids := make([]string, 0, len(effective))
+	for id := range effective {
+		ids = append(ids, id)
+	}
+	for i, firstID := range ids {
+		for _, secondID := range ids[i+1:] {
+			for _, first := range effective[firstID] {
+				for _, second := range effective[secondID] {
+					if first == second {
+						return fmt.Errorf("shortcut %q is assigned to multiple actions", first)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// SetKeyboardShortcuts persists validated user overrides. Empty values unbind
+// an action; removing an override restores that action's built-in shortcuts.
+func (c *ConfigStore) SetKeyboardShortcuts(shortcuts map[string]string) error {
+	if err := validateKeyboardShortcuts(shortcuts); err != nil {
+		return err
+	}
+	copyOfShortcuts := make(map[string]string, len(shortcuts))
+	for id, shortcut := range shortcuts {
+		copyOfShortcuts[id] = shortcut
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		if len(copyOfShortcuts) == 0 {
+			delete(cfg, "keyboardShortcuts")
+			loaded.KeyboardShortcuts = nil
+			return
+		}
+		cfg["keyboardShortcuts"] = copyOfShortcuts
+		loaded.KeyboardShortcuts = copyOfShortcuts
+	})
+}
+
+// SetUnifiedInboxEnabled persists the user's unified inbox preference.
+func (c *ConfigStore) SetUnifiedInboxEnabled(enabled bool) error {
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["unifiedInboxEnabled"] = enabled
+		loaded.UnifiedInboxEnabled = enabled
 	})
 }
 

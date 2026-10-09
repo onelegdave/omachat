@@ -52,7 +52,7 @@ func NewPaths() (*Paths, error) {
 		runtime = filepath.Join(v, appDir)
 	}
 	p := &Paths{Data: data, Cache: cache, Runtime: runtime}
-	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir(), p.TelegramMediaDir(), p.MessengerMediaDir()} {
+	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir(), p.TelegramMediaDir(), p.MessengerMediaDir(), p.SignalDataDir(), p.SignalMediaDir()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
 		}
@@ -89,6 +89,15 @@ func (p *Paths) TelegramMediaDir() string { return filepath.Join(p.Cache, "media
 
 // TelegramSessionFile holds the session data for Telegram. Treat as a secret.
 func (p *Paths) TelegramSessionFile() string { return filepath.Join(p.Data, "telegram.session") }
+
+// SignalDataDir contains signal-cli's device keys and account database.
+func (p *Paths) SignalDataDir() string { return filepath.Join(p.Data, "signal-cli") }
+
+// SignalMediaDir holds attachment copies owned by OmaChat's Signal adapter.
+func (p *Paths) SignalMediaDir() string { return filepath.Join(p.Cache, "media_signal") }
+
+// SignalStoreFile holds OmaChat's locally accumulated Signal inbox.
+func (p *Paths) SignalStoreFile() string { return filepath.Join(p.Data, "signal_store.json") }
 
 // LoadSession reads persisted auth data. A missing file is not an error; it
 // returns fresh auth data and paired=false so the caller can start pairing.
@@ -157,6 +166,9 @@ func (p *Paths) ClearSession() error {
 // WhatsAppStoreFile holds the local cache of WhatsApp conversations and messages.
 func (p *Paths) WhatsAppStoreFile() string { return filepath.Join(p.Data, "whatsapp_store.json") }
 
+// WhatsAppHistoryFile holds app history separately from WhatsApp device credentials.
+func (p *Paths) WhatsAppHistoryFile() string { return filepath.Join(p.Data, "whatsapp_history.sqlite") }
+
 // ClearWhatsAppSession removes stored WhatsApp credentials/database, conversation cache, and media caches, returning WhatsApp to unpaired.
 func (p *Paths) ClearWhatsAppSession() error {
 	p.sessionMu.Lock()
@@ -169,6 +181,11 @@ func (p *Paths) ClearWhatsAppSession() error {
 	}
 	if err := os.Remove(p.WhatsAppStoreFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+	for _, ext := range []string{"", "-wal", "-shm", "-journal"} {
+		if err := os.Remove(p.WhatsAppHistoryFile() + ext); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	if err := os.RemoveAll(p.WhatsAppMediaDir()); err != nil {
 		return err

@@ -91,6 +91,8 @@ func TestConfigResultExcludesAPIHash(t *testing.T) {
 		TelegramConfigured: true,
 		TelegramAPIID:      1234567,
 		UiScale:            1.15,
+		AlwaysPopout:       true,
+		PopoutMode:         "tiled",
 	}
 
 	data, err := json.Marshal(res)
@@ -104,6 +106,9 @@ func TestConfigResultExcludesAPIHash(t *testing.T) {
 	}
 	if !strings.Contains(str, `"telegramApiId":1234567`) {
 		t.Errorf("expected telegramApiId:1234567 in %s", str)
+	}
+	if !strings.Contains(str, `"alwaysPopout":true`) || !strings.Contains(str, `"popoutMode":"tiled"`) {
+		t.Errorf("expected window preferences in %s", str)
 	}
 	if strings.Contains(strings.ToLower(str), "hash") {
 		t.Errorf("SECURITY LEAK: ConfigResult marshaled output must never contain hash: %s", str)

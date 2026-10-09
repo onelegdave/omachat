@@ -42,7 +42,7 @@ func TestDisabledStartupAndRouting(t *testing.T) {
 	if _, err := os.Stat(d.paths.WhatsAppDBFile()); !os.IsNotExist(err) {
 		t.Fatal("disabled WhatsApp initialized its store")
 	}
-	for _, service := range []string{"gmessages", "whatsapp", "telegram"} {
+	for _, service := range wire.KnownNetworks {
 		resp := d.dispatch(context.Background(), wire.Request{Network: service, Method: wire.MethodStatus})
 		if !resp.OK {
 			t.Fatal(resp.Error)
@@ -64,6 +64,18 @@ func TestDisabledStartupAndRouting(t *testing.T) {
 	resp := d.dispatch(context.Background(), wire.Request{Method: wire.MethodSetUiScale, Params: map[string]any{"scale": 1.2}})
 	if !resp.OK {
 		t.Fatal(resp.Error)
+	}
+	windowResp := d.dispatch(context.Background(), wire.Request{Network: "telegram", Method: wire.MethodSetWindowPreferences, Params: map[string]any{"alwaysPopout": true, "popoutMode": "tiled"}})
+	if !windowResp.OK {
+		t.Fatal(windowResp.Error)
+	}
+	windowConfig := windowResp.Result.(wire.ConfigResult)
+	if !windowConfig.AlwaysPopout || windowConfig.PopoutMode != "tiled" {
+		t.Fatalf("window preferences response: %+v", windowConfig)
+	}
+	invalidWindow := d.dispatch(context.Background(), wire.Request{Method: wire.MethodSetWindowPreferences, Params: map[string]any{"alwaysPopout": true, "popoutMode": "maximized"}})
+	if invalidWindow.OK {
+		t.Fatalf("invalid window preference accepted: %+v", invalidWindow)
 	}
 	for _, file := range []string{d.paths.SessionFile(), d.paths.TelegramSessionFile()} {
 		data, err := os.ReadFile(file)
@@ -128,7 +140,7 @@ func TestServiceRestartOnlyAfterSocketWrite(t *testing.T) {
 	defer cancel()
 	go d.handleConn(ctx, server)
 	reader := bufio.NewReader(client)
-	for i := 0; i < 4; i++ {
+	for range wire.KnownNetworks {
 		if _, err := reader.ReadBytes('\n'); err != nil {
 			t.Fatal(err)
 		}

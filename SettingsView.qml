@@ -12,7 +12,31 @@ Flickable {
   property string fontFamily: Style.font.family
   property real uiScale: 1
   signal scaleSaved(real scale)
+  signal windowPreferencesSaved(bool alwaysPopout, string popoutMode)
+  signal keyboardShortcutsSaved(var shortcuts)
+  signal unifiedInboxPreferenceSaved(bool enabled)
+  signal emojiSearchPreferenceSaved(bool keepPreviousEmojiSearchText)
+  property int whatsappHistoryCacheMB: 128
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
+
+  function focusInitialControl() {
+    if (sectionNav.count > 0 && sectionNav.itemAt(0)) sectionNav.itemAt(0).forceActiveFocus()
+  }
+
+  function isKeyboardEditing() {
+    return keyboardSection.captureActive || tgIdField.activeFocus || tgHashField.activeFocus
+  }
+
+  function isCapturingShortcut() { return keyboardSection.captureActive }
+
+  function leaveKeyboardEditor() {
+    if (keyboardSection.captureActive) return keyboardSection.cancelRecording()
+    if (tgIdField.activeFocus || tgHashField.activeFocus) {
+      focusInitialControl()
+      return true
+    }
+    return false
+  }
 
   function readableInk(surface, preferred, minRatio) {
     return Model.readableInk(surface, preferred, minRatio)
@@ -33,6 +57,17 @@ Flickable {
   readonly property string coffeeUrl: "https://buymeacoffee.com/onelegdave"
 
   property string statusText: ""
+  property bool alwaysPopout: false
+  property bool keepPreviousEmojiSearchText: false
+  property string popoutMode: "floating"
+  property string windowStatusText: ""
+  property bool savingWindowPreferences: false
+  property bool savingEmojiSearchPreference: false
+  property string emojiSearchPreferenceStatusText: ""
+  property var keyboardShortcuts: ({})
+  property bool unifiedInboxEnabled: false
+  property bool savingUnifiedInboxPreference: false
+  property string unifiedInboxPreferenceStatusText: ""
 
   property bool telegramConfigured: false
   property int telegramApiId: 0
@@ -48,6 +83,7 @@ Flickable {
   Controls.ScrollBar.vertical: Controls.ScrollBar { policy: Controls.ScrollBar.AsNeeded }
 
   function showUpdates() { jumpTo(updatesSection) }
+  function showNotifications() { jumpTo(notificationsSection) }
 
   function jumpTo(section) {
     contentY = Math.max(0, Math.min(section.y, contentHeight - height))
@@ -61,6 +97,61 @@ Flickable {
       root.telegramApiId = Number(res.telegramApiId) || 0
       var s = Number(res.uiScale)
       if (isFinite(s) && s > 0) root.uiScale = s
+      root.alwaysPopout = res.alwaysPopout === true
+      root.keepPreviousEmojiSearchText = res.keepPreviousEmojiSearchText === true
+      root.whatsappHistoryCacheMB = Number(res.whatsappHistoryCacheMB) || 128
+      root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
+      root.keyboardShortcuts = res.keyboardShortcuts || ({})
+      root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
+    }, "gmessages")
+  }
+
+  function saveUnifiedInboxPreference(enabled) {
+    if (!service || savingUnifiedInboxPreference) return
+    savingUnifiedInboxPreference = true
+    unifiedInboxPreferenceStatusText = ""
+    service.call("setUnifiedInboxPreference", {enabled: enabled === true}, function(ok, res) {
+      root.savingUnifiedInboxPreference = false
+      if (!ok || !res) {
+        root.unifiedInboxPreferenceStatusText = String(res || "Could not save unified inbox preference.")
+        root.load()
+        return
+      }
+      root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
+      root.unifiedInboxPreferenceSaved(root.unifiedInboxEnabled)
+    }, "gmessages")
+  }
+
+  function saveWindowPreferences(always, mode) {
+    if (!service || savingWindowPreferences) return
+    savingWindowPreferences = true
+    windowStatusText = ""
+    service.call("setWindowPreferences", { alwaysPopout: always, popoutMode: mode }, function(ok, res) {
+      root.savingWindowPreferences = false
+      if (!ok) {
+        root.windowStatusText = String(res)
+        root.load()
+        return
+      }
+      root.alwaysPopout = res && res.alwaysPopout === true
+      root.popoutMode = res && res.popoutMode === "tiled" ? "tiled" : "floating"
+      root.windowPreferencesSaved(root.alwaysPopout, root.popoutMode)
+    }, "gmessages")
+  }
+
+  function saveEmojiSearchPreference(keep) {
+    if (!service || savingEmojiSearchPreference) return
+    savingEmojiSearchPreference = true
+    emojiSearchPreferenceStatusText = ""
+    service.call("setEmojiSearchPreference", { keepPreviousEmojiSearchText: keep }, function(ok, res) {
+      root.savingEmojiSearchPreference = false
+      if (!ok) {
+        root.emojiSearchPreferenceStatusText = String(res)
+        root.load()
+        return
+      }
+      root.keepPreviousEmojiSearchText = res && res.keepPreviousEmojiSearchText === true
+      root.emojiSearchPreferenceSaved(root.keepPreviousEmojiSearchText)
     }, "gmessages")
   }
 
@@ -165,9 +256,15 @@ Flickable {
       width: parent.width
       spacing: Style.space(8)
       Repeater {
+        id: sectionNav
         model: [
           {label:"Updates", section:updatesSection},
           {label:"Services", section:serviceChoices},
+          {label:"Notifications", section:notificationsSection},
+          {label:"Inbox", section:unifiedInboxSection},
+          {label:"Appearance", section:windowSection},
+          {label:"Keyboard", section:keyboardSection},
+          {label:"Emoji picker", section:emojiPickerSection},
           {label:"Service guides", section:servicesSection},
           {label:"Tools", section:toolsSection},
           {label:"Telegram API", section:telegramSection},
@@ -205,6 +302,300 @@ Flickable {
       service:root.service
       fontFamily:root.fontFamily
       uiScale:root.uiScale
+    }
+
+    NotificationSettings {
+      id: notificationsSection
+      width: parent.width
+      service: root.service
+      fontFamily: root.fontFamily
+      uiScale: root.uiScale
+      foreground: root.copyColor
+    }
+
+    Column {
+      id: unifiedInboxSection
+      objectName: "unifiedInboxSection"
+      width: parent.width
+      spacing: Style.space(8)
+      Text {
+        width: parent.width
+        text: "Inbox"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+      Item {
+        id: unifiedInboxSwitch
+        objectName: "unifiedInboxSwitch"
+        width: parent.width
+        implicitHeight: Math.max(unifiedInboxLabels.implicitHeight, unifiedInboxToggle.implicitHeight)
+        enabled: !root.savingUnifiedInboxPreference
+        activeFocusOnTab: true
+        opacity: enabled ? 1 : 0.45
+        Keys.onReturnPressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Keys.onEnterPressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Keys.onSpacePressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Column {
+          id: unifiedInboxLabels
+          anchors.left: parent.left
+          anchors.right: unifiedInboxToggle.left
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            text: "Unified inbox"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Show all enabled services in one conversation list. Toggle with Ctrl+Shift+A."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.caption)
+          }
+        }
+        ToggleSwitch {
+          id: unifiedInboxToggle
+          objectName: "unifiedInboxToggle"
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          checked: root.unifiedInboxEnabled
+          busy: root.savingUnifiedInboxPreference
+          interactive: unifiedInboxSwitch.enabled
+          hasCursor: unifiedInboxSwitch.activeFocus
+          foreground: root.foreground
+          accent: root.accentColor
+          onToggled: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        }
+      }
+      Text {
+        width: parent.width
+        visible: root.unifiedInboxPreferenceStatusText !== ""
+        wrapMode: Text.Wrap
+        text: root.unifiedInboxPreferenceStatusText
+        color: root.urgentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
+      }
+    }
+
+    KeyboardShortcutsView {
+      id: keyboardSection
+      objectName: "keyboardShortcutsSection"
+      width: parent.width
+      service: root.service
+      overrides: root.keyboardShortcuts
+      foreground: root.copyColor
+      mutedColor: root.mutedColor
+      accentColor: root.accentColor
+      errorColor: root.urgentColor
+      fontFamily: root.fontFamily
+      fontSize: fs(Style.font.body)
+      onSaved: function(shortcuts) {
+        root.keyboardShortcuts = shortcuts
+        root.keyboardShortcutsSaved(shortcuts)
+      }
+    }
+
+    Column {
+      id: emojiPickerSection
+      objectName: "emojiPickerSection"
+      width: parent.width
+      spacing: Style.space(8)
+
+      Text {
+        width: parent.width
+        text: "Emoji picker"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+
+      Item {
+        id: keepPreviousEmojiSearchTextSwitch
+        objectName: "keepPreviousEmojiSearchTextSwitch"
+        width: parent.width
+        implicitHeight: Math.max(emojiSearchLabels.implicitHeight, emojiSearchToggle.implicitHeight)
+        enabled: !root.savingEmojiSearchPreference
+        activeFocusOnTab: true
+        opacity: enabled ? 1 : 0.45
+        Keys.onReturnPressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        Keys.onEnterPressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        Keys.onSpacePressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+
+        Column {
+          id: emojiSearchLabels
+          anchors.left: parent.left
+          anchors.right: emojiSearchToggle.left
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+
+          Text {
+            width: parent.width
+            text: "Keep previous emoji search text"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Keep and reapply the last emoji search when opening the picker."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.caption)
+          }
+        }
+
+        ToggleSwitch {
+          id: emojiSearchToggle
+          objectName: "keepPreviousEmojiSearchTextToggle"
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          checked: root.keepPreviousEmojiSearchText
+          busy: root.savingEmojiSearchPreference
+          interactive: keepPreviousEmojiSearchTextSwitch.enabled
+          hasCursor: keepPreviousEmojiSearchTextSwitch.activeFocus
+          foreground: root.foreground
+          accent: root.accentColor
+          onToggled: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        }
+      }
+
+      Text {
+        width: parent.width
+        visible: root.emojiSearchPreferenceStatusText !== ""
+        wrapMode: Text.Wrap
+        text: root.emojiSearchPreferenceStatusText
+        color: root.urgentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
+      }
+    }
+
+    Column {
+      id: windowSection
+      width: parent.width
+      spacing: Style.space(8)
+
+      Text {
+        width: parent.width
+        text: "Opening behavior"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+
+      Item {
+        id: alwaysPopoutSwitch
+        objectName: "alwaysPopoutSwitch"
+        width: parent.width
+        implicitHeight: Math.max(popoutLabels.implicitHeight, popoutToggle.implicitHeight)
+        enabled: !root.savingWindowPreferences
+        activeFocusOnTab: true
+        opacity: enabled ? 1 : 0.45
+        Keys.onReturnPressed: root.saveWindowPreferences(!root.alwaysPopout, root.popoutMode)
+        Keys.onEnterPressed: root.saveWindowPreferences(!root.alwaysPopout, root.popoutMode)
+        Keys.onSpacePressed: root.saveWindowPreferences(!root.alwaysPopout, root.popoutMode)
+
+        Column {
+          id: popoutLabels
+          anchors.left: parent.left
+          anchors.right: popoutToggle.left
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+
+          Text {
+            width: parent.width
+            text: "Always open popped out"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Open OmaChat from the bar in its standalone window."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.caption)
+          }
+        }
+
+        ToggleSwitch {
+          id: popoutToggle
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          checked: root.alwaysPopout
+          busy: root.savingWindowPreferences
+          interactive: alwaysPopoutSwitch.enabled
+          hasCursor: alwaysPopoutSwitch.activeFocus
+          foreground: root.foreground
+          accent: root.accentColor
+          onToggled: root.saveWindowPreferences(!root.alwaysPopout, root.popoutMode)
+        }
+      }
+
+      Column {
+        width: parent.width
+        visible: root.alwaysPopout
+        spacing: Style.space(6)
+
+        Text {
+          width: parent.width
+          text: "Pop-out layout"
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.bodySmall)
+          font.bold: true
+        }
+
+        ChoiceGroup {
+          objectName: "defaultPopoutMode"
+          width: parent.width
+          options: [
+            { value: "floating", label: "Floating" },
+            { value: "tiled", label: "Tiled" }
+          ]
+          value: root.popoutMode
+          foreground: root.foreground
+          background: root.popupBg
+          accent: root.accentColor
+          fontFamily: root.fontFamily
+          fontSize: fs(Style.font.body)
+          focusable: true
+          enabled: !root.savingWindowPreferences
+          onChanged: function(v) { root.saveWindowPreferences(true, v) }
+        }
+      }
+
+      Text {
+        width: parent.width
+        visible: root.windowStatusText !== ""
+        wrapMode: Text.Wrap
+        text: root.windowStatusText
+        color: root.urgentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
+      }
+    }
+
+    Rectangle {
+      width: parent.width
+      height: 1
+      color: Color.popups.border
     }
 
     // Section 2: Interface Scale
@@ -278,6 +669,49 @@ Flickable {
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
       }
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "WhatsApp history cache"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+
+      ChoiceGroup {
+        width: parent.width
+        options: [
+          { value: "64", label: "64 MB" },
+          { value: "128", label: "128 MB" },
+          { value: "256", label: "256 MB" },
+          { value: "512", label: "512 MB" }
+        ]
+        value: String(root.whatsappHistoryCacheMB || 128)
+        foreground: root.foreground
+        background: Color.popups.background
+        accent: root.accentColor
+        fontFamily: root.fontFamily
+        fontSize: fs(Style.font.body)
+        focusable: true
+        onChanged: function(v) {
+          if (!root.service) return
+          root.service.call("setWhatsAppHistoryCache", { sizeMB: Number(v) }, function(ok, res) {
+            if (!ok) { root.statusText = String(res); root.load(); return }
+            root.whatsappHistoryCacheMB = Number(res.whatsappHistoryCacheMB) || 128
+          }, "gmessages")
+        }
+      }
+
+      Text {
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Older cached messages are removed automatically when space is needed. This does not delete messages from WhatsApp. Photos and videos use the separate media cache."
+        color: root.mutedColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+      }
     }
 
     Rectangle {
@@ -305,7 +739,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "OmaChat never installs packages automatically. Check the tools below, review their source, and choose Install only for tools you want. The terminal asks for confirmation before invoking sudo; the package manager asks again before making changes. Accounts and API credentials remain your choice."
+        text: "OmaChat never installs packages automatically. Check the tools below, review their source, and choose Install only for tools you want. The terminal asks for confirmation before invoking the package manager; the package manager asks again before making changes. Accounts and API credentials remain your choice."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
@@ -771,6 +1205,28 @@ Flickable {
             width: parent.width
             wrapMode: Text.Wrap
             text: "Messenger support vendors go.mau.fi/mautrix-meta under the GNU AGPL version 3. Upstream copyright and exceptions are retained in the vendor directory."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Signal"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Experimental Signal support invokes the separately installed signal-cli project (GPL-3.0) over JSON-RPC. It is not bundled with OmaChat and is not an official Signal client."
             color: root.mutedColor
             font.family: root.fontFamily
             font.pixelSize: fs(Style.font.body)

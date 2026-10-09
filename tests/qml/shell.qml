@@ -10,6 +10,7 @@ ShellRoot {
  id: root
  property bool passed: false
  property string testImage: Quickshell.env("OMACHAT_TEST_IMAGE")
+ property var serviceInstallLaunches: []
  function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
  function named(item, name) {
   if (item.objectName === name) return item
@@ -41,6 +42,7 @@ ShellRoot {
   property var statusWA: ({phoneOK:true, state:"connected"})
   property var statusTG: ({phoneOK:true, state:"unpaired"})
   property var statusFB: ({phoneOK:true, state:"unpaired"})
+  property var statusSG: ({phoneOK:true, state:"unpaired"})
   property int unread: 0
   property string refreshError: ""
   property var browserProfiles: []
@@ -52,7 +54,10 @@ ShellRoot {
    {id:"wa-1@s.whatsapp.net",name:"Demo WA",preview:"WA test",timestamp:3000000}
   ]
   property var conversationsFB: [
-   {id:"fb-1",name:"Demo Messenger",preview:"Messenger test",timestamp:4000000}
+   {id:"fb-1",name:"Demo Messenger",preview:"",timestamp:4000000,unread:true}
+  ]
+  property var conversationsSG: [
+   {id:"signal:user:alice",name:"Demo Signal",preview:"Signal test",timestamp:5000000}
   ]
   property var calls: []
   property var delayed: []
@@ -60,9 +65,9 @@ ShellRoot {
   signal messageReceived(var message, var net)
   signal conversationUpdated(var conversation, var net)
   signal paired(var net)
-  function statusFor(net) { return net === "whatsapp" ? statusWA : (net === "messenger" ? statusFB : status) }
+  function statusFor(net) { return net === "whatsapp" ? statusWA : (net === "telegram" ? statusTG : (net === "messenger" ? statusFB : (net === "signal" ? statusSG : status))) }
   function stateFor(net) { var s = statusFor(net); return s && s.state ? s.state : state }
-  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : (net === "messenger" ? conversationsFB : conversations) }
+  function conversationsFor(net) { return net === "whatsapp" ? conversationsWA : (net === "messenger" ? conversationsFB : (net === "signal" ? conversationsSG : conversations)) }
   function unreadFor(net) {
     var s = net === "telegram" ? statusTG : statusFor(net)
     return s && s.unread ? s.unread : 0
@@ -78,14 +83,34 @@ ShellRoot {
    }
    if (!callback) return
    if (method === "messages") callback(true, {messages:[]})
+   else if (method === "conversationTargets") callback(true, [{id:"alice",name:"Alice",detail:"+15550001"},{id:"bob",name:"Bob",detail:"+15550002"}])
+   else if (method === "createConversation") callback(true, {id:"new-chat",name:params.name || "Alice"})
    else if (method === "media") callback(!failMedia, failMedia ? "temporary failure" : {path:root.testImage})
-   else if (method === "config") callback(true,{uiScale:1,telegramConfigured:false,telegramApiId:0})
+   else if (method === "config") callback(connected,connected ? {uiScale:1,alwaysPopout:false,popoutMode:"floating",telegramConfigured:false,telegramApiId:0} : "not connected")
+   else if (method === "setWindowPreferences") callback(true,{uiScale:1,alwaysPopout:params.alwaysPopout,popoutMode:params.popoutMode,telegramConfigured:false,telegramApiId:0})
    else if (method === "setTelegramCredentials") {
      var isConfigured = params && params.apiId > 0 && !!params.apiHash
      callback(true,{uiScale:1,telegramConfigured:isConfigured,telegramApiId:isConfigured ? params.apiId : 0})
    }
    else callback(true, {})
   }
+ }
+ QtObject {
+  id: disconnectedService
+  property bool connected: false
+  property bool savingServices: false
+  property bool servicesConfigLoaded: true
+  property bool serviceSelectionRequired: false
+  property string currentNetwork: "gmessages"
+  property string state: "connecting"
+  property var status: ({state:"connecting"})
+  property var enabledServices: ["gmessages"]
+  function stateFor(net) { return state }
+  function statusFor(net) { return status }
+  function unreadFor(net) { return 0 }
+  function loadConversations(net) {}
+  function loadProfiles() {}
+  function call(method,params,callback,network) { if (callback) callback(false,"not connected") }
  }
  FloatingWindow {
   id: window
@@ -94,7 +119,7 @@ ShellRoot {
   PanelKeyCatcher {
    id: catcher
    anchors.fill: parent
-   blocked: inbox.composerFocus === true || inbox.linkConfirmOpen === true
+   blocked: inbox.composerFocus === true || inbox.linkConfirmOpen === true || inbox.newChatOpen === true
    property int shortcuts: 0
    onTextKey: shortcuts++
    Chat.InboxView { id: inbox; anchors.fill: parent; service: fake; host: host }
@@ -103,8 +128,18 @@ ShellRoot {
   TestResult { id: inspect }
  }
  Chat.Panel { id: panel; service: fake }
+ Chat.Panel { id: delayedPanel }
+ Chat.Panel { id: disconnectedPanel }
  Chat.SettingsView { id: settings; visible: false; service: fake }
- Chat.ServiceOptions { id: serviceOptions; parent:window.contentItem; width:600; visible:false; service:fake }
+ Chat.ServiceOptions {
+  id: serviceOptions
+  parent:window.contentItem
+  width:600
+  visible:false
+  service:fake
+  launch:function(argv) { root.serviceInstallLaunches=root.serviceInstallLaunches.concat([argv]) }
+  probeSignalCLI:function() { serviceOptions.acceptSignalProbe(1) }
+ }
  Chat.DependencyChecklist {
   id: dependencies
   parent: window.contentItem
@@ -120,7 +155,7 @@ ShellRoot {
     {id:"go",name:"Go",purpose:"Build",detail:"Available",installed:true,sourceUrl:"https://gitlab.archlinux.org/archlinux/packaging/packages/go"}
   ]))
  }
- Process { command: ["sleep", "0.5"]; running: true; onExited: root.runTests() }
+ Process { command: ["sleep", "4"]; running: true; onExited: root.runTests() }
  function runTests() {
    try {
     console.log("QML_TEST_BEGIN")
@@ -134,6 +169,27 @@ ShellRoot {
     fake.savingServices=false
     opt.callback(false,"Could not save")
     root.check(fake.enabledServices.length === 3 && serviceOptions.resultText === "Could not save","failed selection does not hide services")
+    serviceOptions.reload()
+    serviceOptions.choose("whatsapp",false)
+    serviceOptions.choose("signal",true)
+    serviceOptions.save()
+    root.check(serviceOptions.signalInstallPromptOpen,"missing signal-cli asks before installation")
+    root.check(root.serviceInstallLaunches.length === 0 && fake.delayed.length === 0,"Signal prompt does not install or save before consent")
+    serviceOptions.cancelSignalInstall()
+    root.check(serviceOptions.selected.join(",") === fake.enabledServices.join(",") && root.serviceInstallLaunches.length === 0,"cancel restores saved services and launches nothing")
+    serviceOptions.choose("signal",true)
+    serviceOptions.save()
+    root.check(serviceOptions.signalInstallPromptOpen,"Signal install prompt can be reopened")
+    serviceOptions.confirmSignalInstall()
+    root.check(root.serviceInstallLaunches.length === 1,"confirm launches the Signal dependency installer")
+    var signalArgv=root.serviceInstallLaunches[0]
+    root.check(signalArgv[0] === "omarchy" && signalArgv[1] === "launch" && signalArgv[2] === "terminal" && signalArgv[3] === "python3" && signalArgv[4].endsWith("/scripts/dependencies.py") && signalArgv[5] === "--install" && signalArgv[6] === "signalcli","Signal installer uses fixed terminal argv")
+    var signalSave=fake.delayed.pop()
+    root.check(signalSave.method === "setEnabledServices" && signalSave.selected.indexOf("signal")>=0,"confirmed Signal installation applies the requested service choice")
+    fake.enabledServices=signalSave.selected.slice()
+    fake.savingServices=false
+    signalSave.callback(true,{})
+    fake.enabledServices=["gmessages","whatsapp","telegram"]
     serviceOptions.reload()
     fake.enabledServices=["telegram"]
     panel.syncActiveService()
@@ -171,6 +227,48 @@ ShellRoot {
     var caption = inspect.findChild(inbox,"attachCaption")
     var search = inspect.findChild(inbox,"searchField")
     root.check(composer && caption && search,"real inbox editors load")
+    inbox.network = "messenger"
+    inbox.selectConversation("fb-1")
+    root.check(fake.calls.some(function(c) {
+      return c.method === "markRead" && c.network === "messenger"
+        && c.params.conversationID === "fb-1" && c.params.messageID === ""
+    }), "empty unread Messenger thread is acknowledged without a rendered message")
+    inbox.network = "gmessages"
+    var messengerConversations = fake.conversationsFB
+    fake.conversationsFB=[{id:"fb-empty-unread",name:"Encrypted Messenger chat",preview:"",timestamp:4,unread:true}]
+    inbox.network="messenger"
+    inbox.selectConversation("fb-empty-unread")
+    root.check(fake.calls.some(function(c){return c.method === "markRead" && c.network === "messenger" && c.params.conversationID === "fb-empty-unread" && c.params.messageID === ""}),"opening an unread Messenger thread without synced history still marks it read")
+    inbox.network="gmessages"
+    fake.conversationsFB = messengerConversations
+    inbox.openNewChat()
+    root.check(inbox.newChatOpen && inbox.newChatTargets.length === 2,"new conversation picker loads service contacts")
+    inbox.toggleNewChatTarget("alice")
+    inbox.createNewChat()
+    root.check(!inbox.newChatOpen && fake.calls.some(function(c){return c.method === "createConversation" && c.params.targetIDs[0] === "alice"}),"direct conversation creation uses the selected service contact")
+    inbox.openNewChat()
+    inbox.newChatGroup=true
+    inbox.toggleNewChatTarget("alice")
+    inbox.createNewChat()
+    root.check(inbox.newChatOpen && inbox.newChatError.indexOf("two contacts") >= 0,"group creation requires multiple participants")
+    inbox.newChatOpen=false
+    delayedPanel.open()
+    root.check(!delayedPanel.opened && delayedPanel.openPendingConfig,"opening waits for persisted preferences when the service is not injected yet")
+    delayedPanel.service=fake
+    root.check(delayedPanel.opened && !delayedPanel.openPendingConfig,"pending open resumes after persisted preferences load")
+    delayedPanel.close()
+    disconnectedPanel.service=disconnectedService
+    disconnectedPanel.open()
+    root.check(!disconnectedPanel.opened && disconnectedPanel.openPendingConfig && !disconnectedPanel.panelConfigLoaded,"failed startup config read keeps the open request pending")
+    disconnectedPanel.close()
+    settings.saveWindowPreferences(true,"tiled")
+    root.check(settings.alwaysPopout && settings.popoutMode === "tiled","window opening preferences save through the helper")
+    root.check(fake.calls.some(function(c){return c.method === "setWindowPreferences" && c.params.alwaysPopout === true && c.params.popoutMode === "tiled"}),"window preference request preserves enabled state and layout")
+    root.check(inspect.findChild(settings,"alwaysPopoutSwitch") !== null && inspect.findChild(settings,"defaultPopoutMode") !== null,"Settings exposes auto pop-out and layout controls")
+    var popoutButton=inspect.findChild(panel,"popoutButton")
+    panel.alwaysPopout=true
+    root.check(popoutButton !== null && !popoutButton.visible,"manual pop-out header action is hidden when automatic pop-out is enabled")
+    panel.alwaysPopout=false
     inbox.selectConversation("a")
     composer.text="Alice draft"
     caption.text="Alice caption"
@@ -246,16 +344,17 @@ ShellRoot {
     inbox.threadError=""
     composer.text=""
 
+    search.Window.window.requestActivate()
     window.contentItem.forceActiveFocus()
     search.forceActiveFocus()
     search.text=""
     var text="r123 jkl hx"
-    for (var i=0;i<text.length;i++) keyboard.keyClickChar(text[i], Qt.NoModifier, 0)
+    for (var i=0;i<text.length;i++) keyboard.keyClickChar(text[i], Qt.NoModifier, 20)
     root.check(search.text === text && catcher.shortcuts === 0, "real search editor receives shortcut characters")
     inbox.pendingAttachment=root.testImage
     caption.forceActiveFocus()
     caption.text=""
-    for (var j=0;j<text.length;j++) keyboard.keyClickChar(text[j], Qt.NoModifier, 0)
+    for (var j=0;j<text.length;j++) keyboard.keyClickChar(text[j], Qt.NoModifier, 20)
     root.check(caption.text === text && catcher.shortcuts === 0, "real attachment caption receives shortcut characters")
     inbox.pendingAttachment=""
     settings.parent=catcher
@@ -263,7 +362,7 @@ ShellRoot {
     var key=inspect.findChild(settings,"telegramApiHashField")
     key.forceActiveFocus()
     key.text=""
-    for (var k=0;k<text.length;k++) keyboard.keyClickChar(text[k], Qt.NoModifier, 0)
+    for (var k=0;k<text.length;k++) keyboard.keyClickChar(text[k], Qt.NoModifier, 20)
     root.check(key.text === text && catcher.shortcuts === 0, "real Settings credential editor receives shortcut characters")
     key.text=""
 
@@ -347,13 +446,14 @@ ShellRoot {
     fake.status={state:"unpaired",error:warning}
     unpairCall.callback(false,warning)
     root.check(loader.item === null, "unpair destroys account UI state")
-    var warningLabel=inspect.findChild(panel,"unpairWarningText")
+    var pairingItem = inspect.findChild(panel,"bodyLoader").item
+    var warningLabel=inspect.findChild(pairingItem,"unpairWarningText")
     root.check(warningLabel && warningLabel.text === warning && warningLabel.wrapMode !== Text.NoWrap, "unpaired screen retains remote revocation warning and phone instructions")
     root.check(!panel.unpairing, "failed unpair releases pending state")
-    var qrProcess=inspect.findChild(panel,"qrProcess")
+    var qrProcess=inspect.findChild(pairingItem,"qrProcess")
     root.check(!!qrProcess,"pairing QR process exists")
     qrProcess.exited(1,0)
-    root.check(inspect.findChild(panel,"qrErrorText").text.indexOf("Settings > Tools") >= 0,"QR failure gives dependency guidance")
+    root.check(inspect.findChild(pairingItem,"qrErrorText").text.indexOf("Settings > Tools") >= 0,"QR failure gives dependency guidance")
 
     fake.state="connected"
     fake.status={phoneOK:true}
@@ -482,23 +582,25 @@ ShellRoot {
     gmInbox.selectConversation("same-id")
     root.check(inspect.findChild(gmInbox, "composer").text === "Google specific draft", "clearing WhatsApp drafts via onPaired does not affect Google drafts")
 
-    // 4. if both unpaired, prior account-view destruction still valid
+    // 4. if every enabled account is unpaired, prior account-view destruction still valid
     fake.statusWA = {phoneOK:true, state:"unpaired"}
+    fake.statusTG = {phoneOK:true, state:"unpaired"}
     fake.status = {phoneOK:true, state:"unpaired"}
-    // Both unpaired, anyAccountReady should be false, and inboxLoader should be destroyed
+    // All enabled services are unpaired, so inboxLoader should be destroyed.
     // need to trigger connState change update if needed, but changing status should do it.
     // wait for qml to process bindings
     panel.activeService = "gmessages" // trigger update
-    root.check(inspect.findChild(panel, "inboxLoader").item === null, "if both accounts are unpaired, the inboxLoader item is destroyed")
+    root.check(inspect.findChild(panel, "inboxLoader").item === null, "if all enabled accounts are unpaired, the inboxLoader item is destroyed")
 
     // Restore states for later tests
     fake.statusWA = {phoneOK:true, state:"connected"}
+    fake.statusTG = {phoneOK:true, state:"connected"}
     fake.status = {phoneOK:true, state:"connected"}
     panel.activeService = "gmessages"
     var beforeTelegram = fake.calls.length
     panel.setActiveService("telegram")
     root.check(inspect.findChild(panel, "inboxLoader").visible, "connected Telegram shows the live inbox")
-    root.check(fake.calls.length === beforeTelegram, "telegram tab does not issue chat RPCs")
+    root.check(fake.calls.slice(beforeTelegram).every(function(call) { return call.method === "setChatView" }), "telegram tab only saves its view preference before a chat is chosen")
     var tgInbox = inspect.findChild(panel, "inboxLoader").item
     root.check(tgInbox && tgInbox.reactionsSupported, "Telegram message bubbles enable the reaction action")
     tgInbox.selectConversation("tg:7")
@@ -526,6 +628,18 @@ ShellRoot {
     fbInbox.sendMessage("Messenger pending")
     var fbPending = fake.delayed.pop()
     root.check(fbPending.method === "send" && fbPending.network === "messenger", "Messenger send is routed only to Messenger")
+    fake.enabledServices = ["gmessages","whatsapp","telegram","messenger","signal"]
+    fake.statusSG = {phoneOK:true, state:"connected", unread:3}
+    panel.syncActiveService()
+    serviceTabs = inspect.findChild(panel, "serviceTabs")
+    root.check(serviceTabs && serviceTabs.options.some(function(tab){ return tab.value === "signal" && tab.unread === 3 }), "inactive Signal service tab receives its unread badge")
+    panel.setActiveService("signal")
+    var sgInbox = inspect.findChild(panel, "inboxLoader").item
+    root.check(sgInbox && sgInbox.isSignal && sgInbox.network === "signal", "Signal tab opens an isolated native inbox")
+    sgInbox.selectConversation("signal:user:alice")
+    sgInbox.sendMessage("Signal pending")
+    var sgPending = fake.delayed.pop()
+    root.check(sgPending.method === "send" && sgPending.network === "signal", "Signal send is routed only to Signal")
     panel.setActiveService("gmessages")
     var screenshot=Quickshell.env("OMACHAT_TEST_SCREENSHOT")
     if (screenshot) {

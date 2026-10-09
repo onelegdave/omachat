@@ -25,6 +25,7 @@ ShellRoot {
   property var requests: []
   signal messageReceived(var message)
   signal conversationUpdated(var conversation)
+  signal historyUpdated(var update, string net)
   signal paired()
   function call(method,params,callback) {
    if(method === "messages") { requests.push({params:params,callback:callback});return }
@@ -72,8 +73,15 @@ ShellRoot {
      sameAnchor("refresh preserves reading position")
      inbox.loadOlderMessages();take().callback(false,"synthetic network failure")
      check(!inbox.loadingOlder && inbox.hasOlder && inbox.historyCursorID==="c40" && inbox.historyError!=="","failed older page can retry same cursor")
-     inbox.loadOlderMessages();take().callback(true,reply([],"empty-next",true));break
+     inbox.loadOlderMessages();req=take()
+     req.callback(true,{messages:[],cursorID:"c40",cursorTime:1234,hasMore:true,historyFetchState:"loading",historyNotice:"Requesting older history from your phone…"})
+     check(!inbox.loadingOlder && inbox.historyFetchState==="loading","phone history remains pending after the local page call")
+     var olderButton=inspect.findChild(inbox,"loadOlderButton")
+     check(!olderButton.enabled,"older-history control is disabled while phone history is pending")
+     inbox.loadOlderMessages();check(fake.requests.length===0,"pending phone history suppresses duplicate requests")
+     fake.historyUpdated({conversationID:"a",state:"complete",notice:""},inbox.network);break
     case 5:
+     take().callback(true,reply([],"empty-next",true))
      check(inbox.hasOlder && inbox.historyCursorID==="empty-next","empty page with advancing cursor can continue")
      inbox.loadOlderMessages();take().callback(true,reply([],"empty-next",true))
      check(!inbox.hasOlder && inbox.historyError!=="","repeated cursor stops further paging")
@@ -85,7 +93,10 @@ ShellRoot {
      root.oldRequest.callback(true,reply([msg(1)],"stale",true))
      check(!inbox.messages.some(function(m){return m.id==="m1"}) && inbox.historyCursorID!=="stale","refresh invalidates an in-flight older page")
      inbox.loadOlderMessages();root.oldRequest=take()
-     inbox.selectConversation("b");root.otherRequest=take()
+     inbox.historyFetchState="failed";inbox.historyNotice="Old conversation failure"
+     inbox.selectConversation("b")
+     check(inbox.historyFetchState==="" && inbox.historyNotice==="","conversation switch clears prior history status")
+     root.otherRequest=take()
      inbox.selectConversation("a");take().callback(true,reply(page(100,159),"c100",true))
      root.oldRequest.callback(true,reply([msg(1)],"old-a",true))
      root.otherRequest.callback(true,reply([msg(2,"b")],"old-b",true))

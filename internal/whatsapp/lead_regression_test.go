@@ -934,7 +934,7 @@ func makeMinimalHistorySync(chatID string) *waHistorySync.HistorySync {
 
 func TestStoredBoundsKeepNewestConversations(t *testing.T) {
 	stored := newStoredChatData()
-	for i := 0; i < 60; i++ {
+	for i := 0; i < maxPersistedConversations+10; i++ {
 		id := fmt.Sprintf("%02d@s.whatsapp.net", i)
 		stored.Conversations[id] = wire.Conversation{ID: id, Timestamp: int64(i)}
 		stored.Order = append(stored.Order, id)
@@ -950,19 +950,33 @@ func TestStoredBoundsKeepNewestConversations(t *testing.T) {
 	if len(stored.Order) != maxPersistedConversations || len(stored.Conversations) != maxPersistedConversations {
 		t.Fatalf("expected %d conversations, got order=%d convs=%d", maxPersistedConversations, len(stored.Order), len(stored.Conversations))
 	}
-	if stored.Order[0] != "59@s.whatsapp.net" {
+	newestID := fmt.Sprintf("%02d@s.whatsapp.net", maxPersistedConversations+9)
+	if stored.Order[0] != newestID {
 		t.Fatalf("expected newest first, got %s", stored.Order[0])
 	}
 	if _, ok := stored.Conversations["00@s.whatsapp.net"]; ok {
 		t.Fatal("evicted oldest conversation must leave the map")
 	}
-	if len(stored.Messages["59@s.whatsapp.net"]) != maxPersistedMessages {
-		t.Fatalf("expected %d messages, got %d", maxPersistedMessages, len(stored.Messages["59@s.whatsapp.net"]))
+	if len(stored.Messages[newestID]) != maxPersistedMessages {
+		t.Fatalf("expected %d messages, got %d", maxPersistedMessages, len(stored.Messages[newestID]))
 	}
-	if _, ok := stored.RawMedia[rawMediaKey("59@s.whatsapp.net", "m-0")]; ok {
+	if _, ok := stored.RawMedia[rawMediaKey(newestID, "m-0")]; ok {
 		t.Fatal("evicted message media metadata must be dropped")
 	}
-	if _, ok := stored.RawMedia[rawMediaKey("59@s.whatsapp.net", "m-119")]; !ok {
+	if _, ok := stored.RawMedia[rawMediaKey(newestID, "m-119")]; !ok {
 		t.Fatal("retained message media metadata must stay")
+	}
+}
+
+func TestStoredBoundsKeepMoreThanFiftyConversations(t *testing.T) {
+	stored := newStoredChatData()
+	for i := 0; i < 60; i++ {
+		id := fmt.Sprintf("more-%02d@s.whatsapp.net", i)
+		stored.Conversations[id] = wire.Conversation{ID: id, Timestamp: int64(60 - i)}
+		stored.Order = append(stored.Order, id)
+	}
+	boundStoredChat(stored)
+	if len(stored.Order) != 60 {
+		t.Fatalf("store retained %d conversations; want all 60 synthetic chats", len(stored.Order))
 	}
 }

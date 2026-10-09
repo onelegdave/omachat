@@ -25,6 +25,9 @@ TOOLS = [
     tool("clipboard", "Wayland clipboard", "Copy message text.", ["wl-copy"], "wl-clipboard"),
     tool("xdg", "Desktop link opener", "Open links, source pages, and downloaded files.", ["xdg-open"], "xdg-utils"),
     tool("python", "Python 3", "Build and verify the helper, check releases, and run setup tools.", ["python3"], "python"),
+    dict(id="signalcli", name="signal-cli", purpose="Optional Signal linked-device service. It runs only while Signal is enabled.",
+         commands=["signal-cli"], packages=["signal-cli"], installer="yay",
+         sourceUrl="https://aur.archlinux.org/packages/signal-cli"),
 ]
 
 
@@ -57,21 +60,33 @@ def install(key):
     if check(entry)["installed"]:
         print("Already available. Nothing to install.")
         return 0
-    if not shutil.which("pacman") or not shutil.which("sudo"):
-        print("This action requires Arch's pacman and sudo. Install manually using your system's package manager.")
-        return 2
-    command = ["sudo", "pacman", "-S", "--needed", *entry["packages"]]
+    if entry.get("installer") == "yay":
+        if not shutil.which("yay"):
+            print("This action requires the yay AUR helper. Install signal-cli manually using its upstream instructions.")
+            return 2
+        command = ["yay", "-S", "--needed", *entry["packages"]]
+        manager_name = "Yay"
+    else:
+        if not shutil.which("pacman") or not shutil.which("sudo"):
+            print("This action requires Arch's pacman and sudo. Install manually using your system's package manager.")
+            return 2
+        command = ["sudo", "pacman", "-S", "--needed", *entry["packages"]]
+        manager_name = "Pacman"
     print(entry["name"] + ": " + entry["purpose"])
     print("Review packaging source: " + entry["sourceUrl"])
     print("Command: " + " ".join(command))
-    print("Pacman will show the transaction and ask for confirmation. Nothing is installed unless you agree.")
+    print(manager_name + " will show the transaction and ask for confirmation. Nothing is installed unless you agree.")
     print("This does not refresh package databases or upgrade your system. If your system needs an update, cancel and use your normal Omarchy update workflow.")
     try:
         if input("Continue to package manager? [y/N] ").strip().lower() != "y":
             print("Cancelled. Nothing installed.")
             return 0
         result = subprocess.run(command, check=False).returncode
-        print("Tool available." if result == 0 and check(entry)["installed"] else "Tool not confirmed available. Review the output above; no success is assumed.")
+        available = result == 0 and check(entry)["installed"]
+        print("Tool available." if available else "Tool not confirmed available. Review the output above; no success is assumed.")
+        if available and entry["id"] == "signalcli" and shutil.which("omarchy"):
+            print("Restarting the Omarchy shell so the enabled Signal service can start.")
+            subprocess.run(["omarchy", "restart", "shell"], check=False)
         input("Return to OmaChat and choose Recheck. Press Enter to close. ")
         return result
     except (EOFError, KeyboardInterrupt):

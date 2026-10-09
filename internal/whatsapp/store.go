@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"google.golang.org/protobuf/proto"
@@ -14,8 +16,11 @@ import (
 )
 
 const (
-	maxPersistedConversations = 50
-	maxPersistedMessages      = 100
+	maxPersistedConversations  = 1000
+	maxPersistedMessages       = 100
+	maxHotMessageConversations = 50
+	maxHotHistoryMemoryBytes   = 16 * 1024 * 1024
+	historyIndexTempPrefix     = ".omachat-whatsapp-history-"
 )
 
 // StoredChatData represents the on-disk state of WhatsApp conversations and messages.
@@ -89,6 +94,206 @@ func saveChatStore(path string, stored *StoredChatData) error {
 	return store.WritePrivateJSON(path, raw)
 }
 
+// saveChatIndex stores only bounded conversation metadata and hot reaction
+// actors. Message bodies and attachment protobufs live in the budgeted SQLite
+// history store after successful migration/persistence.
+func saveChatIndex(path string, stored *StoredChatData) error {
+	return saveChatIndexWithLimit(path, stored, maxHistoryIndexFileBytes)
+}
+
+func saveChatIndexWithLimit(path string, stored *StoredChatData, maxBytes int64) error {
+	return saveChatIndexInternal(path, stored, maxBytes, 0, false)
+}
+
+func saveChatIndexWithBudget(path string, stored *StoredChatData, maxBytes, totalBudget int64) error {
+	return saveChatIndexInternal(path, stored, maxBytes, totalBudget, false)
+}
+
+func saveChatIndexForMigration(path string, stored *StoredChatData, maxBytes, migrationPeakBudget int64) error {
+	return saveChatIndexInternal(path, stored, maxBytes, migrationPeakBudget, true)
+}
+
+func saveChatIndexInternal(path string, stored *StoredChatData, maxBytes, totalBudget int64, allowOversizedExisting bool) error {
+	if stored == nil {
+		return nil
+	}
+	if maxBytes <= 0 {
+		return errors.New("WhatsApp conversation index byte budget must be positive")
+	}
+	keep := make(map[string]struct{})
+	hotChats := make(map[string]struct{}, maxHotMessageConversations)
+	for i, chatID := range stored.Order {
+		if i >= maxHotMessageConversations {
+			break
+		}
+		hotChats[chatID] = struct{}{}
+	}
+	for chatID, messages := range stored.Messages {
+		if _, hot := hotChats[chatID]; !hot {
+			continue
+		}
+		for _, message := range messages {
+			if message.ID == "" {
+				continue
+			}
+			keep[rawMediaKey(chatID, message.ID)] = struct{}{}
+		}
+	}
+	actors := make(map[string]map[string]string)
+	for key, values := range stored.ReactionActors {
+		if _, ok := keep[key]; !ok || len(values) == 0 {
+			continue
+		}
+		copyValues := make(map[string]string, len(values))
+		for actor, emoji := range values {
+			copyValues[actor] = emoji
+		}
+		actors[key] = copyValues
+	}
+	index := &StoredChatData{
+		Conversations:  stored.Conversations,
+		Order:          stored.Order,
+		Messages:       make(map[string][]wire.Message),
+		ReactionActors: actors,
+	}
+	raw, err := json.Marshal(index)
+	if err != nil {
+		return err
+	}
+	if int64(len(raw)) > maxBytes {
+		return errors.New("WhatsApp conversation index exceeds its byte budget")
+	}
+	if info, statErr := os.Stat(path); statErr == nil {
+		if int64(info.Size()) > maxBytes && !allowOversizedExisting {
+			return errors.New("existing WhatsApp conversation index exceeds its byte budget")
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	if totalBudget > 0 {
+		if err := checkHistoryAtomicWriteBudget(path, int64(len(raw)), totalBudget); err != nil {
+			return err
+		}
+	}
+	return writeHistoryIndexAtomically(path, raw)
+}
+
+func writeHistoryIndexAtomically(path string, data []byte) error {
+	return writeHistoryIndexAtomicallyWithHooks(path, data, historyIndexWriteHooks{
+		syncFile: func(file *os.File) error { return file.Sync() },
+		rename:   os.Rename,
+		syncDir:  syncHistoryDirectory,
+	})
+}
+
+type historyIndexWriteHooks struct {
+	syncFile func(*os.File) error
+	rename   func(string, string) error
+	syncDir  func(string) error
+}
+
+func writeHistoryIndexAtomicallyWithHooks(path string, data []byte, hooks historyIndexWriteHooks) error {
+	if hooks.syncFile == nil || hooks.rename == nil || hooks.syncDir == nil {
+		return errors.New("WhatsApp history atomic-write hooks must be complete")
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Type().IsRegular() && strings.HasPrefix(entry.Name(), historyIndexTempPrefix) && strings.HasSuffix(entry.Name(), ".tmp") {
+			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+	}
+	f, err := os.CreateTemp(dir, historyIndexTempPrefix+"*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := hooks.syncFile(f); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := hooks.rename(tmp, path); err != nil {
+		return err
+	}
+	return hooks.syncDir(dir)
+}
+
+func syncHistoryDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := directory.Sync(); err != nil {
+		_ = directory.Close()
+		return err
+	}
+	return directory.Close()
+}
+
+func trimStoredHotMessages(stored *StoredChatData) {
+	if stored == nil {
+		return
+	}
+	hotChats := make(map[string]struct{}, maxHotMessageConversations)
+	hotIDs := make(map[string]struct{})
+	for i, chatID := range stored.Order {
+		if i >= maxHotMessageConversations {
+			break
+		}
+		hotChats[chatID] = struct{}{}
+		for _, message := range stored.Messages[chatID] {
+			if message.ID != "" {
+				hotIDs[message.ID] = struct{}{}
+			}
+		}
+	}
+	for chatID := range stored.Messages {
+		if _, ok := hotChats[chatID]; !ok {
+			delete(stored.Messages, chatID)
+		}
+	}
+	for key := range stored.RawMedia {
+		chatID, _, composite := strings.Cut(key, "\x1f")
+		if composite {
+			if _, ok := hotChats[chatID]; !ok {
+				delete(stored.RawMedia, key)
+			}
+		} else if _, ok := hotIDs[key]; !ok {
+			delete(stored.RawMedia, key)
+		}
+	}
+	for key := range stored.ReactionActors {
+		chatID, _, composite := strings.Cut(key, "\x1f")
+		if composite {
+			if _, ok := hotChats[chatID]; !ok {
+				delete(stored.ReactionActors, key)
+			}
+		} else if _, ok := hotIDs[key]; !ok {
+			delete(stored.ReactionActors, key)
+		}
+	}
+}
+
 func boundStoredChat(stored *StoredChatData) {
 	if stored == nil {
 		return
@@ -149,7 +354,9 @@ func boundStoredChat(stored *StoredChatData) {
 			return list[a].ID < list[b].ID
 		})
 		if len(list) > maxPersistedMessages {
-			list = list[len(list)-maxPersistedMessages:]
+			retained := list[len(list)-maxPersistedMessages:]
+			list = make([]wire.Message, len(retained))
+			copy(list, retained)
 		}
 		msgs[e.id] = list
 		for _, m := range list {

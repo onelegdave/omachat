@@ -29,6 +29,7 @@ Item {
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
   readonly property bool isMessenger: network === "messenger"
+  readonly property bool isSignal: network === "signal"
   readonly property var status: service ? (typeof service.statusFor === "function" ? service.statusFor(network) : service.status) : ({})
   readonly property string connState: service ? (typeof service.stateFor === "function" ? service.stateFor(network) : (service.state || "")) : ""
   readonly property bool isGaia: !isWhatsApp && connState === "gaiaPairing"
@@ -78,6 +79,9 @@ Item {
     function onStatusFBChanged() {
       root.syncQR()
     }
+    function onStatusSGChanged() {
+      root.syncQR()
+    }
   }
 
   Component.onCompleted: root.syncQR()
@@ -123,6 +127,13 @@ Item {
         width: parent.width
         uiScale: root.uiScale
         title: {
+          if (root.isSignal) {
+            if (root.isQR) return "Scan QR code with Signal"
+            if (root.unpairWarning !== "") return "Device pairing notice"
+            if (root.isError) return root.status && root.status.error ? root.status.error : "Pairing failed"
+            if (root.status && root.status.state === "connected") return "Signal connected"
+            return "Pair with Signal"
+          }
           if (root.isMessenger) {
             if (root.isError) return root.status && root.status.error ? root.status.error : "Pairing failed"
             if (root.status && root.status.state === "connected") return "Messenger connected"
@@ -147,6 +158,12 @@ Item {
           return "Pair with Google Messages"
         }
         meta: {
+          if (root.isSignal) {
+            if (root.isQR) return "Open Signal on your phone, go to Settings > Linked devices > Link a new device, then scan this QR code."
+            if (root.unpairWarning !== "") return ""
+            if (root.isError) return root.status && root.status.error ? root.status.error : "Check signal-cli and your connection, then try again."
+            return "OmaChat starts the optional signal-cli process only while Signal is enabled. This is an unofficial integration and stores messages locally from the time it is linked."
+          }
           if (root.isMessenger) {
             if (root.isError) return root.status && root.status.hint ? root.status.hint : "Check your browser login and desktop keyring, then try again."
             if (root.status && root.status.state === "connected") return "Messenger is connected and encrypted conversations are available."
@@ -181,7 +198,7 @@ Item {
           OpticalGlyph {
             implicitWidth: root.fs(Style.font.display)
             implicitHeight: root.fs(Style.font.display)
-            text: root.isTelegram ? "\uf2c6" : (root.isWhatsApp ? "󰖣" : (root.isMessenger ? "󰈎" : "󰭹"))
+            text: root.isTelegram ? "\uf2c6" : (root.isWhatsApp ? "󰖣" : (root.isMessenger ? "󰈎" : (root.isSignal ? "󰍡" : "󰭹")))
             color: root.accentInk
             fontFamily: root.fontFamily
             fontSize: root.fs(Style.font.display)
@@ -256,7 +273,7 @@ Item {
       Row {
         anchors.horizontalCenter: parent.horizontalCenter
         spacing: Style.space(8)
-        visible: !root.isGaia && !root.isWhatsApp && !root.isTelegram && !root.isMessenger
+        visible: !root.isGaia && !root.isWhatsApp && !root.isTelegram && !root.isMessenger && !root.isSignal
 
         Button {
           focusable: true
@@ -295,6 +312,23 @@ Item {
           fontFamily: root.fontFamily
           bordered: true
           onClicked: if (root.service) root.service.call("startPairing", null, null, "whatsapp")
+        }
+      }
+
+      Row {
+        anchors.horizontalCenter: parent.horizontalCenter
+        spacing: Style.space(8)
+        visible: root.isSignal && !root.isQR
+
+        Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          text: root.isError ? "Try again" : "Link Signal"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          bordered: true
+          onClicked: if (root.service) root.service.call("startPairing", null, null, "signal")
         }
       }
 

@@ -349,7 +349,7 @@ func (b *Backend) Unpair(context.Context) error {
 func (b *Backend) handleMetaEvent(_ context.Context, evt any) {
 	switch v := evt.(type) {
 	case *table.LSTable:
-		b.handleTable(v)
+		b.handleTableUpdates(v, true)
 	case *messagix.ConnectedEvent, *messagix.ReconnectedEvent:
 		b.setState(wire.StateConnected, "")
 	case *messagix.TransientDisconnectEvent:
@@ -367,10 +367,15 @@ func (b *Backend) handleMetaEvent(_ context.Context, evt any) {
 	}
 }
 func (b *Backend) handleTable(tbl *table.LSTable) {
+	b.handleTableUpdates(tbl, false)
+}
+
+func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 	if tbl == nil {
 		return
 	}
 	publish := make(map[string]wire.Message)
+	notify := make(map[string]bool)
 	queue := func(msg wire.Message) {
 		if msg.ID == "" {
 			return
@@ -412,17 +417,26 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	}
 	attachments := b.tableAttachmentsLocked(tbl)
 	for _, m := range tbl.LSDeleteThenInsertMessage {
+		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
 		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		key := msg.ConversationID + "\x00" + msg.ID
+		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
 		queue(msg)
 	}
 	for _, m := range tbl.LSUpsertMessage {
+		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
 		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		key := msg.ConversationID + "\x00" + msg.ID
+		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
 		queue(msg)
 	}
 	for _, m := range tbl.LSInsertMessage {
+		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
 		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		key := msg.ConversationID + "\x00" + msg.ID
+		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
 		queue(msg)
 	}
@@ -476,7 +490,7 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 		go b.fetchAvatars(avatarJobs)
 	}
 	for _, msg := range publish {
-		b.publishMessage(msg)
+		b.publishMessageNotification(msg, notify[msg.ConversationID+"\x00"+msg.ID])
 	}
 	b.publishSnapshots()
 }
@@ -616,6 +630,12 @@ func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS 
 	}
 	if current, ok := b.convs[key]; ok {
 		group = group || current.IsGroup
+		// Sync can replay a thread row with a stale read watermark after the
+		// user has already read the same activity locally. Only newer activity
+		// may turn that conversation unread again.
+		if !current.Unread && messengerTimestamp(ts) <= current.Timestamp {
+			unread = false
+		}
 	}
 	// A later, non-hybrid-aware thread row (e.g. a plain inbox refresh) can
 	// report a generic type for a thread already known to be an encrypted
@@ -807,6 +827,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 			b.media[media.key] = media
 			attachments = []wire.Attachment{media.attachment()}
 		}
+		_, _, exists := b.messageIndexLocked(thread, evt.Info.ID)
 		msg := b.addMessageWithAttachmentsLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "", attachments)
 		conv := b.convs[key]
 		preview := text
@@ -821,7 +842,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		b.recountUnreadLocked()
 		b.saveStoredMessengerDataLocked()
 		b.mu.Unlock()
-		b.publishMessage(msg)
+		b.publishMessageNotification(msg, !exists && !evt.Info.IsFromMe)
 		b.publishSnapshots()
 	case *events.Connected:
 		b.setState(wire.StateConnected, "")
@@ -920,10 +941,14 @@ func (b *Backend) publishSnapshots() {
 }
 
 func (b *Backend) publishMessage(msg wire.Message) {
+	b.publishMessageNotification(msg, false)
+}
+
+func (b *Backend) publishMessageNotification(msg wire.Message, notify bool) {
 	if b.publish == nil || msg.ID == "" {
 		return
 	}
-	b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkMessenger, Data: msg})
+	b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkMessenger, Data: msg, Notify: notify})
 }
 
 func (b *Backend) Conversations(count int) []wire.Conversation {

@@ -15,6 +15,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
 	"github.com/onelegdave/omachat/internal/messenger"
+	signalbackend "github.com/onelegdave/omachat/internal/signal"
 	"github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/telegram"
 	"github.com/onelegdave/omachat/internal/whatsapp"
@@ -57,6 +58,7 @@ type Daemon struct {
 	media   *mediaCache
 	avatars *avatarStore
 	config  *store.ConfigStore
+	notifications *desktopNotifications
 
 	// Reactions carry the participant IDs that left them, which is the only
 	// way to tell whether one of them is the user's own — and that decides
@@ -94,6 +96,7 @@ type Daemon struct {
 	wa *whatsapp.Backend
 	tg *telegram.Backend
 	fb *messenger.Backend
+	sg *signalbackend.Backend
 }
 
 // New builds a daemon around already-resolved paths.
@@ -116,9 +119,12 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		// happened.
 		status: wire.Status{Network: wire.NetworkGMessages, State: wire.StateUnpaired, PhoneOK: true},
 	}
+	d.notifications = newDesktopNotifications(d.PublishEvent)
 	d.wa = whatsapp.New(log, paths, d.PublishEvent)
+	_ = d.wa.SetHistoryCacheMB(d.config.Get().WhatsAppHistoryCacheMB)
 	d.tg = telegram.New(log, paths, d.PublishEvent, d.config)
 	d.fb = messenger.New(log, paths, d.PublishEvent)
+	d.sg = signalbackend.New(log, paths, d.PublishEvent)
 	d.fb.SetConfig(d.config)
 	services, _ := d.config.EnabledServices(paths)
 	d.activeServices = make(map[string]bool)
@@ -131,6 +137,9 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 // SetWhatsApp overrides the WhatsApp backend instance (useful for unit testing).
 func (d *Daemon) SetWhatsApp(wa *whatsapp.Backend) {
 	d.wa = wa
+	if wa != nil {
+		_ = wa.SetHistoryCacheMB(d.config.Get().WhatsAppHistoryCacheMB)
+	}
 }
 
 // WhatsApp returns the WhatsApp backend instance.
@@ -150,6 +159,7 @@ func (d *Daemon) Telegram() *telegram.Backend {
 
 func (d *Daemon) SetMessenger(fb *messenger.Backend) { d.fb = fb }
 func (d *Daemon) Messenger() *messenger.Backend      { return d.fb }
+func (d *Daemon) Signal() *signalbackend.Backend     { return d.sg }
 
 // Start loads any stored session and connects, or parks in the unpaired state
 // waiting for the plugin to ask for a QR code.
@@ -183,6 +193,14 @@ func (d *Daemon) Start(ctx context.Context) error {
 		}
 	} else if d.fb != nil {
 		d.fb.SetState(wire.StateDisabled, "")
+	}
+	if d.sg != nil && d.serviceEnabled(wire.NetworkSignal) {
+		if err := d.sg.Start(ctx); err != nil {
+			d.log.Error().Err(err).Msg("Signal backend initialization failed")
+			d.sg.SetState(wire.StateDisconnected, "Signal initialization error: "+err.Error())
+		}
+	} else if d.sg != nil {
+		d.sg.SetState(wire.StateDisabled, "")
 	}
 	if !d.serviceEnabled(wire.NetworkGMessages) {
 		d.setState(wire.StateDisabled, "")
@@ -317,6 +335,10 @@ func (d *Daemon) Stop() {
 	if d.fb != nil {
 		d.fb.Stop()
 	}
+	if d.sg != nil {
+		d.sg.Stop()
+	}
+	d.notifications.stop()
 }
 
 func (d *Daemon) saveSession() {
@@ -525,7 +547,8 @@ func (d *Daemon) handleMessage(msg *gmproto.Message) {
 	d.recordReactions(msg)
 	m := convertMessage(msg, d.senderName(msg))
 	d.markMyReactions(m.ConversationID, &m)
-	d.publish(wire.EventMessage, m)
+	d.PublishEvent(wire.Event{Event: wire.EventMessage, Network: wire.NetworkGMessages, Data: m,
+		Notify: m.Status == "INCOMING_COMPLETE" || m.Status == "INCOMING_DELIVERED"})
 	// The conversation list preview and unread dot both derive from
 	// conversation events, but those can lag behind the message itself.
 	d.touchConversation(m)

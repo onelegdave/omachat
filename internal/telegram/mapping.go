@@ -17,6 +17,7 @@ type Dialog struct {
 	Timestamp int64
 	Unread    bool
 	IsGroup   bool
+	AvatarKey string
 }
 
 // Message is the protocol-neutral subset needed for a Telegram message bubble.
@@ -76,6 +77,11 @@ type MediaClient interface {
 // emoji reaction. An empty emoji removes the current user's reaction.
 type ReactionClient interface {
 	React(ctx context.Context, conversationID, messageID int64, emoji string) error
+}
+
+type ConversationClient interface {
+	ConversationTargets(context.Context) ([]wire.ConversationTarget, error)
+	CreateConversation(context.Context, wire.CreateConversationParams) (Dialog, error)
 }
 
 func mapDialog(d Dialog) wire.Conversation {
