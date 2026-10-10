@@ -29,7 +29,25 @@ remain alongside their code in [vendor/](vendor/). The inventory below links
 the retained notices directly.
 
 Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
-([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex.
+([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex and Claude.
+
+## Community contributors
+
+Thank you to the people contributing code, testing, and useful bug reports.
+Contributions prepared on a development branch are not a released feature until
+they complete verification and release review.
+
+| Contributor | Contribution | Current status |
+| --- | --- | --- |
+| [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs) | Original [empty-thread unread fix](https://github.com/onelegdave/omachat/pull/2), [Git-independent build fix](https://github.com/onelegdave/omachat/pull/3), and [Messenger read-state fix](https://github.com/onelegdave/omachat/pull/5); [automatic pop-out](https://github.com/onelegdave/omachat/pull/7); proposed [Signal support](https://github.com/onelegdave/omachat/pull/4), [conversation creation](https://github.com/onelegdave/omachat/pull/6) | Build, unread, and pop-out changes integrated locally with original commit authorship; Signal and conversation creation under review |
+| [Alex Vlissidis (@alexvlis)](https://github.com/alexvlis) | [Chat restoration, sidebar controls, desktop notifications, and Telegram photos](https://github.com/onelegdave/omachat/pull/8), including reopening at the latest messages | Integrated locally with original commit authorship; native desktop and provider acceptance pending |
+| [@Hizoul](https://github.com/Hizoul) | [Combined contribution branch and additional keyboard, emoji, history, photo, and unified-inbox work](https://github.com/onelegdave/omachat/pull/9); [Signal testing feedback](https://github.com/onelegdave/omachat/pull/4#issuecomment-5893757340) | Additional code under review; shared work remains credited to its original contributors |
+| [@ozz1ee-dev](https://github.com/ozz1ee-dev) | [Detailed build-loop reproduction and proposed staging approach](https://github.com/onelegdave/omachat/issues/1) | Report informed the locally integrated build fix |
+
+Original contributor commits are retained in the integration history. Release
+notes will name contributors whose work is included in that release. OneLegDave
+remains the maintainer. Codex assists with review, integration, and verification;
+historical Claude assistance and upstream copyright notices remain credited.
 
 ## Vendored license inventory
 

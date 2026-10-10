@@ -40,6 +40,7 @@ ShellRoot {
  Timer {
   running:true;repeat:true;interval:120
   onTriggered: {
+   stop()
    try {
     var list=inspect.findChild(inbox,"convList")
     var req
@@ -111,9 +112,10 @@ ShellRoot {
      inbox.clearNetwork("telegram")
      check(!inbox.mediaPaths["tg:42:7"],"unpair clears Telegram image references")
      console.log("OMACHAT_REVIEW_PASS")
-     stop();Qt.quit();break
+     stop();Qt.callLater(Qt.quit);return
     }
-   } catch(e) {console.error("OMACHAT_REVIEW_FAIL",e.message,e.stack || e);stop();Qt.quit()}
+    restart()
+   } catch(e) {console.error("OMACHAT_REVIEW_FAIL",e.message,e.stack || e);stop();Qt.callLater(Qt.quit)}
   }
  }
  Timer {running:true;interval:5000;onTriggered:{console.error("OMACHAT_REVIEW_FAIL timeout");Qt.quit()}}

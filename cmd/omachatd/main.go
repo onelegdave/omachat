@@ -71,8 +71,32 @@ func run(log zerolog.Logger, socketOverride string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	return runLocked(ctx, log, paths, socketPath, func() helper { return daemon.New(log, paths) })
+}
 
-	d := daemon.New(log, paths)
+// A small lifecycle seam lets startup/ownership tests use fake stores, without
+// opening accounts or listening on a real socket.
+type helper interface {
+	Start(context.Context) error
+	Stop()
+	Serve(context.Context, string) error
+	RestartRequested() <-chan struct{}
+}
+
+func runLocked(ctx context.Context, log zerolog.Logger, paths *store.Paths, socketPath string, newHelper func() helper) error {
+	lock, err := store.LockData(paths.Data)
+	if err != nil {
+		return err
+	}
+	defer lock.Close() // after Stop has finished all backend persistence
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+
+	d := newHelper()
+	defer func() {
+		stop()
+		d.Stop() // also clean up partially started backends on Start failure
+	}()
 	go func() {
 		select {
 		case <-d.RestartRequested():
@@ -83,7 +107,6 @@ func run(log zerolog.Logger, socketOverride string) error {
 	if err := d.Start(ctx); err != nil {
 		return err
 	}
-	defer d.Stop()
 
 	log.Info().Str("version", version).Msg("omachatd started")
 	return d.Serve(ctx, socketPath)

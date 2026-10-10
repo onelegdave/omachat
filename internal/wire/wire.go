@@ -60,16 +60,18 @@ type Event struct {
 	Event   string `json:"event"`
 	Network string `json:"network,omitempty"`
 	Data    any    `json:"data,omitempty"`
+	Notify  bool   `json:"notify,omitempty"`
 }
 
 // Event names.
 const (
-	EventStatus       = "status"
-	EventConversation = "conversation"
-	EventMessage      = "message"
-	EventQR           = "qr"
-	EventEmoji        = "emoji"
-	EventPaired       = "paired"
+	EventStatus           = "status"
+	EventConversation     = "conversation"
+	EventMessage          = "message"
+	EventQR               = "qr"
+	EventEmoji            = "emoji"
+	EventPaired           = "paired"
+	EventNotificationOpen = "notificationOpen"
 )
 
 // Method names.
@@ -93,6 +95,11 @@ const (
 	MethodReact                  = "react"
 	MethodDiscardCapture         = "discardCapture"
 	MethodSetUiScale             = "setUiScale"
+	MethodSetChatView            = "setChatView"
+	MethodSetNotifications       = "setNotifications"
+	MethodNotifyMessage          = "notifyMessage"
+	MethodTestNotification       = "testNotification"
+	MethodSetWindowPreferences   = "setWindowPreferences"
 	MethodConfig                 = "config"
 	MethodUnpair                 = "unpair"
 	MethodMedia                  = "media"
@@ -134,6 +141,12 @@ type Status struct {
 	Error       string `json:"error,omitempty"`
 	SelfPhone   string `json:"selfPhone,omitempty"`
 	LastSyncSec int64  `json:"lastSyncSec,omitempty"`
+	// Inbox clients bind durable feedback to an account, not a connection.
+	// This contains a provider account ID only, never a credential or store path.
+	AccountIdentity string `json:"accountIdentity,omitempty"`
+	// BoundedRead advertises markRead with ThroughTimestamp. Old helpers must
+	// not be assumed to enforce an unknown optional field.
+	BoundedRead bool `json:"boundedRead,omitempty"`
 }
 
 // Conversation is a flattened gmproto.Conversation, carrying only what the
@@ -382,12 +395,19 @@ func (p *SetTelegramCredentialsParams) UnmarshalJSON(data []byte) error {
 // ConfigResult is safe to show in the panel. The Telegram API hash stays in
 // the daemon config file and is never sent to QML.
 type ConfigResult struct {
-	EnabledServices          []string `json:"enabledServices"`
-	ServiceSelectionRequired bool     `json:"serviceSelectionRequired"`
-	RestartRequired          bool     `json:"restartRequired"`
-	UiScale                  float64  `json:"uiScale"`
-	TelegramConfigured       bool     `json:"telegramConfigured"`
-	TelegramAPIID            int      `json:"telegramApiId,omitempty"`
+	EnabledServices          []string          `json:"enabledServices"`
+	ServiceSelectionRequired bool              `json:"serviceSelectionRequired"`
+	RestartRequired          bool              `json:"restartRequired"`
+	UiScale                  float64           `json:"uiScale"`
+	LastService              string            `json:"lastService"`
+	SidebarCollapsed         bool              `json:"sidebarCollapsed"`
+	LastConversations        map[string]string `json:"lastConversations"`
+	NotificationsEnabled     bool              `json:"notificationsEnabled"`
+	NotificationPreviews     bool              `json:"notificationPreviews"`
+	TelegramConfigured       bool              `json:"telegramConfigured"`
+	TelegramAPIID            int               `json:"telegramApiId,omitempty"`
+	AlwaysPopout             bool              `json:"alwaysPopout"`
+	PopoutMode               string            `json:"popoutMode"`
 }
 
 type SetEnabledServicesParams struct {
@@ -396,6 +416,32 @@ type SetEnabledServicesParams struct {
 
 type SetUiScaleParams struct {
 	Scale float64 `json:"scale"`
+}
+
+type SetChatViewParams struct {
+	LastService      *string `json:"lastService,omitempty"`
+	SidebarCollapsed *bool   `json:"sidebarCollapsed,omitempty"`
+	ConversationID   *string `json:"conversationID,omitempty"`
+}
+
+type SetNotificationsParams struct {
+	Enabled  *bool `json:"enabled,omitempty"`
+	Previews *bool `json:"previews,omitempty"`
+}
+
+type NotifyMessageParams struct {
+	Message          Message `json:"message"`
+	ConversationName string  `json:"conversationName,omitempty"`
+}
+
+type NotificationTarget struct {
+	Network        string `json:"network"`
+	ConversationID string `json:"conversationID"`
+}
+
+type SetWindowPreferencesParams struct {
+	AlwaysPopout bool   `json:"alwaysPopout"`
+	PopoutMode   string `json:"popoutMode"`
 }
 
 // DiscardCaptureParams removes a webcam capture the user rejected.
@@ -409,8 +455,9 @@ type PickImageResult struct {
 }
 
 type MarkReadParams struct {
-	ConversationID string `json:"conversationID"`
-	MessageID      string `json:"messageID"`
+	ConversationID   string `json:"conversationID"`
+	MessageID        string `json:"messageID"`
+	ThroughTimestamp int64  `json:"throughTimestamp,omitempty"`
 }
 
 type MediaParams struct {

@@ -73,6 +73,9 @@ remaining session. API application credentials remain in the shared config.
 ## Supported behavior
 
 - Dialog and message synchronization with peer access-hash resolution.
+- Profile photos for users, groups, and channels, downloaded in the background
+  and cached locally. Refresh updates changed or removed photos and retries
+  failed downloads. Chats without an accessible photo use initials.
 - Older-message paging, including channels and supergroups, through **Load older messages**.
   The initial inbox sync lists up to 50 recent conversations; history is fetched in pages of up to 100 messages when a conversation is opened.
 - Live incoming text and media updates.
@@ -89,6 +92,10 @@ references are live-only and are repopulated by refresh; downloaded files may
 remain in the local cache. Individual downloads stop at 32 MiB, and the Telegram
 attachment cache evicts older files above 256 MiB. Telegram self-destructing or TTL media never gets a
 download reference or cached copy.
+
+Profile-photo downloads stop at 5 MiB and share the same 256 MiB cache budget.
+The cache keys include the peer type and photo ID so chats cannot share the
+wrong image and changing a photo does not reuse its previous cached version.
 
 Older releases used ambiguous Telegram conversation and attachment IDs. On
 upgrade, OmaChat ignores that old conversation cache and rebuilds it from Telegram.

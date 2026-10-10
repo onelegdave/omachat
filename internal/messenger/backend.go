@@ -66,6 +66,7 @@ type Backend struct {
 	threadToJID    map[int64]waTypes.JID
 	jidToThread    map[string]int64
 	threadTypes    map[int64]table.ThreadType
+	readWatermarks map[int64]int64 // Milliseconds, matching Messenger's read tasks.
 	reactionActors map[string]map[int64]string
 	reactionIDs    map[string]map[int64]string
 	media          map[string]*messengerMedia
@@ -85,6 +86,7 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *B
 		threadNames: make(map[int64]string), participants: make(map[int64][]int64),
 		threadToJID: make(map[int64]waTypes.JID), jidToThread: make(map[string]int64),
 		threadTypes:    make(map[int64]table.ThreadType),
+		readWatermarks: make(map[int64]int64),
 		reactionActors: make(map[string]map[int64]string),
 		reactionIDs:    make(map[string]map[int64]string),
 		media:          make(map[string]*messengerMedia),
@@ -95,8 +97,16 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *B
 	}
 }
 
-func (b *Backend) SetConfig(cs *appStore.ConfigStore)           { b.config = cs }
-func (b *Backend) Status() wire.Status                          { b.mu.RLock(); defer b.mu.RUnlock(); return b.status }
+func (b *Backend) SetConfig(cs *appStore.ConfigStore) { b.config = cs }
+func (b *Backend) Status() wire.Status {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	status := b.status
+	if b.selfID != 0 {
+		status.AccountIdentity = strconv.FormatInt(b.selfID, 10)
+	}
+	return status
+}
 func (b *Backend) SetState(state wire.ConnState, detail string) { b.setState(state, detail) }
 func (b *Backend) setState(state wire.ConnState, detail string) {
 	b.mu.Lock()
@@ -349,7 +359,7 @@ func (b *Backend) Unpair(context.Context) error {
 func (b *Backend) handleMetaEvent(_ context.Context, evt any) {
 	switch v := evt.(type) {
 	case *table.LSTable:
-		b.handleTable(v)
+		b.handleTableUpdates(v, true)
 	case *messagix.ConnectedEvent, *messagix.ReconnectedEvent:
 		b.setState(wire.StateConnected, "")
 	case *messagix.TransientDisconnectEvent:
@@ -367,10 +377,15 @@ func (b *Backend) handleMetaEvent(_ context.Context, evt any) {
 	}
 }
 func (b *Backend) handleTable(tbl *table.LSTable) {
+	b.handleTableUpdates(tbl, false)
+}
+
+func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 	if tbl == nil {
 		return
 	}
 	publish := make(map[string]wire.Message)
+	notify := make(map[string]bool)
 	queue := func(msg wire.Message) {
 		if msg.ID == "" {
 			return
@@ -412,25 +427,34 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 	}
 	attachments := b.tableAttachmentsLocked(tbl)
 	for _, m := range tbl.LSDeleteThenInsertMessage {
+		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
 		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		key := msg.ConversationID + "\x00" + msg.ID
+		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
 		queue(msg)
 	}
 	for _, m := range tbl.LSUpsertMessage {
+		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
 		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		key := msg.ConversationID + "\x00" + msg.ID
+		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
 		queue(msg)
 	}
 	for _, m := range tbl.LSInsertMessage {
+		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
 		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		key := msg.ConversationID + "\x00" + msg.ID
+		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
 		queue(msg)
 	}
 	for _, read := range tbl.LSMarkThreadRead {
-		b.clearUnreadLocked(read.ThreadKey)
+		b.clearUnreadLocked(read.ThreadKey, read.LastReadWatermarkTimestampMs)
 	}
 	for _, read := range tbl.LSMarkThreadReadV2 {
-		b.clearUnreadLocked(read.ThreadKey)
+		b.clearUnreadLocked(read.ThreadKey, read.LastReadWatermarkTimestampMs)
 	}
 	for messageID, media := range attachments {
 		for conversationID, list := range b.messages {
@@ -476,7 +500,7 @@ func (b *Backend) handleTable(tbl *table.LSTable) {
 		go b.fetchAvatars(avatarJobs)
 	}
 	for _, msg := range publish {
-		b.publishMessage(msg)
+		b.publishMessageNotification(msg, notify[msg.ConversationID+"\x00"+msg.ID])
 	}
 	b.publishSnapshots()
 }
@@ -500,6 +524,69 @@ func (b *Backend) setMappingLocked(threadKey, jid int64, typ table.ThreadType) {
 	b.threadToJID[threadKey] = j
 	b.jidToThread[j.ToNonAD().String()] = threadKey
 	b.threadTypes[threadKey] = typ
+	b.foldStandInLocked(threadKey, j)
+}
+
+// foldStandInLocked merges a stand-in thread into the real one. An encrypted message that
+// arrives before its thread is known is filed under the sender's JID user id. When the real
+// thread key is learned, that stand-in used to stay behind: an empty duplicate conversation
+// holding an unread flag nothing could clear, and after a restart the JID could point back at
+// it. Fold its messages (by ID, without duplicates) into the real thread, keep its unread flag
+// only if it carried a newer message, and forget the stand-in. Caller must hold b.mu.
+func (b *Backend) foldStandInLocked(threadKey int64, jid waTypes.JID) {
+	standIn := parseUser(jid.User)
+	if standIn == 0 || standIn == threadKey {
+		return
+	}
+	// Only a stand-in: its own mapping points at this same JID. A genuine thread that merely
+	// shares the number has no such mapping, so it is never touched.
+	if own, ok := b.threadToJID[standIn]; !ok || own.ToNonAD().String() != jid.ToNonAD().String() {
+		return
+	}
+	skey, rkey := strconv.FormatInt(standIn, 10), strconv.FormatInt(threadKey, 10)
+	// Acknowledgments belong to the conversation, including activity newer
+	// than its cached preview. Carry that boundary to the server's real key.
+	b.advanceReadWatermarkLocked(threadKey, b.readWatermarks[standIn])
+	delete(b.readWatermarks, standIn)
+	have := map[string]bool{}
+	for _, m := range b.messages[rkey] {
+		have[m.ID] = true
+	}
+	moved := false
+	for _, m := range b.messages[skey] {
+		if m.ID == "" || have[m.ID] {
+			continue
+		}
+		m.ConversationID = rkey
+		b.messages[rkey] = append(b.messages[rkey], m)
+		have[m.ID] = true
+		moved = true
+	}
+	if moved {
+		list := b.messages[rkey]
+		sort.Slice(list, func(i, j int) bool { return list[i].Timestamp < list[j].Timestamp })
+	}
+	if stand, ok := b.convs[skey]; ok {
+		real, known := b.convs[rkey]
+		if !known {
+			real = stand
+			real.ID = rkey
+			real.Unread = moved && stand.Unread
+		} else if moved && stand.Timestamp > real.Timestamp {
+			real.Preview, real.PreviewMine, real.Timestamp = stand.Preview, stand.PreviewMine, stand.Timestamp
+			real.Unread = real.Unread || stand.Unread
+		}
+		if real.Timestamp > 0 && real.Timestamp <= messengerTimestamp(b.readWatermarks[threadKey]) {
+			real.Unread = false
+		}
+		b.convs[rkey] = real
+		delete(b.convs, skey)
+	}
+	delete(b.messages, skey)
+	delete(b.threadToJID, standIn)
+	delete(b.threadTypes, standIn)
+	b.jidToThread[jid.ToNonAD().String()] = threadKey
+	b.recountUnreadLocked()
 }
 
 func (b *Backend) threadForJIDLocked(jid waTypes.JID) int64 {
@@ -611,11 +698,28 @@ func (b *Backend) deleteAggregateReactionLocked(thread int64, messageID string, 
 
 func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS int64, unread, group, readOnly bool, avatar string, typ table.ThreadType) {
 	key := strconv.FormatInt(id, 10)
+	activity := messengerTimestamp(ts)
+	previewMine := false
+	b.advanceReadWatermarkLocked(id, readTS)
 	if name = strings.TrimSpace(name); name != "" {
 		b.threadNames[id] = name
 	}
 	if current, ok := b.convs[key]; ok {
 		group = group || current.IsGroup
+		if !current.Unread {
+			b.advanceReadWatermarkLocked(id, current.Timestamp/1000)
+		}
+		// A delayed snapshot can supply metadata or a read watermark, but
+		// cannot move the latest activity backward or hide newer unread work.
+		if activity < current.Timestamp {
+			activity, preview, previewMine, unread = current.Timestamp, current.Preview, current.PreviewMine, current.Unread
+		}
+	}
+	if !unread && activity == messengerTimestamp(ts) {
+		b.advanceReadWatermarkLocked(id, ts)
+	}
+	if activity > 0 && activity <= messengerTimestamp(b.readWatermarks[id]) {
+		unread = false
 	}
 	// A later, non-hybrid-aware thread row (e.g. a plain inbox refresh) can
 	// report a generic type for a thread already known to be an encrypted
@@ -624,12 +728,11 @@ func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS 
 	if current, ok := b.threadTypes[id]; !ok || !current.IsWhatsApp() || typ.IsWhatsApp() {
 		b.threadTypes[id] = typ
 	}
-	_ = readTS
 	if avatar != "" {
 		b.threadAvatars[id] = avatar
 	}
 	name = b.conversationNameLocked(id, group)
-	b.convs[key] = wire.Conversation{ID: key, Name: name, Preview: preview, Timestamp: messengerTimestamp(ts), Unread: unread, IsGroup: group, ReadOnly: readOnly, AvatarColor: "#0084ff", Initials: initials(name)}
+	b.convs[key] = wire.Conversation{ID: key, Name: name, Preview: preview, PreviewMine: previewMine, Timestamp: activity, Unread: unread, IsGroup: group, ReadOnly: readOnly, AvatarColor: "#0084ff", Initials: initials(name)}
 }
 
 func (b *Backend) addParticipantLocked(thread, contact int64) {
@@ -756,14 +859,25 @@ func (b *Backend) applyLiveMessageUnreadLocked(msg wire.Message) {
 		conv.Preview = "Attachment"
 	}
 	conv.PreviewMine = false
-	conv.Unread = true
+	thread, _ := strconv.ParseInt(msg.ConversationID, 10, 64)
+	conv.Unread = msg.Timestamp > messengerTimestamp(b.readWatermarks[thread])
 	b.convs[msg.ConversationID] = conv
 }
 
-func (b *Backend) clearUnreadLocked(thread int64) {
+func (b *Backend) advanceReadWatermarkLocked(thread, watermark int64) {
+	if watermark > b.readWatermarks[thread] {
+		b.readWatermarks[thread] = watermark
+	}
+}
+
+func (b *Backend) clearUnreadLocked(thread, watermark int64) {
+	b.advanceReadWatermarkLocked(thread, watermark)
 	key := strconv.FormatInt(thread, 10)
 	conv, ok := b.convs[key]
 	if !ok {
+		return
+	}
+	if watermark <= 0 || conv.Timestamp > messengerTimestamp(b.readWatermarks[thread]) {
 		return
 	}
 	conv.Unread = false
@@ -799,7 +913,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		}
 		key := strconv.FormatInt(thread, 10)
 		if _, ok := b.convs[key]; !ok {
-			b.upsertThreadLocked(thread, "", text, evt.Info.Timestamp.UnixMilli(), 0, true, jid.Server == waTypes.GroupServer, false, "", table.ENCRYPTED_OVER_WA_ONE_TO_ONE)
+			b.upsertThreadLocked(thread, "", text, evt.Info.Timestamp.UnixMilli(), 0, !evt.Info.IsFromMe, jid.Server == waTypes.GroupServer, false, "", table.ENCRYPTED_OVER_WA_ONE_TO_ONE)
 		}
 		var attachments []wire.Attachment
 		if media != nil {
@@ -807,6 +921,7 @@ func (b *Backend) handleE2EEEvent(raw any) {
 			b.media[media.key] = media
 			attachments = []wire.Attachment{media.attachment()}
 		}
+		_, _, exists := b.messageIndexLocked(thread, evt.Info.ID)
 		msg := b.addMessageWithAttachmentsLocked(thread, evt.Info.ID, text, evt.Info.Timestamp.UnixMilli(), parseUser(evt.Info.Sender.User), false, "", attachments)
 		conv := b.convs[key]
 		preview := text
@@ -816,12 +931,20 @@ func (b *Backend) handleE2EEEvent(raw any) {
 				preview = "Attachment"
 			}
 		}
-		conv.Preview, conv.Timestamp, conv.Unread = preview, messengerTimeTimestamp(evt.Info.Timestamp), !evt.Info.IsFromMe
+		// Encrypted transports can also replay older messages. Retain them in
+		// history without rolling back the conversation or resurfacing read work.
+		if msg.Timestamp >= conv.Timestamp {
+			conv.Preview, conv.PreviewMine, conv.Timestamp = preview, evt.Info.IsFromMe, msg.Timestamp
+			conv.Unread = !evt.Info.IsFromMe && msg.Timestamp > messengerTimestamp(b.readWatermarks[thread])
+			if evt.Info.IsFromMe {
+				b.advanceReadWatermarkLocked(thread, msg.Timestamp/1000)
+			}
+		}
 		b.convs[key] = conv
 		b.recountUnreadLocked()
 		b.saveStoredMessengerDataLocked()
 		b.mu.Unlock()
-		b.publishMessage(msg)
+		b.publishMessageNotification(msg, !exists && !evt.Info.IsFromMe)
 		b.publishSnapshots()
 	case *events.Connected:
 		b.setState(wire.StateConnected, "")
@@ -920,10 +1043,14 @@ func (b *Backend) publishSnapshots() {
 }
 
 func (b *Backend) publishMessage(msg wire.Message) {
+	b.publishMessageNotification(msg, false)
+}
+
+func (b *Backend) publishMessageNotification(msg wire.Message, notify bool) {
 	if b.publish == nil || msg.ID == "" {
 		return
 	}
-	b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkMessenger, Data: msg})
+	b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkMessenger, Data: msg, Notify: notify})
 }
 
 func (b *Backend) Conversations(count int) []wire.Conversation {
@@ -1087,18 +1214,25 @@ func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 	if cli == nil {
 		return ErrNotConfigured
 	}
-	_, err = cli.ExecuteTasks(ctx, &socket.ThreadMarkReadTask{ThreadId: thread, LastReadWatermarkTs: time.Now().UnixMilli(), SyncGroup: 1})
-	if err == nil {
-		b.mu.Lock()
-		c := b.convs[p.ConversationID]
-		c.Unread = false
-		b.convs[p.ConversationID] = c
-		b.recountUnreadLocked()
-		b.saveStoredMessengerDataLocked()
-		b.mu.Unlock()
-		b.publishSnapshots()
+	return b.markReadThrough(ctx, thread, time.Now().UnixMilli(), func(ctx context.Context, task *socket.ThreadMarkReadTask) error {
+		_, err := cli.ExecuteTasks(ctx, task)
+		return err
+	})
+}
+
+// The transport seam lets regression tests deliver new activity while the
+// acknowledgment is in flight. Only the requested watermark is committed.
+func (b *Backend) markReadThrough(ctx context.Context, thread, watermark int64, execute func(context.Context, *socket.ThreadMarkReadTask) error) error {
+	if err := execute(ctx, &socket.ThreadMarkReadTask{ThreadId: thread, LastReadWatermarkTs: watermark, SyncGroup: 1}); err != nil {
+		return err
 	}
-	return err
+	b.mu.Lock()
+	b.clearUnreadLocked(thread, watermark)
+	b.recountUnreadLocked()
+	b.saveStoredMessengerDataLocked()
+	b.mu.Unlock()
+	b.publishSnapshots()
+	return nil
 }
 func (b *Backend) Refresh(ctx context.Context) error {
 	b.mu.RLock()

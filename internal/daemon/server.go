@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/onelegdave/omachat/internal/buildinfo"
@@ -26,6 +27,8 @@ const maxRequestsPerConnection = 16
 
 // Serve accepts plugin connections on the Unix socket until ctx is cancelled.
 func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	// A stale socket from an unclean shutdown would block Listen.
 	if err := removeStaleSocket(socketPath); err != nil {
 		return err
@@ -63,6 +66,15 @@ func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
 		clear(conns)
 		connMu.Unlock()
 	}
+	var wg sync.WaitGroup
+	defer func() {
+		// Unexpected Accept errors must drain writers too, before runLocked can
+		// stop backends and release the data-directory lock.
+		cancel()
+		ln.Close()
+		closeAllConns()
+		wg.Wait()
+	}()
 
 	go func() {
 		<-ctx.Done()
@@ -70,12 +82,10 @@ func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
 		closeAllConns()
 	}()
 
-	var wg sync.WaitGroup
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				wg.Wait()
 				return nil
 			}
 			return fmt.Errorf("accept: %w", err)
@@ -100,15 +110,25 @@ func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
 // removeStaleSocket deletes a socket file left behind by a crashed daemon,
 // but refuses to touch one a live daemon is still listening on.
 func removeStaleSocket(path string) error {
-	if _, err := os.Stat(path); err != nil {
+	info, err := os.Lstat(path)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	if c, err := net.DialTimeout("unix", path, 200*time.Millisecond); err == nil {
+	if info.Mode()&os.ModeSocket == 0 {
+		return errors.New("refusing to remove a non-socket at the socket path")
+	}
+	c, err := net.DialTimeout("unix", path, 200*time.Millisecond)
+	if err == nil {
 		c.Close()
 		return fmt.Errorf("another omachatd is already listening on %s", path)
+	}
+	// Slow startup/backlog, permission failure or an unavailable socket API is
+	// not proof that the listener is dead. Only a refused connection is stale.
+	if !errors.Is(err, syscall.ECONNREFUSED) && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("cannot establish socket is stale: %w", err)
 	}
 	return os.Remove(path)
 }
@@ -126,9 +146,13 @@ func (w *connWriter) send(v any) error {
 }
 
 func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	var requests sync.WaitGroup
+	defer func() {
+		cancel()
+		conn.Close() // unblock response writers before waiting for them
+		requests.Wait()
+	}()
 	go func() { <-ctx.Done(); conn.Close() }()
 	slots := make(chan struct{}, maxRequestsPerConnection)
 
@@ -185,11 +209,13 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 		case <-ctx.Done():
 			return
 		}
+		requests.Add(1)
 		go func(req wire.Request) {
+			defer requests.Done()
 			defer func() { <-slots }()
 			// A pre-change config snapshot must not be written after the setter's
 			// restart-required acknowledgement on another concurrent request.
-			if globalSetting(req.Method) || req.Method == wire.MethodSetEnabledServices {
+			if globalSetting(req.Method) || req.Method == wire.MethodSetEnabledServices || req.Method == wire.MethodUnpair {
 				d.configResponseMu.Lock()
 				defer d.configResponseMu.Unlock()
 			}
@@ -232,6 +258,23 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 	if req.Method == wire.MethodSetEnabledServices {
 		return d.handleSetEnabledServices(req)
 	}
+	if req.Method == wire.MethodSetNotifications || req.Method == wire.MethodNotifyMessage || req.Method == wire.MethodTestNotification {
+		return d.handleNotificationRequest(ctx, req)
+	}
+	if req.Method == wire.MethodSetChatView {
+		p, err := decodeParams[wire.SetChatViewParams](req.Params)
+		if err == nil {
+			network := req.Network
+			if network == "" {
+				network = wire.NetworkGMessages
+			}
+			err = d.config.SetChatView(network, p.ConversationID, p.LastService, p.SidebarCollapsed)
+		}
+		if err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+		return wire.Response{ID: req.ID, OK: true}
+	}
 	if globalSetting(req.Method) {
 		return d.dispatchGMessages(ctx, req)
 	}
@@ -244,18 +287,27 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 			return wire.Response{ID: req.ID, Error: err.Error()}
 		}
 	}
+	var resp wire.Response
 	switch req.Network {
 	case wire.NetworkWhatsApp:
-		return d.dispatchWhatsApp(ctx, req)
+		resp = d.dispatchWhatsApp(ctx, req)
 	case wire.NetworkTelegram:
-		return d.dispatchTelegram(ctx, req)
+		resp = d.dispatchTelegram(ctx, req)
 	case wire.NetworkMessenger:
-		return d.dispatchMessenger(ctx, req)
+		resp = d.dispatchMessenger(ctx, req)
 	case "", wire.NetworkGMessages:
-		return d.dispatchGMessages(ctx, req)
+		resp = d.dispatchGMessages(ctx, req)
 	default:
 		return wire.Response{ID: req.ID, OK: false, Error: "unknown network: " + req.Network}
 	}
+	if req.Method == wire.MethodUnpair && resp.OK {
+		d.notifications.dismiss(ctx, network)
+		empty := ""
+		if err := d.config.SetChatView(network, &empty, nil, nil); err != nil {
+			return wire.Response{ID: req.ID, OK: true, Result: map[string]string{"warning": "Unpaired. The remembered conversation could not be cleared. Check Settings before pairing again."}}
+		}
+	}
+	return resp
 }
 
 func (d *Daemon) dispatchMessenger(ctx context.Context, req wire.Request) wire.Response {
@@ -560,6 +612,16 @@ func (d *Daemon) dispatchGMessages(ctx context.Context, req wire.Request) wire.R
 			return fail(err)
 		}
 		if err := d.SetUiScale(p.Scale); err != nil {
+			return fail(err)
+		}
+		return ok(d.PluginConfig())
+
+	case wire.MethodSetWindowPreferences:
+		p, err := decodeParams[wire.SetWindowPreferencesParams](req.Params)
+		if err != nil {
+			return fail(err)
+		}
+		if err := d.SetWindowPreferences(p.AlwaysPopout, p.PopoutMode); err != nil {
 			return fail(err)
 		}
 		return ok(d.PluginConfig())

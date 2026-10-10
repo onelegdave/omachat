@@ -61,8 +61,10 @@ ShellRoot {
   Timer {
     interval:200; running:true; repeat:true
     onTriggered: {
+      stop()
       try {
-        if (root.step++ === 0) { panel.open(); return }
+        if (root.step++ === 0) { panel.open(); restart(); return }
+        stop()
         var loader=inspect.findChild(panel,"inboxLoader")
         var list=inspect.findChild(loader.item,"convList")
         check(list !== null,"actual panel contains keyboard conversation list")
@@ -74,9 +76,12 @@ ShellRoot {
         check(loader.item.selectedConvID==="demo-jordan","actual panel forwards Enter")
         keyboard.keyClick(Qt.Key_Tab,Qt.NoModifier,0)
         check(!list.activeFocus && panel.opened,"Tab moves to a control without switching panels")
+        panel.settingsOpen=true
+        keyboard.keyClick(Qt.Key_Escape,Qt.NoModifier,0)
+        check(!panel.opened,"Escape closes the panel while Settings is open")
         console.log("OMACHAT_PANEL_KEYBOARD_PASS")
-        stop();Qt.quit()
-      } catch(e) { console.error("OMACHAT_PANEL_KEYBOARD_FAIL",e);stop();Qt.quit() }
+        stop();Qt.callLater(Qt.quit)
+      } catch(e) { console.error("OMACHAT_PANEL_KEYBOARD_FAIL",e);stop();Qt.callLater(Qt.quit) }
     }
   }
 }

@@ -12,12 +12,23 @@ func (d *Daemon) PluginConfig() wire.ConfigResult {
 	if scale <= 0 {
 		scale = 1
 	}
+	mode := cfg.PopoutMode
+	if mode != "tiled" {
+		mode = "floating"
+	}
 	_, credErr := d.config.TelegramCredentials()
 	return wire.ConfigResult{
 		EnabledServices:          enabled,
 		ServiceSelectionRequired: required,
 		RestartRequired:          d.restartPending,
 		UiScale:                  scale,
+		LastService:              cfg.LastService,
+		SidebarCollapsed:         cfg.SidebarCollapsed,
+		LastConversations:        cfg.LastConversations,
+		NotificationsEnabled:     cfg.NotificationsOn(),
+		NotificationPreviews:     cfg.NotificationPreviews,
+		AlwaysPopout:             cfg.AlwaysPopout,
+		PopoutMode:               mode,
 		TelegramConfigured:       credErr == nil,
 		TelegramAPIID:            cfg.TelegramAPIID,
 	}
@@ -25,4 +36,8 @@ func (d *Daemon) PluginConfig() wire.ConfigResult {
 
 func (d *Daemon) SetUiScale(scale float64) error {
 	return d.config.SetUiScale(scale)
+}
+
+func (d *Daemon) SetWindowPreferences(alwaysPopout bool, mode string) error {
+	return d.config.SetWindowPreferences(alwaysPopout, mode)
 }

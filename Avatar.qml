@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import qs.Commons
 import "Model.js" as Model
 
@@ -36,5 +37,20 @@ Rectangle {
     fillMode: Image.PreserveAspectCrop
     visible: status === Image.Ready
     source: root.imagePath !== "" ? "file://" + root.imagePath : ""
+    layer.enabled: true
+    layer.effect: MultiEffect {
+      maskEnabled: true
+      maskSource: avatarMask
+    }
+  }
+
+  Rectangle {
+    id: avatarMask
+    anchors.fill: avatarImage
+    radius: Math.min(width, height) / 2
+    color: "white"
+    antialiasing: true
+    visible: false
+    layer.enabled: true
   }
 }

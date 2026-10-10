@@ -45,6 +45,11 @@ window and do not change your desktop-wide window settings. Select
 **Return to panel** to move the same conversation view, including its current
 drafts and selection, back to the bar.
 
+In **Settings > Appearance**, enable **Always open popped out** to make future
+bar or IPC opens use the standalone window automatically, then choose whether
+that window should open **Floating** or **Tiled**. The preference does not open
+OmaChat at shell login, and disabling it restores the anchored-panel default.
+
 **OmaChat never installs dependencies automatically.** Settings includes a
 dependency checklist with source-review links and optional Install buttons.
 Installation opens a terminal for your confirmation and keeps the package
@@ -135,6 +140,10 @@ stickers are unsupported, and media references need refreshing after restart.
 WhatsApp view-once/ephemeral and Telegram self-destructing media are not saved
 or reopened.
 
+Telegram user, group, and channel profile photos load in the background and
+are cached locally. Refresh picks up changed or removed photos; unavailable
+photos fall back to initials.
+
 The services use unofficial protocol clients and can stop working when their
 providers change. Automated checks do not establish live account compatibility
 for every service. See [verification history](docs/history/README.md) for dated
@@ -158,6 +167,27 @@ to send. Drafts stay with their service and conversation. Right-click a bubble
 to copy it. Middle-click the bar icon to refresh; its badge counts unread
 conversations across active services, and each service tab shows its own unread
 badge while the app is open.
+
+Desktop notifications are enabled by default for new incoming messages while
+OmaChat is running. Open **Settings > Notifications** to turn them off, enable
+sender and message previews, or send a test notification. Previews are off by
+default: alert text shows only OmaChat, the service, and "New message". The icon
+uses the conversation's cached profile photo when available, with a generic
+message icon as the fallback. Test notifications use the generic icon. Clicking an
+alert opens its conversation. The conversation you are actively reading stays
+quiet; history refreshes, outgoing messages, reactions, and receipt updates do
+not produce new alerts. Your desktop controls Do Not Disturb and sounds.
+
+Use the arrow beside the OmaChat title to hide the conversation sidebar; the
+menu button brings it back. OmaChat remembers this layout, the last service,
+and the last conversation in each service across shell restarts. Reopening the
+panel or moving between the panel and pop-out scrolls to the newest messages
+and focuses the message input so you can type right away. If the remembered
+conversation is not available, the inbox stays visible so you can choose another
+chat. Read-only conversations do not focus the composer.
+Window preferences apply after a confirmed configuration read. If the helper is offline,
+the anchored panel stays available for recovery. Pop-out layout changes target only
+the window owned by this shell process; no persistent compositor rule is installed.
 
 Pick an attachment from the composer. Google Messages sends captions separately
 after the attachment; check the conversation before retrying a caption reported
@@ -199,7 +229,7 @@ files as new downloads complete.
 | `~/.local/share/omachat/whatsapp.db` and `whatsapp_store.json` | WhatsApp credentials and chat cache |
 | `~/.local/share/omachat/telegram.session` and `telegram_store.json` | Telegram credentials and chat cache |
 | `~/.local/share/omachat/messenger_session.json` and `messenger.db` | Messenger session cookies and encrypted-device state |
-| `~/.local/share/omachat/config.json` | Service choices, text size, browser selection, Telegram API credentials |
+| `~/.local/share/omachat/config.json` | Service choices, notification preferences, text size, sidebar layout, last service and conversation IDs, browser selection, Telegram API credentials |
 | `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, `media_messenger/` | Service-specific media caches |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Private plugin/helper control socket |
 
@@ -233,6 +263,11 @@ See [Contributing](CONTRIBUTING.md) for prerequisites and verification,
 [Security](SECURITY.md) for reporting, and the [documentation index](docs/README.md)
 for service guides, release notes, and historical reviews.
 
+OmaChat 0.4.4 is listed in the [Omarchy Marketplace](https://omarchyplugins.com/plugin.html?id=onelegdave.omachat)
+at snapshot `dd77f2ca16e7c701851450578fd9ec51b7eba1a2`. Development changes
+require fresh validation and marketplace maintainer approval before that
+snapshot is updated. See [marketplace readiness](docs/marketplace-readiness.md)
+for the exact snapshot, review capabilities, and their limits.
 
 ## Support my work
 
@@ -241,7 +276,13 @@ I build OmaChat as a free, open-source project. If you find it useful, you can [
 ## Credits and license
 
 Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
-([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex.
+([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)).
+
+Community contributors include [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs),
+[Alex Vlissidis (@alexvlis)](https://github.com/alexvlis),
+[@Hizoul](https://github.com/Hizoul), and [@ozz1ee-dev](https://github.com/ozz1ee-dev).
+See [community contributions and their review status](CREDITS.md#community-contributors).
+Codex and Claude have provided AI assistance with code and reviews.
 
 The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin).
 Google Messages uses [mautrix libgm](https://github.com/mautrix/gmessages),

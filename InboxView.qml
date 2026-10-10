@@ -17,6 +17,11 @@ Item {
   property var host: null
   property var settings: null
   property string network: "gmessages"
+  property bool sidebarCollapsed: false
+  property var lastConversations: ({})
+  readonly property bool sidebarVisible: !sidebarCollapsed || selectedConvID === ""
+  readonly property Item focusTarget: selectedConvID !== "" && composer.enabled ? composer : (sidebarVisible ? searchField : root)
+  signal conversationSelected(string network, string id)
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
   readonly property bool isMessenger: network === "messenger"
@@ -40,7 +45,18 @@ Item {
   property bool viewActive: true
   readonly property bool panelOpen: viewActive && host && host.opened === true
   onPanelOpenChanged: {
-    if (panelOpen) return
+    if (panelOpen) {
+      scrollToLatest()
+      focusComposer()
+      markThreadRead()
+      return
+    }
+    pendingLatestScroll = false
+    followingLatest = false
+    focusRequest++
+    if (composer) composer.focus = false
+    if (searchField) searchField.focus = false
+    if (attachCaption) attachCaption.focus = false
     if (recording) stopRecording(false)
     stopPlayback()
   }
@@ -101,6 +117,9 @@ Item {
   property int historyRequest: 0
   property int viewportRevision: 0
   property var pendingAnchor: null
+  property bool pendingLatestScroll: false
+  property bool followingLatest: false
+  property bool positioningMessages: false
   property string threadError: ""
   property var mediaPaths: ({})
   property var _mediaNetworks: ({})
@@ -112,7 +131,8 @@ Item {
   property bool emojiPickerForReact: false
   property string reactingTo: ""
   property bool copied: false
-  property bool composerFocus: false
+  readonly property bool composerFocus: composer.activeFocus || searchField.activeFocus || attachCaption.activeFocus
+  property int focusRequest: 0
   property bool linkConfirmOpen: false
   property string pendingUrl: ""
   property var emojiList: []
@@ -156,6 +176,8 @@ Item {
     var prev = _previousNetwork
     _previousNetwork = network
     if (prev === network) return
+    pendingLatestScroll = false
+    followingLatest = false
     mediaSendToken++
     sendingMedia = false
     mediaRequests = ({})
@@ -186,15 +208,57 @@ Item {
     reactingTo = ""
     threadError = ""
 
-    var restoredID = _selectedByNet[network] || ""
     selectedConvID = ""
     messages = []
     grouped = []
-    if (restoredID) {
-      selectConversation(restoredID)
-    } else {
-      if (composer) composer.text = ""
-    }
+    if (composer) composer.text = ""
+    restoreConversation()
+  }
+
+  onConversationsChanged: restoreConversation()
+  onLastConversationsChanged: restoreConversation()
+  Component.onCompleted: restoreConversation()
+  Component.onDestruction: { viewportRevision++; selectionGeneration++ }
+
+  function restoreConversation() {
+    if (!composer || selectedConvID !== "") return
+    var sessionID = _selectedByNet[network] || ""
+    var id = sessionID || lastConversations[network] || ""
+    if (id && (sessionID || conversations.some(function(conv) { return conv.id === id }))) selectConversation(id, false)
+  }
+
+  function focusComposer() {
+    var request = ++focusRequest
+    Qt.callLater(function() {
+      if (request !== root.focusRequest || !root.panelOpen || root.emojiPickerOpen || root.linkConfirmOpen || !composer) return
+      if (root.selectedConvID !== "" && composer.enabled) {
+        composer.forceActiveFocus()
+        composer.cursorPosition = composer.text.length
+      } else if (root.sidebarVisible) searchField.forceActiveFocus()
+    })
+  }
+
+  function positionMessagesAtEnd() {
+    positioningMessages = true
+    messageList.forceLayout()
+    messageList.positionViewAtEnd()
+    messageList.forceLayout()
+    messageList.positionViewAtEnd()
+    followingLatest = true
+    positioningMessages = false
+  }
+
+  function scrollToLatest() {
+    if (!panelOpen || selectedConvID === "") return
+    pendingLatestScroll = true
+    pendingAnchor = null
+    var revision = ++viewportRevision
+    var generation = selectionGeneration
+    Qt.callLater(function() {
+      if (!root.panelOpen || revision !== viewportRevision || generation !== selectionGeneration) return
+      positionMessagesAtEnd()
+      pendingLatestScroll = false
+    })
   }
 
   Timer {
@@ -209,8 +273,9 @@ Item {
     return fallback
   }
 
-  function selectConversation(id) {
-    if (id === selectedConvID || sendingMedia) return
+  function selectConversation(id, remember) {
+    if (sendingMedia) return
+    if (id === selectedConvID) { focusComposer(); return }
     var saved = Object.assign({}, _draftsByNet)
     if (selectedConvID) {
       var netDrafts = Object.assign({}, saved[network] || {})
@@ -222,6 +287,8 @@ Item {
     historyRequest++
     viewportRevision++
     pendingAnchor = null
+    pendingLatestScroll = false
+    followingLatest = false
     loadingOlder = false
     hasOlder = false
     historyExpanded = false
@@ -239,6 +306,10 @@ Item {
     reactingTo = ""
     pendingAttachment = ""
     selectedConvID = id
+    var nextSel = Object.assign({}, _selectedByNet)
+    nextSel[network] = id
+    _selectedByNet = nextSel
+    if (remember !== false) conversationSelected(network, id)
     var currentNetDrafts = _draftsByNet[network] || {}
     composer.text = currentNetDrafts[id] || ""
     attachCaption.text = ""
@@ -247,6 +318,7 @@ Item {
     grouped = []
     threadError = ""
     loadMessages()
+    focusComposer()
   }
 
   function refreshThread() {
@@ -269,6 +341,7 @@ Item {
   }
 
   function displayMessages(next, followEnd) {
+    followEnd = followEnd || (pendingLatestScroll && panelOpen)
     var anchor = followEnd ? null : captureViewport()
     pendingAnchor = anchor
     messages = next
@@ -279,9 +352,8 @@ Item {
       if (revision !== viewportRevision || generation !== selectionGeneration) return
       messageList.forceLayout()
       if (followEnd) {
-        messageList.positionViewAtEnd()
-        messageList.forceLayout()
-        messageList.positionViewAtEnd()
+        positionMessagesAtEnd()
+        pendingLatestScroll = false
       }
       else if (anchor) {
         for (var i = 0; i < grouped.length; i++) {
@@ -368,14 +440,27 @@ Item {
     }, root.network)
   }
 
-  function markThreadRead() {
-    if (!panelOpen || !service || selectedConvID === "" || messages.length === 0) return
+  function markThreadRead(incomingMessage) {
+    if (!panelOpen || !service || selectedConvID === "") return
+    // A live message event can precede its unread conversation snapshot.
+    if (incomingMessage !== true && (!selectedConv || selectedConv.unread !== true)) return
     var last = null
     for (var i = messages.length - 1; i >= 0; i--) {
       if (messages[i].id && !messages[i].provisional) { last = messages[i]; break }
     }
-    if (!last) return
-    service.call("markRead", { conversationID: selectedConvID, messageID: last.id }, null, root.network)
+    // Telegram retains a dialog watermark even when its top item is a service
+    // event that OmaChat does not render. Messenger likewise supports
+    // conversation-level acknowledgement without a rendered message ID.
+    if (!last && !root.isTelegram && !root.isMessenger) return
+    var source = service
+    var target = selectedConvID
+    var targetNet = network
+    var generation = selectionGeneration
+    source.call("markRead", { conversationID: target, messageID: last ? last.id : "" }, function(ok, error) {
+      if (source !== root.service || target !== root.selectedConvID
+          || targetNet !== root.network || generation !== root.selectionGeneration) return
+      if (!ok) root.threadError = String(error)
+    }, targetNet)
   }
 
   function sendMessage(rawText) {
@@ -777,7 +862,8 @@ Item {
     ignoreUnknownSignals: true
     function onMessageReceived(msg, net) {
       root.mergeMessage(msg, net || root.network)
-      if ((!net || net === root.network) && msg.conversationID === root.selectedConvID && root.panelOpen && !msg.fromMe) root.markThreadRead()
+      if ((!net || net === root.network) && msg.conversationID === root.selectedConvID
+          && root.panelOpen && !msg.fromMe && msg.id && !msg.provisional) root.markThreadRead(true)
     }
     function onPaired(net) {
       root.clearNetwork(net)
@@ -786,6 +872,7 @@ Item {
 
   function clearNetwork(net) {
     var targetNet = net || root.network
+    conversationSelected(targetNet, "")
     var epochs = Object.assign({}, root._networkEpochs)
     epochs[targetNet] = (epochs[targetNet] || 0) + 1
     root._networkEpochs = epochs
@@ -954,10 +1041,12 @@ Item {
 
   Item {
     id: listPane
+    objectName: "conversationSidebar"
     anchors.left: parent.left
     anchors.top: parent.top
     anchors.bottom: parent.bottom
-    width: Math.round(parent.width * 0.32)
+    width: visible ? Math.round(parent.width * 0.32) : 0
+    visible: root.sidebarVisible
 
     PanelSectionHeader {
       id: inboxHeader
@@ -982,7 +1071,7 @@ Item {
       font.pixelSize: fs(Style.font.body)
       foreground: root.foreground
       onTextChanged: root.searchQuery = text
-      onActiveFocusChanged: root.composerFocus = activeFocus
+      onActiveFocusChanged: if (activeFocus) root.focusRequest++
     }
 
     Rectangle {
@@ -997,22 +1086,34 @@ Item {
       color: Style.normalFillFor(root.foreground, Color.accent)
 
       MouseArea {
+        objectName: "nextUnreadButton"
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         onClicked: {
-          for (var i = 0; i < root.conversations.length; i++) {
-            if (root.conversations[i].unread === true) {
-              root.selectConversation(root.conversations[i].id)
-              convList.positionViewAtIndex(i, ListView.Contain)
-              return
+          if (!root.panelOpen || root.sendingMedia) return
+          var source = root.service
+          var targetNet = root.network
+          var generation = root.selectionGeneration
+          searchField.text = ""
+          Qt.callLater(function() {
+            if (source !== root.service || targetNet !== root.network
+                || generation !== root.selectionGeneration || !root.panelOpen || root.sendingMedia) return
+            for (var i = 0; i < root.visibleConversations.length; i++) {
+              if (root.visibleConversations[i].unread === true) {
+                if (root.visibleConversations[i].id === root.selectedConvID) root.markThreadRead()
+                else root.selectConversation(root.visibleConversations[i].id)
+                convList.currentIndex = i
+                convList.positionViewAtIndex(i, ListView.Contain)
+                return
+              }
             }
-          }
+          })
         }
       }
 
       Text {
         anchors.centerIn: parent
-        text: root.unreadConversations === 1 ? "1 unread" : root.unreadConversations + " unread"
+        text: root.unreadConversations === 1 ? "Next unread (1)" : "Next unread (" + root.unreadConversations + ")"
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.caption)
@@ -1138,18 +1239,20 @@ Item {
 
   Rectangle {
     id: paneRule
+    visible: root.sidebarVisible
     anchors.left: listPane.right
     anchors.top: parent.top
     anchors.bottom: parent.bottom
-    anchors.leftMargin: Style.space(8)
-    width: 1
+    anchors.leftMargin: visible ? Style.space(8) : 0
+    width: visible ? 1 : 0
     color: Color.popups.border
   }
 
   Item {
     id: threadPane
+    objectName: "threadPane"
     anchors.left: paneRule.right
-    anchors.leftMargin: Style.space(10)
+    anchors.leftMargin: root.sidebarVisible ? Style.space(10) : 0
     anchors.right: parent.right
     anchors.top: parent.top
     anchors.bottom: parent.bottom
@@ -1263,6 +1366,10 @@ Item {
     ListView {
       id: messageList
       objectName: "messageList"
+      onContentYChanged: if (!root.positioningMessages && !root.pendingLatestScroll) root.followingLatest = atYEnd
+      onWidthChanged: if (root.panelOpen && root.followingLatest && !root.positioningMessages && !root.pendingLatestScroll) root.scrollToLatest()
+      onHeightChanged: if (root.panelOpen && root.followingLatest && !root.positioningMessages && !root.pendingLatestScroll) root.scrollToLatest()
+      onContentHeightChanged: if (root.panelOpen && root.followingLatest && !root.positioningMessages && !root.pendingLatestScroll) root.scrollToLatest()
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: historyControls.bottom
@@ -1523,7 +1630,7 @@ Item {
                 id: bubbleText
                 width: parent.width
                 visible: !!(row.hasText || (row.msg && row.msg.deleted === true))
-                height: visible ? implicitHeight : 0
+                height: row.hasText || (row.msg && row.msg.deleted === true) ? implicitHeight : 0
                 text: {
                   if (row.msg && row.msg.deleted) return "Message deleted"
                   return Model.linkify(row.msg ? (row.msg.text || "") : "")
@@ -1808,7 +1915,7 @@ Item {
         foreground: root.foreground
         enabled: !root.sendingMedia
         onAccepted: root.sendAttachment(text)
-        onActiveFocusChanged: root.composerFocus = activeFocus
+        onActiveFocusChanged: if (activeFocus) root.focusRequest++
       }
 
       Row {
@@ -1952,11 +2059,11 @@ Item {
           return "Write a message"
         }
         enabled: root.service && root.service.connected && (typeof root.service.stateFor === "function" ? root.service.stateFor(root.network) : root.service.state) === "connected" && !(root.selectedConv && root.selectedConv.readOnly)
+        onEnabledChanged: if (enabled) root.focusComposer()
         onAccepted: {
           root.sendMessage(text)
           text = ""
         }
-        onActiveFocusChanged: root.composerFocus = activeFocus
       }
     }
 

@@ -133,25 +133,35 @@ def update_state(action):
 
 def build():
     target = ROOT / 'bin'
-    target.mkdir(exist_ok=True)
-    with (target / '.build.lock').open('a') as lock:
+    lock_dir = state_path().parent
+    if lock_dir.resolve().is_relative_to(ROOT.resolve()):
+        raise ValueError('Build state must be outside the plugin directory.')
+    lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (lock_dir / 'build.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         source = source_id()
         release = installed()
-        fd, name = tempfile.mkstemp(dir=target, prefix='.omachatd-')
-        os.close(fd)
-        try:
+        # The shell reloads plugins on every write within ROOT. A hidden sibling
+        # is ignored by its watcher and normally shares the install filesystem.
+        with tempfile.TemporaryDirectory(dir=ROOT.parent, prefix='.omachat-build-') as stage:
+            staged_bin = Path(stage) / 'bin'
+            staged_bin.mkdir(mode=0o755)
+            name = staged_bin / 'omachatd'
             env = dict(os.environ, GOPROXY='off', GOSUMDB='off', GOTOOLCHAIN='local', CGO_ENABLED='1')
             flags = '-X main.version=' + release + ' -X github.com/onelegdave/omachat/internal/buildinfo.SourceID=' + source
-            subprocess.run(['go', 'build', '-mod=vendor', '-ldflags', flags, '-o', name, './cmd/omachatd'],
+            # SourceID above is the reproducible build identity. Avoid Go's VCS
+            # stamping because installed plugins are not necessarily Git trees.
+            subprocess.run(['go', 'build', '-buildvcs=false', '-mod=vendor', '-ldflags', flags, '-o', name, './cmd/omachatd'],
                            cwd=ROOT, env=env, check=True)
             if source_id() != source or installed() != release:
                 raise RuntimeError('Source changed during the build. Please rebuild again.')
             os.chmod(name, 0o755)
-            os.replace(name, target / 'omachatd')
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
+            if target.is_dir():
+                os.replace(name, target / 'omachatd')
+            else:
+                # First install publishes the directory and complete helper at
+                # once; creating an empty bin earlier would also trigger reload.
+                os.replace(staged_bin, target)
     return {'sourceID': source, 'installed': release}
 
 

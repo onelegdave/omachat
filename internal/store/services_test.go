@@ -88,3 +88,22 @@ func TestServiceSelectionPersistenceAndValidation(t *testing.T) {
 		t.Fatalf("failed write changed config: %v", got)
 	}
 }
+
+func TestWindowPreferencesPersistenceAndValidation(t *testing.T) {
+	p := &Paths{Data: t.TempDir()}
+	c := NewConfigStore(p.ConfigFile())
+	if err := c.SetWindowPreferences(true, "tiled"); err != nil {
+		t.Fatal(err)
+	}
+	got := NewConfigStore(p.ConfigFile()).Get()
+	if !got.AlwaysPopout || got.PopoutMode != "tiled" {
+		t.Fatalf("window preferences were not persisted: %+v", got)
+	}
+	if err := c.SetWindowPreferences(false, "maximized"); err == nil {
+		t.Fatal("invalid pop-out mode was accepted")
+	}
+	got = c.Get()
+	if !got.AlwaysPopout || got.PopoutMode != "tiled" {
+		t.Fatalf("invalid write changed preferences: %+v", got)
+	}
+}

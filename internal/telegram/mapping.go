@@ -17,6 +17,7 @@ type Dialog struct {
 	Timestamp int64
 	Unread    bool
 	IsGroup   bool
+	AvatarKey string
 }
 
 // Message is the protocol-neutral subset needed for a Telegram message bubble.

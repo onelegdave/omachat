@@ -261,6 +261,11 @@ func (b *Backend) Start(ctx context.Context) error {
 	b.gen++
 	b.container = container
 	b.device = deviceStore
+	if deviceStore.ID != nil {
+		b.status.AccountIdentity = deviceStore.ID.ToNonAD().String()
+	} else {
+		b.status.AccountIdentity = ""
+	}
 	b.bindClientLocked(live, isPaired)
 	gen = b.gen
 	b.mu.Unlock()
@@ -392,6 +397,12 @@ func (b *Backend) initClientAndStoreLocked() error {
 	cli := whatsmeow.NewClient(deviceStore, waLog.Zerolog(b.log))
 	b.gen++
 	b.container = container
+	b.device = deviceStore
+	if deviceStore.ID != nil {
+		b.status.AccountIdentity = deviceStore.ID.ToNonAD().String()
+	} else {
+		b.status.AccountIdentity = ""
+	}
 	b.bindClientLocked(cli, deviceStore.ID != nil)
 	return nil
 }
@@ -694,6 +705,7 @@ func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, conta
 	b.handlerID = 0
 	b.container = nil
 	b.device = nil
+	b.status.AccountIdentity = ""
 	b.convs = make(map[string]wire.Conversation)
 	b.order = nil
 	b.messages = make(map[string][]wire.Message)
@@ -1459,6 +1471,18 @@ func (b *Backend) handleEvent(evt any) {
 
 func (b *Backend) handleEventFor(gen uint64, evt any) {
 	switch e := evt.(type) {
+	case *events.PairSuccess:
+		// PairSuccess carries an immutable identity. Do not poll Store.ID while
+		// whatsmeow's pairing goroutine may be assigning it.
+		b.mu.Lock()
+		if b.gen != gen {
+			b.mu.Unlock()
+			return
+		}
+		b.status.AccountIdentity = e.ID.ToNonAD().String()
+		b.mu.Unlock()
+		b.publishStatus()
+
 	case *events.Connected:
 		b.mu.Lock()
 		if b.gen != gen {
@@ -1674,7 +1698,9 @@ func (b *Backend) commitMessage(gen uint64, msg wire.Message, raw *waE2E.Message
 	// non-blocking channel enqueue so this does not risk deadlock. Publishing
 	// here closes the retirement race: Unpair increments gen and clears maps
 	// under the same lock, so it cannot observe these emits after retiring.
-	b.emitLocked(wire.EventMessage, msg)
+	if b.publish != nil {
+		b.publish(wire.Event{Event: wire.EventMessage, Network: wire.NetworkWhatsApp, Data: msg, Notify: !found && !msg.FromMe})
+	}
 	b.emitLocked(wire.EventConversation, updatedConv)
 	b.emitLocked(wire.EventStatus, st)
 	b.mu.Unlock()

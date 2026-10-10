@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"sort"
+	"strconv"
 
 	appStore "github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/wire"
@@ -30,6 +31,7 @@ type storedMessengerData struct {
 	ThreadNames    map[int64]string             `json:"threadNames"`
 	Participants   map[int64][]int64            `json:"participants"`
 	ThreadTypes    map[int64]table.ThreadType   `json:"threadTypes"`
+	ReadWatermarks map[int64]int64              `json:"readWatermarks,omitempty"`
 	ThreadToJID    map[int64]waTypes.JID        `json:"threadToJID"`
 	ReactionActors map[string]map[int64]string  `json:"reactionActors,omitempty"`
 	ReactionIDs    map[string]map[int64]string  `json:"reactionIDs,omitempty"`
@@ -43,6 +45,7 @@ func emptyStoredMessengerData() storedMessengerData {
 		ThreadNames:    map[int64]string{},
 		Participants:   map[int64][]int64{},
 		ThreadTypes:    map[int64]table.ThreadType{},
+		ReadWatermarks: map[int64]int64{},
 		ThreadToJID:    map[int64]waTypes.JID{},
 		ReactionActors: map[string]map[int64]string{},
 		ReactionIDs:    map[string]map[int64]string{},
@@ -75,6 +78,9 @@ func loadStoredMessengerData(path string) storedMessengerData {
 	}
 	if out.ThreadTypes == nil {
 		out.ThreadTypes = map[int64]table.ThreadType{}
+	}
+	if out.ReadWatermarks == nil {
+		out.ReadWatermarks = map[int64]int64{}
 	}
 	if out.ThreadToJID == nil {
 		out.ThreadToJID = map[int64]waTypes.JID{}
@@ -110,6 +116,18 @@ func (b *Backend) mergeStoredMessengerDataLocked(data storedMessengerData) {
 	for id, conv := range data.Conversations {
 		if _, ok := b.convs[id]; !ok {
 			b.convs[id] = conv
+		}
+	}
+	for thread, watermark := range data.ReadWatermarks {
+		b.advanceReadWatermarkLocked(thread, watermark)
+	}
+	// Version 1 caches from before explicit watermarks still carry a read
+	// conversation's activity timestamp. Preserve that floor on migration.
+	for id, conv := range data.Conversations {
+		if !conv.Unread {
+			if thread, err := strconv.ParseInt(id, 10, 64); err == nil {
+				b.advanceReadWatermarkLocked(thread, conv.Timestamp/1000)
+			}
 		}
 	}
 	for key, stored := range data.Messages {
@@ -158,6 +176,13 @@ func (b *Backend) mergeStoredMessengerDataLocked(data storedMessengerData) {
 		b.threadToJID[id] = jid
 		b.jidToThread[jid.ToNonAD().String()] = id
 	}
+	// Saved data can hold both a real thread and its stand-in for one JID, and map order made
+	// the JID point at either. Fold stand-ins now so the real thread wins (see foldStandInLocked).
+	for id, jid := range b.threadToJID {
+		if parseUser(jid.User) != id {
+			b.foldStandInLocked(id, jid)
+		}
+	}
 	for messageID, actors := range data.ReactionActors {
 		b.reactionActors[messageID] = actors
 	}
@@ -177,6 +202,7 @@ func (b *Backend) snapshotStoredMessengerDataLocked() storedMessengerData {
 		ThreadNames:    b.threadNames,
 		Participants:   b.participants,
 		ThreadTypes:    b.threadTypes,
+		ReadWatermarks: b.readWatermarks,
 		ThreadToJID:    b.threadToJID,
 		ReactionActors: b.reactionActors,
 		ReactionIDs:    b.reactionIDs,

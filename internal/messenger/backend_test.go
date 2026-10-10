@@ -258,6 +258,28 @@ func TestMessengerLiveMessageUpdatesUnreadStatus(t *testing.T) {
 	}
 }
 
+func TestMessengerStaleThreadWatermarkDoesNotResurfaceReadConversation(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.handleTable(&table.LSTable{LSUpdateOrInsertThread: []*table.LSUpdateOrInsertThread{{
+		ThreadKey: 7, ThreadName: "Rockridge", LastActivityTimestampMs: 2000,
+	}}})
+	b.handleTable(&table.LSTable{LSMarkThreadRead: []*table.LSMarkThreadRead{{
+		ThreadKey: 7, LastReadWatermarkTimestampMs: 2000,
+	}}})
+	b.handleTable(&table.LSTable{LSUpdateOrInsertThread: []*table.LSUpdateOrInsertThread{{
+		ThreadKey: 7, ThreadName: "Rockridge", LastActivityTimestampMs: 2000, LastReadWatermarkTimestampMs: 0,
+	}}})
+	if conv := b.Conversations(1)[0]; conv.Unread {
+		t.Fatalf("stale thread snapshot resurfaced read conversation: %+v", conv)
+	}
+	b.handleTable(&table.LSTable{LSUpdateOrInsertThread: []*table.LSUpdateOrInsertThread{{
+		ThreadKey: 7, ThreadName: "Rockridge", LastActivityTimestampMs: 3000, LastReadWatermarkTimestampMs: 0,
+	}}})
+	if conv := b.Conversations(1)[0]; !conv.Unread {
+		t.Fatalf("new activity did not become unread: %+v", conv)
+	}
+}
+
 func TestHandleTablePreservesAndDeletesAggregateReactions(t *testing.T) {
 	b := New(zerolog.Nop(), nil, nil)
 	b.handleTable(&table.LSTable{

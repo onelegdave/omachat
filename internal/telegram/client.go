@@ -77,19 +77,21 @@ type GotdClient struct {
 	sessionPath  string
 	log          zerolog.Logger
 
-	mu         sync.RWMutex
-	peers      map[int64]tg.InputPeerClass
-	client     *telegram.Client
-	dispatcher tg.UpdateDispatcher
-	cancel     context.CancelFunc
-	running    bool
-	connected  bool
-	stopped    bool
-	onMessage  func(Message)
-	onReaction func(int64, int64, []wire.Reaction)
-	mediaRefs  map[string]tg.InputFileLocationClass
-	mediaExts  map[string]string
-	downloadWG sync.WaitGroup
+	mu          sync.RWMutex
+	peers       map[int64]tg.InputPeerClass
+	topMessages map[int64]int
+	client      *telegram.Client
+	dispatcher  tg.UpdateDispatcher
+	cancel      context.CancelFunc
+	running     bool
+	connected   bool
+	stopped     bool
+	onMessage   func(Message)
+	onReaction  func(int64, int64, []wire.Reaction)
+	selfID      int64
+	mediaRefs   map[string]tg.InputFileLocationClass
+	mediaExts   map[string]string
+	downloadWG  sync.WaitGroup
 }
 
 // SetMessageHandler registers the callback used for live incoming updates.
@@ -176,6 +178,7 @@ func NewGotdClient(appID int, appHash string, sessionPath string, log zerolog.Lo
 		log:          log.With().Str("component", "gotd").Logger(),
 		client:       client,
 		peers:        make(map[int64]tg.InputPeerClass),
+		topMessages:  make(map[int64]int),
 		mediaRefs:    make(map[string]tg.InputFileLocationClass),
 		mediaExts:    make(map[string]string),
 		dispatcher:   dispatcher,
@@ -227,6 +230,9 @@ func (g *GotdClient) Start(ctx context.Context) error {
 				errUnauth := errors.New("telegram session unauthorized or revoked")
 				ready <- errUnauth
 				return errUnauth
+			}
+			if st.User != nil {
+				g.setAccountIdentity(st.User.ID)
 			}
 			ready <- nil
 
@@ -292,7 +298,27 @@ func (g *GotdClient) IsAuthorized(ctx context.Context) (bool, error) {
 		}
 		return false, err
 	}
+	if st.User != nil {
+		g.setAccountIdentity(st.User.ID)
+	}
 	return st.Authorized, nil
+}
+
+func (g *GotdClient) setAccountIdentity(id int64) {
+	g.mu.Lock()
+	g.selfID = id
+	g.mu.Unlock()
+}
+
+// AccountIdentity is learned during the existing authentication flow; Status
+// never performs a provider request or opens a session file to obtain it.
+func (g *GotdClient) AccountIdentity() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.selfID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("tg:%d", g.selfID)
 }
 
 // GetQRChannel starts MTProto client connection and drives gotd QR login flow,
@@ -333,7 +359,11 @@ func (g *GotdClient) GetQRChannel(ctx context.Context) (<-chan QRChannelItem, er
 			if authErr != nil {
 				return authErr
 			}
-			_ = authRes
+			if authRes != nil {
+				if user, ok := authRes.User.(*tg.User); ok && user != nil {
+					g.setAccountIdentity(user.ID)
+				}
+			}
 
 			select {
 			case qrChan <- QRChannelItem{Event: QRChannelEventSuccess}:
@@ -386,8 +416,14 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 	if err != nil {
 		return nil, err
 	}
+	return g.dialogs(res), nil
+}
+
+func (g *GotdClient) dialogs(res tg.MessagesDialogsClass) []Dialog {
 	names := map[string]string{}
 	peers := make(map[int64]tg.InputPeerClass)
+	avatarKeys := make(map[int64]string)
+	avatarRefs := make(map[string]tg.InputFileLocationClass)
 	var raws []tg.DialogClass
 	var lastMessages []tg.MessageClass
 	var users []tg.UserClass
@@ -402,8 +438,13 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 		if x, ok := u.(*tg.User); ok {
 			id := userPeerID(x.ID)
 			names[fmt.Sprintf("tg:%d", id)] = strings.TrimSpace(x.FirstName + " " + x.LastName)
-			if x.AccessHash != 0 {
+			if x.Self {
+				peers[id] = &tg.InputPeerSelf{}
+			} else if x.AccessHash != 0 {
 				peers[id] = &tg.InputPeerUser{UserID: x.ID, AccessHash: x.AccessHash}
+			}
+			if photo, ok := x.Photo.(*tg.UserProfilePhoto); ok {
+				addAvatarReference(avatarKeys, avatarRefs, id, peers[id], photo.PhotoID)
 			}
 		}
 	}
@@ -413,16 +454,23 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 			id := chatPeerID(x.ID)
 			names[fmt.Sprintf("tg:%d", id)] = x.Title
 			peers[id] = &tg.InputPeerChat{ChatID: x.ID}
+			if photo, ok := x.Photo.(*tg.ChatPhoto); ok {
+				addAvatarReference(avatarKeys, avatarRefs, id, peers[id], photo.PhotoID)
+			}
 		case *tg.Channel:
 			id := channelPeerID(x.ID)
 			names[fmt.Sprintf("tg:%d", id)] = x.Title
 			if x.AccessHash != 0 {
 				peers[id] = &tg.InputPeerChannel{ChannelID: x.ID, AccessHash: x.AccessHash}
 			}
+			if photo, ok := x.Photo.(*tg.ChatPhoto); ok {
+				addAvatarReference(avatarKeys, avatarRefs, id, peers[id], photo.PhotoID)
+			}
 		}
 	}
 	out := make([]Dialog, 0, len(raws))
 	previews := make(map[int64]Message, len(lastMessages))
+	topMessages := make(map[int64]int, len(raws))
 	for _, raw := range lastMessages {
 		m, ok := raw.(*tg.Message)
 		if !ok || m.PeerID == nil {
@@ -445,14 +493,28 @@ func (g *GotdClient) Dialogs(ctx context.Context, limit int) ([]Dialog, error) {
 			continue
 		}
 		preview := previews[id]
-		out = append(out, Dialog{ID: id, Name: names[fmt.Sprintf("tg:%d", id)], Preview: preview.Text, Unread: d.UnreadCount > 0, Timestamp: preview.Timestamp, IsGroup: isGroupPeer(d.Peer)})
+		if d.TopMessage > 0 {
+			topMessages[id] = d.TopMessage
+		}
+		out = append(out, Dialog{ID: id, Name: names[fmt.Sprintf("tg:%d", id)], Preview: preview.Text, Unread: d.UnreadCount > 0, Timestamp: preview.Timestamp, IsGroup: isGroupPeer(d.Peer), AvatarKey: avatarKeys[id]})
 	}
 	g.mu.Lock()
 	for id, peer := range peers {
 		g.peers[id] = peer
 	}
+	for id, messageID := range topMessages {
+		g.topMessages[id] = messageID
+	}
+	for key := range g.mediaRefs {
+		if strings.HasPrefix(key, telegramAvatarPrefix) {
+			delete(g.mediaRefs, key)
+		}
+	}
+	for key, location := range avatarRefs {
+		g.mediaRefs[key] = location
+	}
 	g.mu.Unlock()
-	return out, nil
+	return out
 }
 
 // Messages fetches the most recent text messages for a peer. It delegates to
@@ -511,19 +573,29 @@ func (g *GotdClient) historyPage(res tg.MessagesMessagesClass, conversationID in
 	return out
 }
 
-// MarkRead acknowledges Telegram history up to messageID. A zero message ID
-// asks Telegram to mark the whole known history for the peer as read.
+func (g *GotdClient) readWatermark(conversationID, messageID int64) int64 {
+	if messageID != 0 {
+		return messageID
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return int64(g.topMessages[conversationID])
+}
+
+// MarkRead acknowledges Telegram history up to messageID. When the rendered
+// history has no ordinary messages, the dialog's top-message watermark is used.
 func (g *GotdClient) MarkRead(ctx context.Context, conversationID int64, messageID int64) error {
 	g.mu.RLock()
 	peer := g.peers[conversationID]
 	g.mu.RUnlock()
+	messageID = g.readWatermark(conversationID, messageID)
 	if peer == nil {
 		return fmt.Errorf("telegram peer %d is not available", conversationID)
 	}
-	maxID := 0
-	if messageID > 0 {
-		maxID = int(messageID)
+	if messageID <= 0 {
+		return fmt.Errorf("telegram conversation %d has no read watermark", conversationID)
 	}
+	maxID := int(messageID)
 	if channelPeer, ok := peer.(*tg.InputPeerChannel); ok {
 		_, err := g.client.API().ChannelsReadHistory(ctx, &tg.ChannelsReadHistoryRequest{
 			Channel: &tg.InputChannel{ChannelID: channelPeer.ChannelID, AccessHash: channelPeer.AccessHash},
@@ -827,6 +899,9 @@ func (c *cappedWriter) Write(p []byte) (int, error) {
 }
 
 func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	g.mu.Lock()
 	if g.stopped {
 		g.mu.Unlock()
@@ -844,11 +919,15 @@ func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string
 	if location == nil {
 		return "", errors.New("Telegram media reference is unavailable; refresh the conversation")
 	}
+	limit := int64(maxTelegramMediaBytes)
+	if _, avatar := location.(*tg.InputPeerPhotoFileLocation); avatar {
+		limit = maxTelegramAvatarBytes
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	final := filepath.Join(dir, safeMediaName(key)+ext)
-	if st, err := os.Stat(final); err == nil && st.Mode().IsRegular() {
+	if st, err := os.Lstat(final); err == nil && st.Mode().IsRegular() && st.Size() > 0 && st.Size() <= limit {
 		return final, nil
 	}
 	tmp, err := os.CreateTemp(dir, ".telegram-media-*")
@@ -857,7 +936,7 @@ func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	capped := &cappedWriter{w: tmp, limit: maxTelegramMediaBytes}
+	capped := &cappedWriter{w: tmp, limit: limit}
 	_, streamErr := g.client.Download(location).Stream(ctx, capped)
 	closeErr := tmp.Close()
 	if streamErr != nil {

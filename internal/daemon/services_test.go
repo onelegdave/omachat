@@ -65,6 +65,18 @@ func TestDisabledStartupAndRouting(t *testing.T) {
 	if !resp.OK {
 		t.Fatal(resp.Error)
 	}
+	windowResp := d.dispatch(context.Background(), wire.Request{Network: "telegram", Method: wire.MethodSetWindowPreferences, Params: map[string]any{"alwaysPopout": true, "popoutMode": "tiled"}})
+	if !windowResp.OK {
+		t.Fatal(windowResp.Error)
+	}
+	windowConfig := windowResp.Result.(wire.ConfigResult)
+	if !windowConfig.AlwaysPopout || windowConfig.PopoutMode != "tiled" {
+		t.Fatalf("window preferences response: %+v", windowConfig)
+	}
+	invalidWindow := d.dispatch(context.Background(), wire.Request{Method: wire.MethodSetWindowPreferences, Params: map[string]any{"alwaysPopout": true, "popoutMode": "maximized"}})
+	if invalidWindow.OK {
+		t.Fatalf("invalid window preference accepted: %+v", invalidWindow)
+	}
 	for _, file := range []string{d.paths.SessionFile(), d.paths.TelegramSessionFile()} {
 		data, err := os.ReadFile(file)
 		if err != nil || string(data) != "retained account" {

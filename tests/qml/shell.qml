@@ -52,7 +52,7 @@ ShellRoot {
    {id:"wa-1@s.whatsapp.net",name:"Demo WA",preview:"WA test",timestamp:3000000}
   ]
   property var conversationsFB: [
-   {id:"fb-1",name:"Demo Messenger",preview:"Messenger test",timestamp:4000000}
+   {id:"fb-1",name:"Demo Messenger",preview:"",timestamp:4000000,unread:true}
   ]
   property var calls: []
   property var delayed: []
@@ -79,13 +79,31 @@ ShellRoot {
    if (!callback) return
    if (method === "messages") callback(true, {messages:[]})
    else if (method === "media") callback(!failMedia, failMedia ? "temporary failure" : {path:root.testImage})
-   else if (method === "config") callback(true,{uiScale:1,telegramConfigured:false,telegramApiId:0})
+   else if (method === "config") callback(connected,connected ? {uiScale:1,alwaysPopout:false,popoutMode:"floating",telegramConfigured:false,telegramApiId:0} : "not connected")
+   else if (method === "setWindowPreferences") callback(true,{uiScale:1,alwaysPopout:params.alwaysPopout,popoutMode:params.popoutMode,telegramConfigured:false,telegramApiId:0})
    else if (method === "setTelegramCredentials") {
      var isConfigured = params && params.apiId > 0 && !!params.apiHash
      callback(true,{uiScale:1,telegramConfigured:isConfigured,telegramApiId:isConfigured ? params.apiId : 0})
    }
    else callback(true, {})
   }
+ }
+ QtObject {
+  id: disconnectedService
+  property bool connected: false
+  property bool savingServices: false
+  property bool servicesConfigLoaded: true
+  property bool serviceSelectionRequired: false
+  property string currentNetwork: "gmessages"
+  property string state: "connecting"
+  property var status: ({state:"connecting"})
+  property var enabledServices: ["gmessages"]
+  function stateFor(net) { return state }
+  function statusFor(net) { return status }
+  function unreadFor(net) { return 0 }
+  function loadConversations(net) {}
+  function loadProfiles() {}
+  function call(method,params,callback,network) { if (callback) callback(false,"not connected") }
  }
  FloatingWindow {
   id: window
@@ -103,6 +121,8 @@ ShellRoot {
   TestResult { id: inspect }
  }
  Chat.Panel { id: panel; service: fake }
+ Chat.Panel { id: delayedPanel }
+ Chat.Panel { id: disconnectedPanel }
  Chat.SettingsView { id: settings; visible: false; service: fake }
  Chat.ServiceOptions { id: serviceOptions; parent:window.contentItem; width:600; visible:false; service:fake }
  Chat.DependencyChecklist {
@@ -171,6 +191,30 @@ ShellRoot {
     var caption = inspect.findChild(inbox,"attachCaption")
     var search = inspect.findChild(inbox,"searchField")
     root.check(composer && caption && search,"real inbox editors load")
+    inbox.network = "messenger"
+    inbox.selectConversation("fb-1")
+    root.check(fake.calls.some(function(c) {
+      return c.method === "markRead" && c.network === "messenger"
+        && c.params.conversationID === "fb-1" && c.params.messageID === ""
+    }), "empty unread Messenger thread is acknowledged without a rendered message")
+    inbox.network = "gmessages"
+    delayedPanel.open()
+    root.check(!delayedPanel.opened && delayedPanel.openPendingConfig,"opening waits for persisted preferences when the service is not injected yet")
+    delayedPanel.service=fake
+    root.check(delayedPanel.opened && !delayedPanel.openPendingConfig,"pending open resumes after persisted preferences load")
+    delayedPanel.close()
+    disconnectedPanel.service=disconnectedService
+    disconnectedPanel.open()
+    root.check(disconnectedPanel.opened && !disconnectedPanel.openPendingConfig && !disconnectedPanel.panelConfigLoaded,"failed startup config keeps helper recovery accessible")
+    disconnectedPanel.close()
+    settings.saveWindowPreferences(true,"tiled")
+    root.check(settings.alwaysPopout && settings.popoutMode === "tiled","window opening preferences save through the helper")
+    root.check(fake.calls.some(function(c){return c.method === "setWindowPreferences" && c.params.alwaysPopout === true && c.params.popoutMode === "tiled"}),"window preference request preserves enabled state and layout")
+    root.check(inspect.findChild(settings,"alwaysPopoutSwitch") !== null && inspect.findChild(settings,"defaultPopoutMode") !== null,"Settings exposes auto pop-out and layout controls")
+    var popoutButton=inspect.findChild(panel,"popoutButton")
+    panel.alwaysPopout=true
+    root.check(popoutButton !== null && !popoutButton.visible,"manual pop-out header action is hidden when automatic pop-out is enabled")
+    panel.alwaysPopout=false
     inbox.selectConversation("a")
     composer.text="Alice draft"
     caption.text="Alice caption"
@@ -498,7 +542,7 @@ ShellRoot {
     var beforeTelegram = fake.calls.length
     panel.setActiveService("telegram")
     root.check(inspect.findChild(panel, "inboxLoader").visible, "connected Telegram shows the live inbox")
-    root.check(fake.calls.length === beforeTelegram, "telegram tab does not issue chat RPCs")
+    root.check(fake.calls.slice(beforeTelegram).every(function(call) { return call.method === "setChatView" }), "telegram tab only saves its view preference before a chat is chosen")
     var tgInbox = inspect.findChild(panel, "inboxLoader").item
     root.check(tgInbox && tgInbox.reactionsSupported, "Telegram message bubbles enable the reaction action")
     tgInbox.selectConversation("tg:7")

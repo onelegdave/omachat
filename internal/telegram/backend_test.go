@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gotd/td/tg"
 	"github.com/rs/zerolog"
 
 	"github.com/onelegdave/omachat/internal/store"
@@ -527,6 +528,78 @@ func TestTelegramMarkReadAcknowledgesAndPersists(t *testing.T) {
 	data, err := os.ReadFile(paths.TelegramStoreFile())
 	if err != nil || strings.Contains(string(data), `"unread":true`) {
 		t.Fatalf("unread state was not persisted: err=%v data=%s", err, data)
+	}
+}
+
+func TestTelegramMarkReadAllowsConversationWatermark(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	var gotMessage int64 = -1
+	mock.MarkReadFunc = func(_ context.Context, conversationID, messageID int64) error {
+		if conversationID != 7 {
+			t.Fatalf("conversation ID = %d, want 7", conversationID)
+		}
+		gotMessage = messageID
+		return nil
+	}
+	b.AddTestConversation(wire.Conversation{ID: "tg:7", Name: "Service event", Unread: true})
+
+	if err := b.MarkRead(context.Background(), wire.MarkReadParams{ConversationID: "tg:7"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotMessage != 0 {
+		t.Fatalf("message ID = %d, want conversation-level watermark request", gotMessage)
+	}
+	if b.Conversations(1)[0].Unread {
+		t.Fatal("empty conversation remained unread")
+	}
+	data, err := os.ReadFile(paths.TelegramStoreFile())
+	if err != nil || strings.Contains(string(data), `"unread":true`) {
+		t.Fatalf("unread state was not persisted: err=%v data=%s", err, data)
+	}
+}
+
+func TestTelegramReadWatermarkFallsBackToDialogTopMessage(t *testing.T) {
+	g := &GotdClient{topMessages: map[int64]int{7: 42}}
+	if got := g.readWatermark(7, 0); got != 42 {
+		t.Fatalf("read watermark = %d, want dialog top message 42", got)
+	}
+	if got := g.readWatermark(7, 9); got != 9 {
+		t.Fatalf("explicit read watermark = %d, want 9", got)
+	}
+}
+
+func TestTelegramMarkReadWithoutWatermarkFailsBeforeTransport(t *testing.T) {
+	g := &GotdClient{peers: map[int64]tg.InputPeerClass{7: &tg.InputPeerChat{ChatID: 7}}}
+	// No client is connected: a missing watermark must fail without any RPC.
+	err := g.MarkRead(context.Background(), 7, 0)
+	if err == nil || !strings.Contains(err.Error(), "no read watermark") {
+		t.Fatalf("missing watermark error = %v", err)
+	}
+}
+
+func TestTelegramFailedEmptyReadPreservesUnreadCache(t *testing.T) {
+	b, paths, _, mock := setupTestTelegramWithMock(t)
+	b.SetClient(mock)
+	b.AddTestConversation(wire.Conversation{ID: "tg:7", Name: "Service event", Unread: true})
+	b.mu.Lock()
+	err := b.saveLocked()
+	b.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(paths.TelegramStoreFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := errors.New("no read watermark")
+	mock.MarkReadFunc = func(context.Context, int64, int64) error { return want }
+	if err := b.MarkRead(context.Background(), wire.MarkReadParams{ConversationID: "tg:7"}); !errors.Is(err, want) {
+		t.Fatalf("empty read error = %v, want %v", err, want)
+	}
+	after, err := os.ReadFile(paths.TelegramStoreFile())
+	if err != nil || string(after) != string(before) || !b.Conversations(1)[0].Unread || b.Status().Unread != 1 {
+		t.Fatalf("failed read changed unread cache: err=%v", err)
 	}
 }
 

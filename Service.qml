@@ -30,6 +30,8 @@ Item {
   }
 
   property alias updates: updateManager
+  property alias notifications: notificationManager
+  DesktopNotifications { id: notificationManager; service:root; connected:root.connected }
   UpdateManager { id:updateManager; pluginDir:root.pluginDir }
   property string runningSourceID: ""
   property bool helperBuildChecked: false
@@ -106,7 +108,7 @@ Item {
     return servicesConfigLoaded && enabledServices.indexOf(net) >= 0
   }
 
-  function applyServiceConfig(config) {
+  function applyServiceConfig(config, notificationRevision) {
     if (config && config.restartRequired === true) return false
     if (!config || !Array.isArray(config.enabledServices)) {
       servicesError = "Rebuild the helper to use service selection."
@@ -118,6 +120,7 @@ Item {
     enabledServices = next
     serviceSelectionRequired = config.serviceSelectionRequired === true
     servicesConfigLoaded = true
+    notificationManager.applyConfig(config, notificationRevision)
     servicesError = ""
     if (!isServiceEnabled("gmessages")) { conversations = []; browserProfiles = [] }
     if (!isServiceEnabled("whatsapp")) conversationsWA = []
@@ -129,13 +132,15 @@ Item {
   function loadServiceConfig() {
     if (!connected || (savingServices && !restartingServices)) return
     var generation = servicesGeneration
+    var connection = connectionGeneration
+    var notificationRevision = notificationManager.configRevision
     call("config", null, function(ok, res) {
-      if ((savingServices && !restartingServices) || generation !== servicesGeneration) return
+      if (connection !== connectionGeneration || (savingServices && !restartingServices) || generation !== servicesGeneration) return
       if (!ok) { servicesError = String(res); return }
       if (res && res.restartRequired === true) return
       if (restartingServices && connectionGeneration <= restartConnectionGeneration) return
       var expected=pendingServiceChoice
-      var applied=applyServiceConfig(res)
+      var applied=applyServiceConfig(res, notificationRevision)
       if (applied) enabledServices.forEach(function(net) { root.loadConversations(net) })
       if (restartingServices && applied) {
         var matches=expected && JSON.stringify(expected.slice().sort()) === JSON.stringify(enabledServices.slice().sort())
@@ -318,8 +323,10 @@ Item {
     buildLog = ""
     building = true
     helperState = "building"
-    mkdirBin.running = false
-    mkdirBin.running = true
+    buildProc.command = ["python3", root.pluginDir + "/scripts/updates.py", "build"]
+    buildProc.running = false
+    buildProc.running = true
+    buildStartTimeout.restart()
   }
 
   function startHelper() {
@@ -365,23 +372,6 @@ Item {
     onExited: function(code) {
       root.goPresent = code === 0
       root.checkHelper()
-    }
-  }
-
-  Process {
-    id: mkdirBin
-    command: ["/usr/bin/mkdir", "-p", root.pluginDir + "/bin"]
-    onExited: function(code) {
-      if (code !== 0) {
-        root.building = false
-        root.helperState = "missing"
-        root.helperError = "Could not create " + root.pluginDir + "/bin"
-        return
-      }
-      buildProc.command = ["python3", root.pluginDir + "/scripts/updates.py", "build"]
-      buildProc.running = false
-      buildProc.running = true
-      buildStartTimeout.restart()
     }
   }
 
@@ -601,6 +591,10 @@ Item {
   }
 
   function _handleEvent(frame) {
+    if (frame.event === "notificationOpen") {
+      notificationManager.openConversation(frame.data)
+      return
+    }
     if (frame.event === "config") {
       if (frame.data && frame.data.restartRequired === true && !restartingServices)
         awaitServiceRestart(frame.data.enabledServices,null)
@@ -611,6 +605,7 @@ Item {
     if (frame.event !== "status" && !isServiceEnabled(net)) return
     switch (frame.event) {
     case "status":
+      if (frame.data && frame.data.state === "unpaired") notificationManager.forgetNetwork(net)
       if (net === "whatsapp") {
         root.statusWA = frame.data
         if (root.statusWA && root.statusWA.state === "unpaired") root.conversationsWA = []
@@ -637,9 +632,11 @@ Item {
       }
       break
     case "message":
+      notificationManager.handleMessage(frame.data, net, frame.notify === true)
       root.messageReceived(frame.data, net)
       break
     case "paired":
+      notificationManager.forgetNetwork(net)
       root.paired(net)
       root.loadConversations(net)
       break

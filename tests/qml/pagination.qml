@@ -104,6 +104,19 @@ ShellRoot {
      check(list.atYEnd,"intentional send scrolls to newest message")
      inbox.selectConversation("b");take().callback(true,{messages:[],hasMore:false,historyNotice:"Encrypted history is not available yet."})
      check(inbox.historyNotice!=="" && inspect.findChild(inbox,"historyStatus").text===inbox.historyNotice,"encrypted history notice explains an empty thread")
+     inbox.selectConversation("a");take().callback(true,reply(page(100,159),"c100",true));break
+    case 10:
+     list.positionViewAtIndex(12,ListView.Beginning)
+     fake.messageReceived(msg(160))
+     host.opened=false;host.opened=true
+     inbox.loadOlderMessages();take().callback(true,reply(page(40,100),"c40",true));break
+    case 11:
+     check(list.atYEnd,"reopening overrides a queued reading anchor and an in-flight history update")
+     list.positionViewAtIndex(12,ListView.Beginning)
+     root.anchor=inbox.captureViewport()
+     inbox.refreshThread();take().callback(true,reply(page(100,160),"c100",true));break
+    case 12:
+     sameAnchor("reopen scrolling does not force later refreshes to leave older history")
      var shot=Quickshell.env("OMACHAT_PAGINATION_SCREENSHOT")
      if(shot) inbox.grabToImage(function(result){result.saveToFile(shot);console.log("OMACHAT_PAGINATION_PASS");Qt.quit()})
      else {console.log("OMACHAT_PAGINATION_PASS");Qt.quit()}

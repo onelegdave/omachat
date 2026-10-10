@@ -30,7 +30,17 @@ type Config struct {
 
 	// UiScale multiplies panel type. 1 is the theme default. 0 means unset
 	// and is treated as 1 when read.
-	UiScale float64 `json:"uiScale,omitempty"`
+	UiScale              float64           `json:"uiScale,omitempty"`
+	LastService          string            `json:"lastService,omitempty"`
+	SidebarCollapsed     bool              `json:"sidebarCollapsed,omitempty"`
+	LastConversations    map[string]string `json:"lastConversations,omitempty"`
+	NotificationsEnabled *bool             `json:"notificationsEnabled,omitempty"`
+	NotificationPreviews bool              `json:"notificationPreviews,omitempty"`
+
+	// AlwaysPopout opens OmaChat in its standalone window instead of the
+	// anchored bar panel. PopoutMode is "floating" or "tiled".
+	AlwaysPopout bool   `json:"alwaysPopout,omitempty"`
+	PopoutMode   string `json:"popoutMode,omitempty"`
 
 	// TelegramAPIID is the application api_id from my.telegram.org.
 	TelegramAPIID int `json:"telegramApiID,omitempty"`
@@ -131,7 +141,38 @@ func (c *ConfigStore) Get() Config {
 		services := append([]string{}, (*out.EnabledServices)...)
 		out.EnabledServices = &services
 	}
+	if out.LastConversations != nil {
+		out.LastConversations = make(map[string]string, len(c.loaded.LastConversations))
+		for network, id := range c.loaded.LastConversations {
+			out.LastConversations[network] = id
+		}
+	}
+	if out.NotificationsEnabled != nil {
+		enabled := *out.NotificationsEnabled
+		out.NotificationsEnabled = &enabled
+	}
 	return out
+}
+
+func (c Config) NotificationsOn() bool {
+	return c.NotificationsEnabled == nil || *c.NotificationsEnabled
+}
+
+func (c *ConfigStore) SetNotifications(enabled, previews *bool) error {
+	if enabled == nil && previews == nil {
+		return errors.New("notification preferences are required")
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		if enabled != nil {
+			value := *enabled
+			cfg["notificationsEnabled"] = value
+			loaded.NotificationsEnabled = &value
+		}
+		if previews != nil {
+			cfg["notificationPreviews"] = *previews
+			loaded.NotificationPreviews = *previews
+		}
+	})
 }
 
 // EnabledServices preserves legacy installations while fresh installs require a choice.
@@ -282,6 +323,54 @@ func (c *ConfigStore) SetUiScale(scale float64) error {
 	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
 		cfg["uiScale"] = scale
 		loaded.UiScale = scale
+	})
+}
+
+// SetChatView merges only the supplied preferences so switching one service
+// cannot overwrite another service's remembered conversation.
+func (c *ConfigStore) SetChatView(network string, conversationID, lastService *string, sidebarCollapsed *bool) error {
+	knownService := func(service string) bool {
+		return service == "gmessages" || service == "whatsapp" || service == "telegram" || service == "messenger"
+	}
+	if lastService != nil && !knownService(*lastService) {
+		return errors.New("unknown last service")
+	}
+	if conversationID != nil && (!knownService(network) || len(*conversationID) > 1024) {
+		return errors.New("invalid remembered conversation")
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		if lastService != nil {
+			cfg["lastService"] = *lastService
+			loaded.LastService = *lastService
+		}
+		if sidebarCollapsed != nil {
+			cfg["sidebarCollapsed"] = *sidebarCollapsed
+			loaded.SidebarCollapsed = *sidebarCollapsed
+		}
+		if conversationID != nil {
+			if loaded.LastConversations == nil {
+				loaded.LastConversations = make(map[string]string)
+			}
+			if *conversationID == "" {
+				delete(loaded.LastConversations, network)
+			} else {
+				loaded.LastConversations[network] = *conversationID
+			}
+			cfg["lastConversations"] = loaded.LastConversations
+		}
+	})
+}
+
+// SetWindowPreferences persists how OmaChat opens from the bar.
+func (c *ConfigStore) SetWindowPreferences(alwaysPopout bool, mode string) error {
+	if mode != "floating" && mode != "tiled" {
+		return fmt.Errorf("invalid pop-out mode %q", mode)
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["alwaysPopout"] = alwaysPopout
+		cfg["popoutMode"] = mode
+		loaded.AlwaysPopout = alwaysPopout
+		loaded.PopoutMode = mode
 	})
 }
 

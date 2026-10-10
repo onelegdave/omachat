@@ -53,7 +53,22 @@ ShellRoot {
           root.check(panel.settingsOpen,
             "view state survives the return to the panel")
           panel.close()
-          console.log("OMACHAT_POPOUT_PASS hidden default, shared surface, floating, tiled, and return")
+          panel.panelConfigLoaded = true
+          panel.alwaysPopout = true
+          panel.popoutMode = "tiled"
+          panel.open()
+          root.step = 6
+        } else if (root.step === 6 && panel.appliedPopoutMode === "tiled") {
+          root.check(panel.popoutOpen && panel.contentInPopout,
+            "always-open preference opens the shared surface popped out")
+          clientCheck.expectedFloating = false
+          clientCheck.command = ["hyprctl", "-j", "clients"]
+          clientCheck.running = true
+          root.step = 7
+        } else if (root.step === 8) {
+          root.check(!panel.popoutOpen && !panel.opened,
+            "closing an automatic pop-out does not reopen the anchored panel")
+          console.log("OMACHAT_POPOUT_PASS hidden default, shared surface, floating, tiled, return, and automatic tiled open")
           Qt.quit()
         }
       } catch (error) {
@@ -89,9 +104,12 @@ ShellRoot {
         if (expectedFloating) {
           panel.setPopoutMode("tiled")
           root.step = 3
-        } else {
+        } else if (root.step === 4) {
           panel.returnToPanel()
           root.step = 5
+        } else {
+          panel.closePopout(false)
+          root.step = 8
         }
       } catch (error) {
         root.fail(String(error) + " " + String(clientsStderr.text || ""))

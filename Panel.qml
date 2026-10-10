@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls as Controls
 import Quickshell
 import Quickshell.Io
@@ -18,14 +19,33 @@ Panel {
   readonly property var barIdentity: hostWidget || root
 
   property string activeService: "gmessages"
+  property var notificationManager: null
+  property string pendingConversationID: ""
+  property string pendingConversationNetwork: ""
+  property bool sidebarCollapsed: false
+  property var lastConversations: ({})
+  property bool chatViewLoaded: false
+  property int chatViewRevision: 0
+  property var pendingChatViewChanges: []
+  property bool savingChatView: false
+  property var chatViewInFlight: null
+  property string chatViewError: ""
+  property int chatViewGeneration: 0
+  property int configRequest: 0
   property bool settingsOpen: false
   property bool unpairing: false
   property string unpairError: ""
   property int accountGeneration: 0
   property string popoutMode: "floating"
+  property bool alwaysPopout: false
+  property bool panelConfigLoaded: false
+  property bool openPendingConfig: false
+  property bool configLoadPending: false
+  property int configGeneration: 0
   property string appliedPopoutMode: ""
   property string popoutModeError: ""
   property string popoutAddress: ""
+  property int popoutLayoutRevision: 0
   property int popoutMapAttempts: 0
   property bool surfaceTransfer: false
   property bool restartResumeArmed: false
@@ -66,14 +86,21 @@ Panel {
   Connections {
     target: root.service
     ignoreUnknownSignals: true
+    function onConnectedChanged() {
+      if (root.service && root.service.connected) {
+        root.loadConfig()
+        root.flushChatViewChanges()
+      } else root.suspendChatViewWrites()
+    }
     function onStatusChanged() { root.unreadRevision++ }
     function onStatusWAChanged() { root.unreadRevision++ }
     function onStatusTGChanged() { root.unreadRevision++ }
     function onStatusFBChanged() { root.unreadRevision++ }
-    function onConversationsChanged() { root.unreadRevision++ }
-    function onConversationsWAChanged() { root.unreadRevision++ }
-    function onConversationsTGChanged() { root.unreadRevision++ }
-    function onConversationsFBChanged() { root.unreadRevision++ }
+    function onConversationsChanged() { root.unreadRevision++; root.selectPendingConversation() }
+    function onConversationsWAChanged() { root.unreadRevision++; root.selectPendingConversation() }
+    function onConversationsTGChanged() { root.unreadRevision++; root.selectPendingConversation() }
+    function onConversationsFBChanged() { root.unreadRevision++; root.selectPendingConversation() }
+    function onPaired(network) { root.rememberConversation(network, "") }
   }
   readonly property bool noServices: serviceTabs.length === 0
   onServiceTabsChanged: syncActiveService()
@@ -106,6 +133,11 @@ Panel {
   readonly property bool needsPair: connState === "unpaired" || connState === "pairing"
     || connState === "gaiaPairing" || connState === "error"
   readonly property bool linkUp: service && service.connected && connState === "connected"
+  // Unpair has to stay reachable while a pairing exists but the phone stops
+  // answering, which is exactly when the user needs to re-pair. "error" is
+  // excluded because needsPair already routes that state to the pairing view.
+  readonly property bool canUnpair: !!service && service.connected && !noServices
+    && (connState === "connected" || connState === "connecting" || connState === "disconnected")
   readonly property string linkLabel: {
     if (!service) return "SERVICE OFFLINE"
     if (!service.connected) return "HELPER OFFLINE"
@@ -156,10 +188,21 @@ Panel {
 
   function open() {
     if (popoutOpen) return
-    root.controller.show()
+    if (!panelConfigLoaded) {
+      openPendingConfig = true
+      if (service) loadConfig()
+      return
+    }
+    openPendingConfig = false
+    if (alwaysPopout) openPopout()
+    else root.controller.show()
   }
 
   function close() {
+    if (openPendingConfig) {
+      openPendingConfig = false
+      return
+    }
     if (popoutOpen) {
       closePopout(false)
       return
@@ -168,13 +211,15 @@ Panel {
   }
 
   function toggle() {
-    if (popoutOpen) closePopout(false)
+    if (openPendingConfig) root.close()
+    else if (popoutOpen) closePopout(false)
     else if (opened) root.controller.hide()
-    else root.controller.show()
+    else root.open()
   }
 
   function openPopout() {
     if (popoutOpen) return
+    openPendingConfig = false
     surfaceTransfer = true
     root.controller.hide()
     popoutModeError = ""
@@ -184,7 +229,7 @@ Panel {
     requestPopoutMode(popoutMode)
     Qt.callLater(function() {
       root.surfaceTransfer = false
-      if (root.popoutOpen) keyCatcher.forceActiveFocus()
+      if (root.popoutOpen) root.focusChat(true)
     })
   }
 
@@ -200,7 +245,7 @@ Panel {
     root.controller.show()
     Qt.callLater(function() {
       root.surfaceTransfer = false
-      if (root.opened) keyCatcher.forceActiveFocus()
+      if (root.opened) root.focusChat(true)
     })
   }
 
@@ -213,11 +258,19 @@ Panel {
 
   function requestPopoutMode(mode) {
     if (mode !== "tiled" && mode !== "floating") return
+    popoutLayoutRevision++
     popoutModeError = ""
     appliedPopoutMode = ""
     popoutMapAttempts = 0
     modeMapTimer.requestedMode = mode
     modeMapTimer.restart()
+  }
+
+  function acceptPopoutReply(revision) {
+    if (!popoutOpen) return false
+    if (revision === popoutLayoutRevision) return true
+    modeMapTimer.restart()
+    return false
   }
 
   function dispatchPopoutMode(mode, address) {
@@ -227,6 +280,7 @@ Panel {
       return
     }
     if (popoutModeProcess.running) return
+    popoutModeProcess.requestRevision = popoutLayoutRevision
     popoutModeProcess.requestedMode = mode
     popoutModeProcess.command = [
       "hyprctl", "dispatch",
@@ -239,20 +293,180 @@ Panel {
   function setActiveService(v) {
     if (!serviceTabs.some(function(tab) { return tab.value === v })) return
     root.settingsOpen = false
+    pendingConversationID = ""
     root.activeService = v
+    saveChatView({lastService: v}, v)
     if (root.service) {
       root.service.currentNetwork = v
       if (v === "gmessages" || v === "whatsapp" || v === "telegram" || v === "messenger") root.service.loadConversations(v)
     }
   }
 
+  function applyWindowPreferences(always, mode) {
+    // A successful save retires any older configuration read.
+    configGeneration++
+    configLoadPending = false
+    alwaysPopout = always
+    panelConfigLoaded = true
+    setPopoutMode(mode)
+    if (openPendingConfig) root.open()
+  }
+
+  function isReadingConversation(network, id) {
+    return anySurfaceOpen && inboxLoader.visible && inboxLoader.item
+      && inboxLoader.item.network === network && inboxLoader.item.selectedConvID === id
+      && keyCatcher.Window.window && keyCatcher.Window.window.active
+  }
+
+  function showConversation(network, id) {
+    if (!serviceTabs.some(function(tab) { return tab.value === network })) return
+    setActiveService(network)
+    pendingConversationNetwork = network
+    pendingConversationID = id
+    open()
+    if (popoutOpen && popoutContentHost.Window.window) popoutContentHost.Window.window.requestActivate()
+    Qt.callLater(selectPendingConversation)
+  }
+
+  function selectPendingConversation() {
+    if (!pendingConversationID || activeService !== pendingConversationNetwork || !inboxLoader.visible || !inboxLoader.item) return
+    if (!inboxLoader.item.conversations.some(function(conv) { return conv.id === root.pendingConversationID })) return
+    inboxLoader.item.selectConversation(pendingConversationID)
+    if (inboxLoader.item.selectedConvID === pendingConversationID) pendingConversationID = ""
+  }
+
+  function showNotificationSettings() {
+    settingsOpen = true
+    open()
+    Qt.callLater(function() { if (bodyLoader.item) bodyLoader.item.showNotifications() })
+  }
+
+  function registerNotificationView() {
+    if (notificationManager) notificationManager.unregisterView(root)
+    notificationManager = service && service.notifications ? service.notifications : null
+    if (notificationManager) notificationManager.registerView(root)
+  }
+
+  function focusChat(showLatest) {
+    if (inboxLoader.visible && inboxLoader.item) {
+      if (showLatest === true) inboxLoader.item.scrollToLatest()
+      inboxLoader.item.focusComposer()
+    }
+    else keyCatcher.forceActiveFocus()
+  }
+
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed
+    saveChatView({sidebarCollapsed: sidebarCollapsed}, activeService)
+    focusChat()
+  }
+
+  function rememberConversation(network, id) {
+    if ((lastConversations[network] || "") === id) return
+    var next = Object.assign({}, lastConversations)
+    next[network] = id
+    lastConversations = next
+    saveChatView({conversationID: id}, network)
+  }
+
+  function queueChatViewChange(params, network) {
+    var queued = pendingChatViewChanges.map(function(change) {
+      return {network: change.network, params: Object.assign({}, change.params)}
+    })
+    // Global preferences have one newest value across all service queues.
+    var fields = ["lastService", "sidebarCollapsed"]
+    fields.forEach(function(field) {
+      if (params[field] !== undefined) queued.forEach(function(change) { delete change.params[field] })
+    })
+    var previous = queued.filter(function(change) { return change.network === network })[0]
+    var merged = Object.assign({}, previous ? previous.params : {}, params)
+    pendingChatViewChanges = queued.filter(function(change) {
+      return change.network !== network && Object.keys(change.params).length > 0
+    }).concat([{params: merged, network: network}])
+  }
+
+  function saveChatView(params, network) {
+    chatViewRevision++
+    queueChatViewChange(params, network)
+    flushChatViewChanges()
+  }
+
+  function suspendChatViewWrites() {
+    configGeneration++
+    configLoadPending = false
+    panelConfigLoaded = false
+    if (openPendingConfig) {
+      openPendingConfig = false
+      root.controller.show()
+    }
+    chatViewGeneration++
+    configRequest++
+    var changes = chatViewInFlight ? [chatViewInFlight].concat(pendingChatViewChanges) : pendingChatViewChanges
+    chatViewInFlight = null
+    savingChatView = false
+    pendingChatViewChanges = []
+    // Preference updates are idempotent. Preserve them across a socket loss,
+    // preserving newer edits over the interrupted write's older values.
+    changes.forEach(function(change) { root.queueChatViewChange(change.params, change.network) })
+  }
+
+  function flushChatViewChanges() {
+    if (savingChatView || !service || !service.connected || !pendingChatViewChanges.length) return
+    var change = pendingChatViewChanges[0]
+    pendingChatViewChanges = pendingChatViewChanges.slice(1)
+    var source = service
+    var generation = chatViewGeneration
+    savingChatView = true
+    chatViewInFlight = change
+    service.call("setChatView", change.params, function(ok, res) {
+      if (source !== root.service || generation !== root.chatViewGeneration) return
+      root.savingChatView = false
+      root.chatViewInFlight = null
+      root.chatViewError = ok ? "" : "Could not remember the chat view. Rebuild the helper if it needs updating, then try again."
+      root.flushChatViewChanges()
+    }, change.network)
+  }
+
   function loadConfig() {
-    if (!service) return
-    service.call("config", null, function(ok, res) {
-      if (!ok || !res) return
-      if (typeof service.applyServiceConfig === "function" && !service.savingServices) service.applyServiceConfig(res)
+    if (!service || configLoadPending) return
+    var source = service
+    var revision = chatViewRevision
+    var generation = chatViewGeneration
+    var windowGeneration = ++configGeneration
+    var request = ++configRequest
+    var notificationRevision = source.notifications ? source.notifications.configRevision : undefined
+    configLoadPending = true
+    source.call("config", null, function(ok, res) {
+      if (source !== root.service || generation !== root.chatViewGeneration || request !== root.configRequest || windowGeneration !== root.configGeneration) return
+      root.configLoadPending = false
+      if (!ok || !res || typeof res !== "object") {
+        root.panelConfigLoaded = false
+        if (root.openPendingConfig) {
+          // Helper recovery and Settings must remain reachable while offline.
+          root.openPendingConfig = false
+          root.controller.show()
+        }
+        return
+      }
+      if (typeof service.applyServiceConfig === "function" && !service.savingServices) service.applyServiceConfig(res, notificationRevision)
       var s = Number(res.uiScale)
       if (isFinite(s) && s > 0) root.uiScale = s
+      if (!root.chatViewLoaded) {
+        root.chatViewLoaded = true
+        root.lastConversations = Object.assign({}, res.lastConversations || {}, root.lastConversations)
+        if (revision === root.chatViewRevision) {
+          root.sidebarCollapsed = res.sidebarCollapsed === true
+          if (root.serviceTabs.some(function(tab) { return tab.value === res.lastService })) {
+            root.activeService = res.lastService
+            source.currentNetwork = res.lastService
+            source.loadConversations(res.lastService)
+          }
+        }
+      }
+      root.alwaysPopout = res.alwaysPopout === true
+      root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
+      root.panelConfigLoaded = true
+      if (root.openPendingConfig) root.open()
     }, "gmessages")
   }
 
@@ -264,16 +478,35 @@ Panel {
     if (!noServices) service.loadConversations(activeService)
   }
 
+  function retireChatView() {
+    chatViewInFlight = null
+    chatViewGeneration++
+    configRequest++
+    savingChatView = false
+    pendingChatViewChanges = []
+    pendingConversationID = ""
+    lastConversations = ({})
+    chatViewLoaded = false
+    chatViewRevision++
+    chatViewError = ""
+  }
+
   onServiceChanged: {
+    retireChatView()
+    registerNotificationView()
     syncRestartResume()
     syncActiveService()
     accountGeneration++
     unpairing = false
     unpairError = ""
+    configGeneration++
+    panelConfigLoaded = false
+    configLoadPending = false
     loadConfig()
   }
 
-  Component.onCompleted: syncRestartResume()
+  Component.onCompleted: { syncRestartResume(); registerNotificationView() }
+  Component.onDestruction: if (notificationManager) notificationManager.unregisterView(root)
 
   onConnStateChanged: {
     if (connState === "pairing" || connState === "gaiaPairing" || connState === "connecting") {
@@ -308,6 +541,7 @@ Panel {
 
     onVisibleChanged: {
       if (visible) return
+      root.popoutLayoutRevision++
       modeMapTimer.stop()
       if (popoutResolveProcess.running) popoutResolveProcess.running = false
       if (popoutModeProcess.running) popoutModeProcess.running = false
@@ -334,6 +568,7 @@ Panel {
     repeat: false
     onTriggered: {
       if (!root.popoutOpen || popoutResolveProcess.running) return
+      popoutResolveProcess.requestRevision = root.popoutLayoutRevision
       popoutResolveProcess.command = ["hyprctl", "-j", "clients"]
       popoutResolveProcess.running = true
     }
@@ -360,20 +595,24 @@ Panel {
 
   Process {
     id: popoutResolveProcess
+    property int requestRevision: -1
     stdout: StdioCollector { id: popoutResolveStdout; waitForEnd: true }
     stderr: StdioCollector { id: popoutResolveStderr; waitForEnd: true }
     onExited: function(code) {
-      if (!root.popoutOpen) return
+      if (!root.acceptPopoutReply(requestRevision)) return
       var address = ""
       if (code === 0) {
         try {
           var clients = JSON.parse(String(popoutResolveStdout.text || "[]"))
+          var matchedClient = null
           for (var i = 0; i < clients.length; i++) {
             var client = clients[i]
             if (client && client.mapped !== false
+                && Number(client.pid) === Number(Quickshell.processId)
                 && String(client.title) === popoutWindow.title
                 && String(client.initialTitle) === popoutWindow.title) {
               address = String(client.address || "")
+              matchedClient = client
               break
             }
           }
@@ -383,6 +622,27 @@ Panel {
       }
       if (/^0x[0-9a-f]+$/i.test(address)) {
         root.popoutAddress = address
+        var requestedMode = modeMapTimer.requestedMode
+        var alreadyFloating = matchedClient && matchedClient.floating === true
+        if ((requestedMode === "floating") === alreadyFloating) {
+          if (requestedMode === "floating"
+              && matchedClient.size
+              && (matchedClient.size[0] !== root.preferredPopoutWidth
+                || matchedClient.size[1] !== root.preferredPopoutHeight)) {
+            popoutResizeProcess.requestRevision = requestRevision
+            popoutResizeProcess.command = [
+              "hyprctl", "dispatch",
+              "hl.dsp.window.resize({ x = " + root.preferredPopoutWidth
+                + ", y = " + root.preferredPopoutHeight
+                + ", relative = false, window = \"address:" + root.popoutAddress + "\" })"
+            ]
+            popoutResizeProcess.running = true
+          } else {
+            root.appliedPopoutMode = requestedMode
+            root.popoutModeError = ""
+          }
+          return
+        }
         root.dispatchPopoutMode(modeMapTimer.requestedMode, address)
         return
       }
@@ -400,14 +660,16 @@ Panel {
 
   Process {
     id: popoutModeProcess
+    property int requestRevision: -1
     objectName: "popoutModeProcess"
     property string requestedMode: ""
     stdout: StdioCollector { id: popoutModeStdout; waitForEnd: true }
     stderr: StdioCollector { id: popoutModeStderr; waitForEnd: true }
     onExited: function(code) {
-      if (!root.popoutOpen) return
+      if (!root.acceptPopoutReply(requestRevision)) return
       if (code === 0) {
         if (requestedMode === "floating") {
+          popoutResizeProcess.requestRevision = requestRevision
           popoutResizeProcess.command = [
             "hyprctl", "dispatch",
             "hl.dsp.window.resize({ x = " + root.preferredPopoutWidth
@@ -430,10 +692,11 @@ Panel {
 
   Process {
     id: popoutResizeProcess
+    property int requestRevision: -1
     stdout: StdioCollector { id: popoutResizeStdout; waitForEnd: true }
     stderr: StdioCollector { id: popoutResizeStderr; waitForEnd: true }
     onExited: function(code) {
-      if (!root.popoutOpen) return
+      if (!root.acceptPopoutReply(requestRevision)) return
       if (code === 0) {
         root.appliedPopoutMode = "floating"
         root.popoutModeError = ""
@@ -457,6 +720,10 @@ Panel {
     target.call("unpair", null, function(ok, res) {
       if (root.service !== target || root.accountGeneration !== generation) return
       root.unpairing = false
+      if (ok) {
+        root.rememberConversation(currentNet, "")
+        if (res && res.warning) root.chatViewError = String(res.warning)
+      }
       if (!ok) {
         var advice = currentNet === "whatsapp"
           ? " Check WhatsApp on your phone under Linked devices."
@@ -477,7 +744,7 @@ Panel {
     bar: root.bar
     open: root.opened
     centerOnBar: true
-    focusTarget: keyCatcher
+    focusTarget: inboxLoader.visible && inboxLoader.item ? inboxLoader.item.focusTarget : keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(920))
     contentHeight: panel.cappedContentHeight(Style.space(580))
 
@@ -489,8 +756,8 @@ Panel {
       // The stock catcher consumes them for panels with a custom cursor model.
       Keys.onPressed: function(event) {
         var editing = inboxLoader.visible && inboxLoader.item && (inboxLoader.item.composerFocus || inboxLoader.item.linkConfirmOpen)
-        if (editing || root.settingsOpen) return
         if (event.key === Qt.Key_Escape) { root.close(); event.accepted = true; return }
+        if (editing || root.settingsOpen) return
         if (event.text === "1") { root.setActiveService("gmessages"); event.accepted = true }
         else if (event.text === "2") { root.setActiveService("whatsapp"); event.accepted = true }
         else if (event.text === "3") { root.setActiveService("telegram"); event.accepted = true }
@@ -509,9 +776,27 @@ Panel {
           width: parent.width
           height: Style.space(28)
 
+          PanelActionButton {
+            id: sidebarBtn
+            objectName: "sidebarToggleButton"
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            visible: inboxLoader.visible
+            enabled: inboxLoader.item && inboxLoader.item.selectedConvID !== ""
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: tooltipText
+            iconText: root.sidebarCollapsed ? "󰍜" : "󰁍"
+            tooltipText: root.sidebarCollapsed ? "Show conversations" : "Hide conversations"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.toggleSidebar()
+          }
+
           OpticalGlyph {
             id: brandGlyph
-            anchors.left: parent.left
+            anchors.left: sidebarBtn.visible ? sidebarBtn.right : parent.left
+            anchors.leftMargin: sidebarBtn.visible ? Style.space(8) : 0
             anchors.verticalCenter: parent.verticalCenter
             width: Style.space(22)
             height: Style.space(22)
@@ -564,6 +849,7 @@ Panel {
           Button {
             id: popoutBtn
             objectName: "popoutButton"
+            visible: !root.alwaysPopout
             anchors.right: settingsBtn.left
             anchors.rightMargin: Style.space(2)
             anchors.verticalCenter: parent.verticalCenter
@@ -588,8 +874,8 @@ Panel {
             id: unpairBtn
             objectName: "unpairButton"
             enabled: !root.unpairing
-            visible: root.linkUp
-            anchors.right: popoutBtn.left
+            visible: root.canUnpair
+            anchors.right: root.alwaysPopout ? settingsBtn.left : popoutBtn.left
             anchors.rightMargin: Style.space(2)
             anchors.verticalCenter: parent.verticalCenter
             iconText: "󰍃"
@@ -601,7 +887,7 @@ Panel {
 
           Rectangle {
             id: linkChip
-            anchors.right: unpairBtn.visible ? unpairBtn.left : popoutBtn.left
+            anchors.right: unpairBtn.visible ? unpairBtn.left : (root.alwaysPopout ? settingsBtn.left : popoutBtn.left)
             anchors.rightMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
             height: Style.space(20)
@@ -634,6 +920,17 @@ Panel {
               }
             }
           }
+        }
+
+        Text {
+          objectName: "chatViewErrorLabel"
+          width: parent.width
+          visible: root.chatViewError !== ""
+          text: root.chatViewError
+          color: root.urgentInk
+          font.family: root.fontFamily
+          font.pixelSize: root.fs(Style.font.bodySmall)
+          wrapMode: Text.Wrap
         }
 
         Text {
@@ -760,6 +1057,8 @@ Panel {
       // Unpairing or losing the helper destroys this view and its account data.
       Loader {
         id: inboxLoader
+        onLoaded: Qt.callLater(root.selectPendingConversation)
+        onVisibleChanged: if (visible) Qt.callLater(root.selectPendingConversation)
         objectName: "inboxLoader"
         anchors.left: parent.left
         anchors.right: parent.right
@@ -819,10 +1118,15 @@ Panel {
     id: settingsView
     SettingsView {
       service: root.service
+      alwaysPopout: root.alwaysPopout
+      popoutMode: root.popoutMode
       foreground: root.foreground
       fontFamily: root.fontFamily
       uiScale: root.uiScale
       onScaleSaved: function(s) { root.uiScale = s }
+      onWindowPreferencesSaved: function(always, mode) {
+        root.applyWindowPreferences(always, mode)
+      }
     }
   }
 
@@ -1119,6 +1423,10 @@ Panel {
       host: surfaceHost
       viewActive: inboxLoader.visible
       settings: root.settings
+      sidebarCollapsed: root.sidebarCollapsed
+      lastConversations: root.lastConversations
+      onConversationSelected: function(network, id) { root.rememberConversation(network, id) }
+      onSendingMediaChanged: if (!sendingMedia) Qt.callLater(root.selectPendingConversation)
       networkLabel: root.activeService === "whatsapp" ? "WhatsApp" : (root.activeService === "telegram" ? "Telegram" : (root.activeService === "messenger" ? "Messenger" : "Google Messages"))
       uiScale: root.uiScale
     }
