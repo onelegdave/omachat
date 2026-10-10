@@ -22,10 +22,13 @@ Panel {
   property string activeService: "gmessages"
   property bool unifiedInboxEnabled: false
   property bool savingUnifiedInboxPreference: false
+  property int unifiedPreferenceGeneration: 0
+  property string unifiedInboxError: ""
   property var notificationManager: null
   property string pendingConversationID: ""
   property string pendingConversationNetwork: ""
   property bool sidebarCollapsed: false
+  QtObject { id: sharedDraftStore; property var drafts: ({}) }
   property var lastConversations: ({})
   property bool chatViewLoaded: false
   property int chatViewRevision: 0
@@ -122,7 +125,7 @@ Panel {
   function syncActiveService() {
     if (serviceTabs.some(function(tab) { return tab.value === root.activeService })) return
     activeService = serviceTabs.length ? serviceTabs[0].value : ""
-    if(service) service.currentNetwork=activeService
+    if(service && activeService !== "all") service.currentNetwork=activeService
   }
   property real uiScale: 1
   function fs(n) { return Math.max(8, Math.round(Number(n) * uiScale)) }
@@ -133,6 +136,10 @@ Panel {
   readonly property int unread: service && !unifiedActive ? (typeof service.unreadFor === "function" ? service.unreadFor(activeService) : (service.unread || 0)) : 0
   readonly property string connState: service && !unifiedActive ? (typeof service.stateFor === "function" ? service.stateFor(activeService) : (service.state || "")) : ""
   readonly property var activeStatus: service && !unifiedActive ? (typeof service.statusFor === "function" ? service.statusFor(activeService) : service.status) : null
+  readonly property var unifiedConnection: Model.combinedConnectionStatus(providerTabs.map(function(tab) {
+    if (!root.service) return null
+    return typeof root.service.statusFor === "function" ? root.service.statusFor(tab.value) : root.service.status
+  }))
 
   function readableInk(surface, preferred, minRatio) {
     return Model.readableInk(surface, preferred, minRatio)
@@ -147,7 +154,8 @@ Panel {
 
   readonly property bool needsPair: connState === "unpaired" || connState === "pairing"
     || connState === "gaiaPairing" || connState === "error"
-  readonly property bool linkUp: service && service.connected && connState === "connected"
+  readonly property bool linkUp: service && service.connected
+    && (unifiedActive ? unifiedConnection.connected : connState === "connected")
   // Unpair has to stay reachable while a pairing exists but the phone stops
   // answering, which is exactly when the user needs to re-pair. "error" is
   // excluded because needsPair already routes that state to the pairing view.
@@ -157,6 +165,7 @@ Panel {
     if (!service) return "SERVICE OFFLINE"
     if (!service.connected) return "HELPER OFFLINE"
     if (noServices) return service.servicesConfigLoaded === false ? "LOADING" : "SERVICES OFF"
+    if (unifiedActive) return unifiedConnection.label
     if (connState === "connected" && activeStatus && activeStatus.phoneOK === false)
       return "PHONE OFFLINE"
     if (connState === "connected") return "CONNECTED"
@@ -325,11 +334,21 @@ Panel {
   }
 
   function setUnifiedInboxEnabled(enabled) {
-    if (!service || savingUnifiedInboxPreference) return
+    if (!service || service.connected === false || savingUnifiedInboxPreference) return
+    var source = service
+    var generation = ++unifiedPreferenceGeneration
+    configGeneration++
+    configLoadPending = false
+    unifiedInboxError = ""
     savingUnifiedInboxPreference = true
     service.call("setUnifiedInboxPreference", {enabled: enabled === true}, function(ok, res) {
+      if (source !== root.service || generation !== root.unifiedPreferenceGeneration) return
       root.savingUnifiedInboxPreference = false
-      if (!ok || !res) return
+      if (!ok || !res || typeof res.unifiedInboxEnabled !== "boolean") {
+        root.unifiedInboxError = "Could not confirm the unified inbox preference. Open Settings to retry."
+        return
+      }
+      root.configGeneration++; root.configLoadPending = false
       root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
       if (root.unifiedInboxEnabled && !root.unifiedActive) root.setActiveService("all")
       else if (!root.unifiedInboxEnabled && root.unifiedActive)
@@ -366,7 +385,9 @@ Panel {
       return
     }
     if (activeInboxItem && (inboxLoader.visible || unifiedInboxLoader.visible) && activeInboxItem.focusConversationList) {
-      activeInboxItem.focusConversationList()
+      var detail = unifiedActive ? activeInboxItem.detailView : activeInboxItem
+      if (detail && detail.selectedConvID && detail.focusComposer) detail.focusComposer()
+      else activeInboxItem.focusConversationList()
       return
     }
     keyCatcher.forceActiveFocus()
@@ -374,7 +395,9 @@ Panel {
 
   function routeKeyboardEvent(event) {
     var inbox = (inboxLoader.visible || unifiedInboxLoader.visible) ? activeInboxItem : null
-    var editing = !!(inbox && inbox.isKeyboardEditing && inbox.isKeyboardEditing())
+    var editing = root.settingsOpen
+      ? !!(bodyLoader.item && bodyLoader.item.isKeyboardEditing && bodyLoader.item.isKeyboardEditing())
+      : !!(inbox && inbox.isKeyboardEditing && inbox.isKeyboardEditing())
     var chord = {
       text: event.text,
       key: event.key,
@@ -399,7 +422,7 @@ Panel {
     }
     if (root.settingsOpen && bodyLoader.item && bodyLoader.item.isCapturingShortcut
         && bodyLoader.item.isCapturingShortcut()) return
-    if (inbox && inbox.hasKeyboardModal && inbox.hasKeyboardModal()) return
+    if (actionMenu.visible || (inbox && inbox.hasKeyboardModal && inbox.hasKeyboardModal())) return
     if ((event.modifiers & Qt.ControlModifier) !== 0
         && (event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ShiftModifier)) === 0
         && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
@@ -445,8 +468,10 @@ Panel {
   }
 
   function isReadingConversation(network, id) {
-    return anySurfaceOpen && inboxLoader.visible && inboxLoader.item
-      && inboxLoader.item.network === network && inboxLoader.item.selectedConvID === id
+    var inbox = unifiedActive && unifiedInboxLoader.item ? unifiedInboxLoader.item.detailView : inboxLoader.item
+    var inboxVisible = unifiedActive ? unifiedInboxLoader.visible : inboxLoader.visible
+    return anySurfaceOpen && inboxVisible && inbox
+      && inbox.network === network && inbox.selectedConvID === id
       && keyCatcher.Window.window && keyCatcher.Window.window.active
   }
 
@@ -480,16 +505,18 @@ Panel {
   }
 
   function focusChat(showLatest) {
-    if (inboxLoader.visible && inboxLoader.item) {
-      if (showLatest === true) inboxLoader.item.scrollToLatest()
-      inboxLoader.item.focusComposer()
+    var inbox = unifiedActive && unifiedInboxLoader.item ? unifiedInboxLoader.item.detailView : inboxLoader.item
+    if ((inboxLoader.visible || unifiedInboxLoader.visible) && inbox && inbox.selectedConvID) {
+      if (showLatest === true) inbox.scrollToLatest()
+      inbox.focusComposer()
     }
+    else if (unifiedActive && unifiedInboxLoader.item) unifiedInboxLoader.item.focusConversationList()
     else keyCatcher.forceActiveFocus()
   }
 
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed
-    saveChatView({sidebarCollapsed: sidebarCollapsed}, activeService)
+    saveChatView({sidebarCollapsed: sidebarCollapsed}, activeService === "all" ? (providerTabs.length ? providerTabs[0].value : "gmessages") : activeService)
     focusChat()
   }
 
@@ -524,6 +551,8 @@ Panel {
   }
 
   function suspendChatViewWrites() {
+    unifiedPreferenceGeneration++
+    savingUnifiedInboxPreference = false
     configGeneration++
     configLoadPending = false
     panelConfigLoaded = false
@@ -583,6 +612,7 @@ Panel {
       if (typeof service.applyServiceConfig === "function" && !service.savingServices) service.applyServiceConfig(res, notificationRevision)
       var s = Number(res.uiScale)
       if (isFinite(s) && s > 0) root.uiScale = s
+      root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
       if (!root.chatViewLoaded) {
         root.chatViewLoaded = true
         root.lastConversations = Object.assign({}, res.lastConversations || {}, root.lastConversations)
@@ -600,7 +630,6 @@ Panel {
       root.alwaysPopout = res.alwaysPopout === true
       root.keepPreviousEmojiSearchText = res.keepPreviousEmojiSearchText === true
       root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
-      root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
       root.panelConfigLoaded = true
       if (root.openPendingConfig) root.open()
     }, "gmessages")
@@ -611,7 +640,10 @@ Panel {
     if (!anySurfaceOpen || !service) return
     loadConfig()
     if (needsPair && activeService === "gmessages") service.loadProfiles()
-    if (!noServices) service.loadConversations(activeService)
+    if (!noServices) {
+      if (unifiedActive) providerTabs.forEach(function(tab) { root.service.loadConversations(tab.value) })
+      else service.loadConversations(activeService)
+    }
     Qt.callLater(root.focusInitialControl)
   }
 
@@ -623,6 +655,7 @@ Panel {
     pendingChatViewChanges = []
     pendingConversationID = ""
     lastConversations = ({})
+    sharedDraftStore.drafts = ({})
     chatViewLoaded = false
     chatViewRevision++
     chatViewError = ""
@@ -882,7 +915,7 @@ Panel {
     bar: root.bar
     open: root.opened
     centerOnBar: true
-    focusTarget: root.activeInboxItem && (inboxLoader.visible || unifiedInboxLoader.visible) ? (root.unifiedActive ? root.activeInboxItem.keyboardInitialFocus : root.activeInboxItem.focusTarget) : keyCatcher
+    focusTarget: root.activeInboxItem && (inboxLoader.visible || unifiedInboxLoader.visible) ? root.activeInboxItem.focusTarget : keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(920))
     contentHeight: panel.cappedContentHeight(Style.space(580))
 
@@ -1069,8 +1102,8 @@ Panel {
         Text {
           objectName: "chatViewErrorLabel"
           width: parent.width
-          visible: root.chatViewError !== ""
-          text: root.chatViewError
+          visible: root.chatViewError !== "" || root.unifiedInboxError !== ""
+          text: root.chatViewError || root.unifiedInboxError
           color: root.urgentInk
           font.family: root.fontFamily
           font.pixelSize: root.fs(Style.font.bodySmall)
@@ -1290,13 +1323,16 @@ Panel {
       onWindowPreferencesSaved: function(always, mode) {
         root.applyWindowPreferences(always, mode)
       }
-      onEmojiSearchPreferenceSaved: function(keep) { root.keepPreviousEmojiSearchText = keep }
+      onEmojiSearchPreferenceSaved: function(keep) { root.configGeneration++; root.configLoadPending = false; root.keepPreviousEmojiSearchText = keep }
       onUnifiedInboxPreferenceSaved: function(enabled) {
+        root.configGeneration++; root.configLoadPending = false
+        root.unifiedPreferenceGeneration++; root.savingUnifiedInboxPreference = false
         root.unifiedInboxEnabled = enabled
         if (enabled) root.setActiveService("all", true)
         else if (root.unifiedActive) root.setActiveService(root.providerTabs.length ? root.providerTabs[0].value : "", true)
       }
       onKeyboardShortcutsSaved: function(shortcuts) {
+        root.configGeneration++; root.configLoadPending = false
         var validated = Keybindings.validateOverrides(shortcuts || ({}))
         if (validated.ok) root.shortcutOverrides = validated.overrides
       }
@@ -1590,6 +1626,8 @@ Panel {
     id: unifiedInboxView
     UnifiedInbox {
       service: root.service
+      draftStore: sharedDraftStore
+      keyboardActionRouter: function(event) { root.routeKeyboardEvent(event) }
       host: surfaceHost
       settings: root.settings
       lastConversations: root.lastConversations
@@ -1612,7 +1650,8 @@ Panel {
     id: inboxView
     InboxView {
       service: root.service
-      network: root.activeService
+      network: root.unifiedActive ? (root.service ? root.service.currentNetwork : "gmessages") : root.activeService
+      draftStore: sharedDraftStore
       foreground: root.foreground
       fontFamily: root.fontFamily
       host: surfaceHost
@@ -1633,5 +1672,7 @@ Panel {
     id: surfaceHost
     readonly property bool opened: root.anySurfaceOpen
     property alias settingsOpen: root.settingsOpen
+    function toggleSidebar() { root.toggleSidebar() }
+    function focusConversationList() { if (root.activeInboxItem) root.activeInboxItem.focusConversationList() }
   }
 }

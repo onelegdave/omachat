@@ -8,6 +8,8 @@ Item {
   id: root
   property var conversations: []
   property var service: null
+  property var keyboardActionRouter: null
+  property var draftStore: null
   property var host: null
   property var settings: null
   property var lastConversations: ({})
@@ -24,13 +26,11 @@ Item {
   readonly property var detailView: detailInbox
   readonly property bool sidebarVisible: !sidebarCollapsed || !selectedConversation
   readonly property var keyboardInitialFocus: sidebarVisible ? convList : detailInbox.keyboardInitialFocus
+  readonly property var focusTarget: sidebarVisible ? convList : detailInbox.focusTarget
 
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
   function focusConversationList() {
-    if (!sidebarVisible) {
-      if (detailInbox) detailInbox.focusConversationList()
-      return
-    }
+    if (!sidebarVisible && host && host.toggleSidebar) host.toggleSidebar()
     if (convList.count > 0 && selectedConversation) {
       for (var i = 0; i < visibleConversations.length; i++) {
         if (visibleConversations[i].key === selectedConversation.key) {
@@ -51,7 +51,10 @@ Item {
     convList.forceActiveFocus()
   }
   function handleKeyboardAction(actionId) {
-    if (actionId === "search") { searchField.forceActiveFocus(); searchField.selectAll() }
+    if (actionId === "search") {
+      if (!sidebarVisible && host && host.toggleSidebar) host.toggleSidebar()
+      searchField.forceActiveFocus(); searchField.selectAll()
+    }
     else if (actionId === "nextUnread") selectNextUnreadConversation()
     else if (detailInbox) detailInbox.handleKeyboardAction(actionId)
   }
@@ -59,7 +62,7 @@ Item {
     if (detailInbox && detailInbox.selectedConvID) detailInbox.refreshThread()
   }
   function selectConversation(conversation) {
-    if (!conversation) return
+    if (!conversation || detailInbox.sendingMedia) return
     selectedConversation = conversation
     for (var i = 0; i < visibleConversations.length; i++) {
       if (visibleConversations[i].key === conversation.key) {
@@ -107,7 +110,6 @@ Item {
     function onConversationsWAChanged() { root.unreadRevision++ }
     function onConversationsTGChanged() { root.unreadRevision++ }
     function onConversationsFBChanged() { root.unreadRevision++ }
-    function onConversationsSGChanged() { root.unreadRevision++ }
   }
 
   Item {
@@ -303,6 +305,8 @@ Item {
       objectName: "unifiedDetailInbox"
       anchors.fill: parent
       service: root.service
+      keyboardActionRouter: root.keyboardActionRouter
+      draftStore: root.draftStore
       host: root.host
       settings: root.settings
       foreground: root.foreground

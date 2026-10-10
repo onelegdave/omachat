@@ -13,7 +13,9 @@ test('default action registry documents stable ids and sensible bindings', () =>
   assert.equal(byId.search.defaultShortcut, '/');
   assert.equal(byId.compose.defaultShortcut, 'i');
   assert.equal(byId.nextUnread.defaultShortcut, 'u');
-  assert.ok(byId.settings && byId.newConversation);
+  assert.ok(byId.settings);
+  assert.equal(byId.newConversation, undefined);
+  assert.equal(byId["service.signal"], undefined);
   assert.equal(byId.toggleUnifiedInbox.defaultShortcut, 'Ctrl+Shift+A');
 });
 
@@ -29,11 +31,11 @@ test('unified conversations preserve service identity even when provider ids col
   assert.equal(typeof build, 'function');
   const rows = plain(build([
     {network:'whatsapp', conversations:[{id:'same',name:'A',timestamp:20},{id:'newer',timestamp:40}]},
-    {network:'signal', conversations:[{id:'same',name:'A',timestamp:30}]}
+    {network:'telegram', conversations:[{id:'same',name:'A',timestamp:30}]}
   ]));
   assert.deepEqual(rows.map(row => [row.network, row.id, row.key]), [
     ['whatsapp', 'newer', 'whatsapp:newer'],
-    ['signal', 'same', 'signal:same'],
+    ['telegram', 'same', 'telegram:same'],
     ['whatsapp', 'same', 'whatsapp:same']
   ]);
 });
@@ -74,6 +76,8 @@ test('recording ignores modifier-only and unsupported key events', () => {
 test('override validation rejects unknown actions, reserved chords, duplicates, and context conflicts', () => {
   assert.equal(keyboard.validateOverrides({unknown:'x'}).ok, false);
   assert.equal(keyboard.validateOverrides({settings:'Ctrl+Tab'}).ok, false);
+  assert.equal(keyboard.validateOverrides({settings:'Ctrl+1'}).ok, false);
+  assert.equal(keyboard.validateOverrides({settings:'Ctrl+Shift+1'}).ok, false);
   assert.equal(keyboard.validateOverrides({search:'x',compose:'x'}).ok, false);
   assert.equal(keyboard.validateOverrides({search:'i'}).ok, false);
   assert.equal(keyboard.validateOverrides({search:'Ctrl+F',settings:'Ctrl+,'}).ok, true);
@@ -82,7 +86,7 @@ test('override validation rejects unknown actions, reserved chords, duplicates, 
 test('resolve returns one available action and never dispatches ambiguous overrides', () => {
   assert.equal(keyboard.resolve({text:'i'}, 'navigation', {}).id, 'compose');
   assert.equal(keyboard.resolve({text:'i'}, 'editing', {}).id, '');
-  assert.equal(keyboard.resolve({text:'n',ctrl:true}, 'editing', {}).id, 'newConversation');
+  assert.equal(keyboard.resolve({text:'n',ctrl:true}, 'editing', {}).id, '');
   assert.equal(keyboard.resolve({text:'1'}, 'navigation', {enabledServices:['gmessages']}).id, 'service.gmessages');
   assert.equal(keyboard.resolve({text:'2'}, 'navigation', {enabledServices:['gmessages']}).id, '');
 });

@@ -28,6 +28,9 @@ func TestKeyboardShortcutsPersistAndReturnAnIsolatedCopy(t *testing.T) {
 func TestKeyboardShortcutsRejectInvalidAndConflictingAssignments(t *testing.T) {
 	config := NewConfigStore((&Paths{Data: t.TempDir()}).ConfigFile())
 	for name, shortcuts := range map[string]map[string]string{
+		"provider tab position":     {"search": "Ctrl+1"},
+		"shifted provider position": {"search": "Ctrl+Shift+1"},
+		"control character":         {"search": "Ctrl+\x1b"},
 		"unknown action":            {"notAnAction": "Ctrl+x"},
 		"reserved navigation":       {"search": "Ctrl+Tab"},
 		"duplicate assignments":     {"search": "Ctrl+x", "compose": "Ctrl+x"},

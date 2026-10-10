@@ -24,14 +24,14 @@ Flickable {
   }
 
   function isKeyboardEditing() {
-    return keyboardSection.captureActive || tgIdField.activeFocus || tgHashField.activeFocus
+    return keyboardSection.isKeyboardEditing() || tgIdField.activeFocus || tgHashField.activeFocus
   }
 
   function isCapturingShortcut() { return keyboardSection.captureActive }
 
   function leaveKeyboardEditor() {
     if (keyboardSection.captureActive) return keyboardSection.cancelRecording()
-    if (tgIdField.activeFocus || tgHashField.activeFocus) {
+    if (keyboardSection.isKeyboardEditing() || tgIdField.activeFocus || tgHashField.activeFocus) {
       focusInitialControl()
       return true
     }
@@ -63,6 +63,11 @@ Flickable {
   property string windowStatusText: ""
   property bool savingWindowPreferences: false
   property int windowRequestGeneration: 0
+  property int preferenceRevision: 0
+  property int emojiPreferenceGeneration: 0
+  property int unifiedPreferenceGeneration: 0
+  property int historyPreferenceGeneration: 0
+  property bool savingHistoryPreference: false
   property bool savingEmojiSearchPreference: false
   property string emojiSearchPreferenceStatusText: ""
   property var keyboardShortcuts: ({})
@@ -91,11 +96,12 @@ Flickable {
   }
 
   function load() {
-    if (!service || service.connected === false || savingWindowPreferences) return
+    if (!service || service.connected === false || savingWindowPreferences || savingEmojiSearchPreference || savingUnifiedInboxPreference || savingHistoryPreference) return
     var target = service
     var generation = ++windowRequestGeneration
+    var revision = preferenceRevision
     service.call("config", null, function(ok, res) {
-      if (root.service !== target || generation !== root.windowRequestGeneration || !ok || !res) return
+      if (root.service !== target || generation !== root.windowRequestGeneration || revision !== root.preferenceRevision || !ok || !res) return
       root.telegramConfigured = res.telegramConfigured === true
       root.telegramApiId = Number(res.telegramApiId) || 0
       var s = Number(res.uiScale)
@@ -110,12 +116,16 @@ Flickable {
   }
 
   function saveUnifiedInboxPreference(enabled) {
-    if (!service || savingUnifiedInboxPreference) return
+    if (!service || service.connected === false || savingUnifiedInboxPreference) return
+    var target = service
+    var generation = ++unifiedPreferenceGeneration
+    preferenceRevision++
     savingUnifiedInboxPreference = true
     unifiedInboxPreferenceStatusText = ""
     service.call("setUnifiedInboxPreference", {enabled: enabled === true}, function(ok, res) {
+      if (root.service !== target || generation !== root.unifiedPreferenceGeneration) return
       root.savingUnifiedInboxPreference = false
-      if (!ok || !res) {
+      if (!ok || !res || typeof res.unifiedInboxEnabled !== "boolean") {
         root.unifiedInboxPreferenceStatusText = String(res || "Could not save unified inbox preference.")
         root.load()
         return
@@ -125,11 +135,31 @@ Flickable {
     }, "gmessages")
   }
 
+  function saveHistoryPreference(size) {
+    if (!service || service.connected === false || savingHistoryPreference || [64,128,256,512].indexOf(size) < 0) return
+    var target = service
+    var generation = ++historyPreferenceGeneration
+    preferenceRevision++
+    savingHistoryPreference = true
+    statusText = ""
+    service.call("setWhatsAppHistoryCache", {sizeMB: size}, function(ok, res) {
+      if (root.service !== target || generation !== root.historyPreferenceGeneration) return
+      root.savingHistoryPreference = false
+      if (!ok || !res || [64,128,256,512].indexOf(Number(res.whatsappHistoryCacheMB)) < 0) {
+        root.statusText = "Could not confirm the WhatsApp history cache size. Refresh Settings before retrying."
+        root.load()
+        return
+      }
+      root.whatsappHistoryCacheMB = Number(res.whatsappHistoryCacheMB)
+    }, "gmessages")
+  }
+
   function saveWindowPreferences(always, mode) {
     if (!service || service.connected === false || savingWindowPreferences) return
     if (mode !== "floating" && mode !== "tiled") return
     var target = service
     var generation = ++windowRequestGeneration
+    preferenceRevision++
     savingWindowPreferences = true
     windowStatusText = ""
     service.call("setWindowPreferences", { alwaysPopout: always, popoutMode: mode }, function(ok, res) {
@@ -152,12 +182,16 @@ Flickable {
   }
 
   function saveEmojiSearchPreference(keep) {
-    if (!service || savingEmojiSearchPreference) return
+    if (!service || service.connected === false || savingEmojiSearchPreference) return
+    var target = service
+    var generation = ++emojiPreferenceGeneration
+    preferenceRevision++
     savingEmojiSearchPreference = true
     emojiSearchPreferenceStatusText = ""
     service.call("setEmojiSearchPreference", { keepPreviousEmojiSearchText: keep }, function(ok, res) {
+      if (root.service !== target || generation !== root.emojiPreferenceGeneration) return
       root.savingEmojiSearchPreference = false
-      if (!ok) {
+      if (!ok || !res || typeof res.keepPreviousEmojiSearchText !== "boolean") {
         root.emojiSearchPreferenceStatusText = String(res)
         root.load()
         return
@@ -227,6 +261,9 @@ Flickable {
   Component.onCompleted: load()
   function retireWindowRequests() {
     windowRequestGeneration++
+    preferenceRevision++
+    emojiPreferenceGeneration++; unifiedPreferenceGeneration++; historyPreferenceGeneration++
+    savingEmojiSearchPreference = false; savingUnifiedInboxPreference = false; savingHistoryPreference = false
     savingWindowPreferences = false
     windowStatusText = ""
   }
@@ -708,13 +745,8 @@ Flickable {
         fontFamily: root.fontFamily
         fontSize: fs(Style.font.body)
         focusable: true
-        onChanged: function(v) {
-          if (!root.service) return
-          root.service.call("setWhatsAppHistoryCache", { sizeMB: Number(v) }, function(ok, res) {
-            if (!ok) { root.statusText = String(res); root.load(); return }
-            root.whatsappHistoryCacheMB = Number(res.whatsappHistoryCacheMB) || 128
-          }, "gmessages")
-        }
+        enabled: !root.savingHistoryPreference
+        onChanged: function(v) { root.saveHistoryPreference(Number(v)) }
       }
 
       Text {
@@ -1102,7 +1134,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "Upstream Credits and Licenses"
+        text: "Contributors, Upstream Credits, and Licenses"
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.heading)
@@ -1112,7 +1144,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "Original OmaChat code is MIT licensed. Included third-party code retains its own terms, including AGPL terms for libgm and mautrix-meta and the MPL-2.0 license for whatsmeow."
+        text: "OmaChat v0.4.3 and later is AGPL-3.0-or-later. Earlier releases and Marc Ford's adapted code retain their MIT grants. Included third-party code retains its own terms, including AGPL terms for libgm and mautrix-meta and the MPL-2.0 license for whatsmeow."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
@@ -1122,6 +1154,25 @@ Flickable {
       Column {
         width: parent.width
         spacing: Style.space(8)
+
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "Community Contributors"
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "Andrew Birklid (@tumbleweedlabs): unread and Messenger read-state fixes, Git-independent builds, and automatic pop-out. Alex Vlissidis (@alexvlis): chat restoration, sidebar controls, notifications, and Telegram photos. Matthias MB (@Hizoul): keyboard navigation, offline emoji search, WhatsApp history/photos, and the optional unified inbox. @ozz1ee-dev: detailed build-loop reproduction. Original authorship and upstream notices are preserved; see All credits and licenses for PR links and review status."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          lineHeight: 1.25
+        }
 
         Column {
           width: parent.width

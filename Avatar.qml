@@ -15,7 +15,7 @@ Rectangle {
 
   implicitWidth: Style.space(36)
   implicitHeight: Style.space(36)
-  radius: width / 2
+  radius: Math.min(width, height) / 2
   color: Model.avatarColor(hexColor, seed, fallbackColor)
   clip: true
 
@@ -46,6 +46,7 @@ Rectangle {
 
   Rectangle {
     id: avatarMask
+    objectName: "avatarMask"
     anchors.fill: avatarImage
     radius: Math.min(width, height) / 2
     color: "white"

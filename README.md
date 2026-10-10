@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messeng
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.4.4**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.4.4).
+Current stable release: **0.5.0**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.0).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -22,6 +22,18 @@ Never include private conversations or account details in public screenshots.
 
 These demo captures use stock theme base colors with default control styling.
 See the [gallery and reproduction details](docs/screenshots/README.md).
+
+</details>
+
+<details>
+<summary>Unified inbox and offline emoji search</summary>
+
+![Optional unified inbox with fictional WhatsApp, Telegram, and Messenger conversations](docs/screenshots/unified-inbox.png)
+
+![Offline emoji search in a fictional Messenger conversation](docs/screenshots/emoji-search.png)
+
+These captures use fictional conversations and simulated connection states.
+The unified example has Google Messages disabled.
 
 </details>
 
@@ -143,8 +155,8 @@ stickers are unsupported, and media references need refreshing after restart.
 WhatsApp view-once/ephemeral and Telegram self-destructing media are not saved
 or reopened.
 
-Telegram user, group, and channel profile photos load in the background and
-are cached locally. Refresh picks up changed or removed photos; unavailable
+WhatsApp direct-chat and group photos and Telegram user, group, and channel
+photos load in the background and are cached locally. Refresh picks up changed or removed photos; unavailable
 photos fall back to initials.
 
 The services use unofficial protocol clients and can stop working when their
@@ -170,6 +182,27 @@ to send. Drafts stay with their service and conversation. Right-click a bubble
 to copy it. Middle-click the bar icon to refresh; its badge counts unread
 conversations across active services, and each service tab shows its own unread
 badge while the app is open.
+
+The optional **Unified inbox** in **Settings > Inbox** combines conversations
+from enabled services in the **All** tab. It defaults off. **Ctrl+Shift+A**
+toggles the preference; the All list keeps each conversation's service badge,
+message routing, and draft separate. Its connection badge summarizes enabled
+services, including a connected-service count when only some are online.
+Hide or show its sidebar with the same
+header control as an individual inbox. Disabling a service removes its rows.
+
+Use **Ctrl+Tab** to cycle through visible tabs or **Ctrl+1** through **Ctrl+9**
+to select a visible tab by position. Outside text fields, **j/k** and the arrow
+keys move through conversations, **/** searches, **u** opens the next unread,
+and **i** focuses the composer. **?** or **Ctrl+Shift+P** opens searchable keyboard
+help. Customize app actions in **Settings > Keyboard**. Escape dismisses the
+innermost picker, then leaves text entry, then closes the surface; drafts remain.
+
+**Ctrl+E** opens offline emoji search. Search by English names, keywords, glyphs,
+or GitHub/JoyPixels-style aliases, with typo tolerance. Search text clears on
+reopen unless **Keep previous emoji search text** is enabled in Settings.
+The [bundled metadata and license notices](docs/emoji-data.md) ship with the
+plugin; emoji search makes no network requests and installs no packages.
 
 Desktop notifications are enabled by default for new incoming messages while
 OmaChat is running. Open **Settings > Notifications** to turn them off, enable
@@ -285,7 +318,7 @@ Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
 
 Community contributors include [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs),
 [Alex Vlissidis (@alexvlis)](https://github.com/alexvlis),
-[@Hizoul](https://github.com/Hizoul), and [@ozz1ee-dev](https://github.com/ozz1ee-dev).
+[Matthias MB (@Hizoul)](https://github.com/Hizoul), and [@ozz1ee-dev](https://github.com/ozz1ee-dev).
 See [community contributions and their review status](CREDITS.md#community-contributors).
 Codex and Claude have provided AI assistance with code and reviews.
 

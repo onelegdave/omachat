@@ -162,7 +162,7 @@ func (b *Backend) hotHistoryAnchor(chatID, messageID string) *wire.Message {
 	}
 }
 
-func (b *Backend) requestOlderHistory(ctx context.Context, chatID, anchorID string, hotAnchor *wire.Message) (string, string) {
+func (b *Backend) requestOlderHistory(ctx context.Context, chatID, anchorID string, hotAnchor *wire.Message, expectedGeneration uint64) (string, string) {
 	if chatID == "" || anchorID == "" || len(chatID)+len(anchorID) > maxHotHistoryAnchorKeyBytes {
 		return "failed", "The WhatsApp conversation or history cursor is invalid."
 	}
@@ -174,6 +174,9 @@ func (b *Backend) requestOlderHistory(ctx context.Context, chatID, anchorID stri
 	gen := b.gen
 	timeout := b.historyTimeout
 	b.mu.RUnlock()
+	if gen != expectedGeneration {
+		return "failed", "This history request belongs to a retired WhatsApp account."
+	}
 	if !paired || client == nil {
 		return "failed", "Pair WhatsApp and connect your phone to request older history."
 	}
@@ -203,6 +206,10 @@ func (b *Backend) requestOlderHistory(ctx context.Context, chatID, anchorID stri
 		Timestamp:     time.UnixMicro(anchorMessage.Timestamp),
 	}
 	b.mu.Lock()
+	if b.gen != gen || b.historyStore != store {
+		b.mu.Unlock()
+		return "failed", "This history request belongs to a retired WhatsApp account."
+	}
 	if b.historyPending != nil {
 		if b.historyPending.chatID == chatID && b.historyPending.anchor == anchorID && b.historyPending.gen == gen {
 			b.mu.Unlock()
@@ -228,9 +235,8 @@ func (b *Backend) requestOlderHistory(ctx context.Context, chatID, anchorID stri
 		b.finishHistoryRequest(pending, "failed", "The phone did not respond in time. Check the connection and retry.")
 	})
 	b.historyPending = pending
-	b.mu.Unlock()
-
 	b.publishHistory(wire.HistoryUpdate{ConversationID: chatID, State: "loading"})
+	b.mu.Unlock()
 	requestCtx := ctx
 	if requestCtx == nil {
 		requestCtx = context.Background()

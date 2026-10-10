@@ -15,6 +15,7 @@ Column {
   property string fontFamily: "sans-serif"
   property int fontSize: 14
   property bool saving: false
+  property int requestGeneration: 0
   property bool captureActive: false
   property string statusText: ""
   property string errorText: ""
@@ -31,6 +32,7 @@ Column {
       root.statusText = ""
       return
     }
+    next[actionId] = (result.overrides[actionId] || [])[0] || ""
     save(next)
   }
 
@@ -42,6 +44,15 @@ Column {
   }
 
   function resetAll() { if (root.service && !root.saving) save(({})) }
+
+  function isKeyboardEditing() {
+    if (captureActive) return true
+    for (var i = 0; i < shortcutRepeater.count; i++) {
+      var row = shortcutRepeater.itemAt(i)
+      if (row && row.editorFocused) return true
+    }
+    return false
+  }
 
   function cancelRecording() {
     for (var i = 0; i < shortcutRepeater.count; i++) {
@@ -55,11 +66,27 @@ Column {
     return false
   }
 
+  function retireRequests() {
+    requestGeneration++
+    saving = false
+    cancelRecording()
+  }
+  onServiceChanged: retireRequests()
+  Connections {
+    target: root.service
+    ignoreUnknownSignals: true
+    function onConnectedChanged() { root.retireRequests() }
+  }
+
   function save(next) {
+    if (!service || service.connected === false || saving) return
+    var target = service
+    var generation = ++requestGeneration
     root.saving = true
     root.errorText = ""
     root.statusText = ""
     root.service.call("setKeyboardShortcuts", { shortcuts: next }, function(ok, result) {
+      if (root.service !== target || generation !== root.requestGeneration) return
       root.saving = false
       if (!ok || !result) {
         root.errorText = String(result || "Could not save keyboard shortcuts.")

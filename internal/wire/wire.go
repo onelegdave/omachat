@@ -72,7 +72,7 @@ const (
 	EventEmoji            = "emoji"
 	EventPaired           = "paired"
 	EventNotificationOpen = "notificationOpen"
-	EventHistory      = "history"
+	EventHistory          = "history"
 )
 
 // Method names.

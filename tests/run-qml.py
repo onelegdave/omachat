@@ -11,7 +11,7 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description="Run isolated native QML fixtures")
-parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings"])
+parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox"])
 args = parser.parse_args()
 go_cache = subprocess.check_output(["go", "env", "GOCACHE"], text=True,
                                  env=dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")).strip()
@@ -64,6 +64,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
                                 ("readability", "OMACHAT_READABILITY"),
                                 ("media", "OMACHAT_MEDIA"), ("review", "OMACHAT_REVIEW"),
                                 ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"),
+                                ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"), ("avatar", "OMACHAT_AVATAR"),
                                 ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES")):
             (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
             result = subprocess.run(["qs", "-p", str(config)], env=env, text=True,
@@ -122,7 +123,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
         raise SystemExit(1)
 
     for fixture, marker in (("auto-popout", "OMACHAT_AUTO_POPOUT"), ("review", "OMACHAT_REVIEW"), ("panel-keyboard", "OMACHAT_PANEL_KEYBOARD"), ("chat-view", "OMACHAT_CHAT_VIEW"), ("notifications", "OMACHAT_NOTIFICATIONS"), ("unpair", "OMACHAT_UNPAIR"), ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"), ("panel-emoji-search", "OMACHAT_PANEL_EMOJI_SEARCH"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"),
-                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("avatar", "OMACHAT_AVATAR")):
+                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("avatar", "OMACHAT_AVATAR"), ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX")):
         (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
         result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
         print(result.stdout)

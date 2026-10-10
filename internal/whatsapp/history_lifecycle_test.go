@@ -534,3 +534,70 @@ func TestOlderHistoryFetchUsesHotAnchorWhenDiskRowWasEvicted(t *testing.T) {
 		t.Fatalf("history request event=%+v", update)
 	}
 }
+
+func TestHistoryAccountRetirementClosesCacheAndForgetsAnchors(t *testing.T) {
+	for _, remote := range []bool{false, true} {
+		name := "local unpair"
+		if remote {
+			name = "phone logout"
+		}
+		t.Run(name, func(t *testing.T) {
+			paths := &appStore.Paths{Data: t.TempDir(), Cache: t.TempDir(), Runtime: t.TempDir()}
+			backend := New(zerolog.Nop(), paths, nil)
+			backend.SetClient(NewMockClient(), true)
+			if err := backend.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			defer backend.Stop()
+			old := backend.historyStore
+			chat := "111222333@s.whatsapp.net"
+			message := wire.Message{ID: "previous-account", ConversationID: chat, Text: "Synthetic previous account", Timestamp: 1}
+			if err := old.put(context.Background(), []wire.Message{message}); err != nil {
+				t.Fatal(err)
+			}
+			backend.mu.Lock()
+			backend.rememberHistoryAnchorLocked(chat, message)
+			backend.avatarAttempted[chat] = true
+			generation := backend.gen
+			backend.mu.Unlock()
+			if remote {
+				backend.applyRemoteLogout(generation, "synthetic logout")
+			} else if err := backend.Unpair(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if backend.historyStore != nil || len(backend.historyAnchors) != 0 || len(backend.historyAnchorOrder) != 0 || len(backend.avatarAttempted) != 0 {
+				t.Fatal("retired account retained history/photo state")
+			}
+			if err := old.db.Ping(); err == nil {
+				t.Fatal("retired SQLite handle remains open")
+			}
+			if _, err := os.Stat(paths.WhatsAppHistoryFile()); !os.IsNotExist(err) {
+				t.Fatalf("history file not cleared: %v", err)
+			}
+			backend.SetClient(NewMockClient(), false)
+			backend.mu.Lock()
+			err := backend.initClientAndStoreLocked()
+			fresh := backend.historyStore
+			backend.mu.Unlock()
+			if err != nil || fresh == nil || fresh == old {
+				t.Fatalf("fresh pairing cache: %v", err)
+			}
+			result, err := backend.Messages(context.Background(), wire.MessagesParams{ConversationID: chat})
+			if err != nil || len(result.Messages) != 0 {
+				t.Fatalf("new account accessed retired history: %+v %v", result, err)
+			}
+		})
+	}
+}
+
+func TestRetiredHistoryAnchorCannotStartRequestOnCurrentAccount(t *testing.T) {
+	backend, mock, _ := historyBackendWithAnchorChat(t, time.Second, syntheticHistoryChat)
+	defer backend.Stop()
+	calls := 0
+	mock.RequestHistoryFunc = func(context.Context, types.MessageInfo, int) error { calls++; return nil }
+	message := wire.Message{ID: "retired-anchor", ConversationID: syntheticHistoryChat, Timestamp: 1}
+	state, _ := backend.requestOlderHistory(context.Background(), syntheticHistoryChat, message.ID, &message, backend.gen-1)
+	if state != "failed" || calls != 0 || backend.historyPending != nil {
+		t.Fatalf("retired cursor started a phone request: state=%s calls=%d", state, calls)
+	}
+}

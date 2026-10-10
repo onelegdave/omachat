@@ -2,11 +2,6 @@
 
 Created and maintained by OneLegDave. Report issues with your Omarchy version, whether `omachatd` was running, and the action that failed. Strip phone numbers, message bodies, cookies, and API credentials from public diagnostics.
 
-Development sessions on the private `dev` branch must begin with the
-[development handoff](docs/development-handoff.md) and update it before pushing
-when the current state or exact next work changes. This keeps branch, runtime,
-verification, and promotion context durable across sessions.
-
 ## Verify a change
 
 ```bash
@@ -50,7 +45,7 @@ link the originating pull request or issue, and thank included contributors in
 the release notes. Shared code in a combined PR remains credited to its original
 contributors. Keep proposed features visibly separate from shipped features.
 
-`make test-ui-headless` runs JavaScript/Python tests and six real QML fixtures
+`make test-ui-headless` runs JavaScript/Python tests and thirteen real QML fixtures
 using offscreen software rendering and isolated settings, data, and D-Bus.
 It needs the already installed `qs` and `dbus-run-session` commands; it installs
 nothing. This subset does not replace `make test-ui` in an isolated Wayland

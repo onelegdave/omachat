@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const {load} = require('./qml-functions.cjs');
 function service() {return {requests:[],call(method,params,callback,network) {this.requests.push({method,params,callback,network});}};}
 function panel(s) {
- const values={chatViewInFlight:null,savingChatView:false,pendingChatViewChanges:[],chatViewRevision:0,chatViewGeneration:0,configRequest:0,chatViewLoaded:false,lastConversations:{},sidebarCollapsed:false,serviceTabs:[],service:s,popoutOpen:false,panelConfigLoaded:false,openPendingConfig:false,configLoadPending:false,configGeneration:0,alwaysPopout:false,popoutMode:'floating',opened:false};
+ const values={unifiedPreferenceGeneration:0,savingUnifiedInboxPreference:false,chatViewInFlight:null,savingChatView:false,pendingChatViewChanges:[],chatViewRevision:0,chatViewGeneration:0,configRequest:0,chatViewLoaded:false,lastConversations:{},sidebarCollapsed:false,serviceTabs:[],service:s,popoutOpen:false,panelConfigLoaded:false,openPendingConfig:false,configLoadPending:false,configGeneration:0,alwaysPopout:false,popoutMode:'floating',opened:false};
  values.controller={show(){values.opened=true;},hide(){values.opened=false;}};
  values.openPopout=()=>{values.popoutOpen=true;};values.setPopoutMode=mode=>{values.popoutMode=mode;};values.closePopout=()=>{values.popoutOpen=false;};
  return load('Panel.qml',['open','close','toggle','loadConfig','applyWindowPreferences','suspendChatViewWrites','queueChatViewChange'],values);
@@ -26,7 +26,7 @@ test('a saved panel preference wins over older configuration reads',()=>{
 test('failed config opens recovery without a repeated retry loop',()=>{
  const s=service(),p=panel(s);p.open();const req=s.requests.pop();req.callback(false,'offline');assert.equal(p.opened,true);assert.equal(p.panelConfigLoaded,false);assert.equal(p.openPendingConfig,false);assert.equal(s.requests.length,0);
 });
-function settings(s) {return load('SettingsView.qml',['load','saveWindowPreferences','retireWindowRequests'],{service:s,savingWindowPreferences:false,windowRequestGeneration:0,alwaysPopout:false,popoutMode:'floating',windowStatusText:'',windowPreferencesSaved(){},telegramConfigured:false,telegramApiId:0,uiScale:1});}
+function settings(s) {return load('SettingsView.qml',['load','saveWindowPreferences','retireWindowRequests'],{service:s,preferenceRevision:0,emojiPreferenceGeneration:0,unifiedPreferenceGeneration:0,historyPreferenceGeneration:0,savingEmojiSearchPreference:false,savingUnifiedInboxPreference:false,savingHistoryPreference:false,savingWindowPreferences:false,windowRequestGeneration:0,alwaysPopout:false,popoutMode:'floating',windowStatusText:'',windowPreferencesSaved(){},telegramConfigured:false,telegramApiId:0,uiScale:1});}
 test('window preference save invalidates an older Settings config reply',()=>{
  const s=service(),v=settings(s);v.load();const old=s.requests.pop().callback;v.saveWindowPreferences(true,'tiled');s.requests.pop().callback(true,{alwaysPopout:true,popoutMode:'tiled'});old(true,config);assert.equal(v.alwaysPopout,true);assert.equal(v.popoutMode,'tiled');
 });

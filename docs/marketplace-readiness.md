@@ -1,5 +1,23 @@
 # Marketplace readiness
 
+## v0.5.0 update preparation
+
+The release includes the reviewed build, unread/read-state, pop-out, restoration,
+notification, keyboard/emoji, bounded WhatsApp history/photo, and optional unified
+inbox contributions. The All-tab badge summarizes enabled services, so a disabled
+service cannot make a connected inbox appear disconnected. Fresh screenshots use
+fictional conversations in an isolated mock gallery.
+
+The maintainer reports successful fresh-install use with Google Messages disabled.
+Google Messages was not live-tested in this acceptance pass. Model, isolated QML,
+and helper tests supplement that feedback without proving every provider or
+recovery scenario. See the [release notes](history/RELEASE-0.5.0.md) and
+[credits](../CREDITS.md).
+
+Publication of this release requires a new exact-commit Marketplace update review.
+Signal and conversation creation are excluded. No installer hook, new systemd unit,
+automatic package installation, or executable binary is shipped.
+
 ## Current listing and update requirements, checked October 9, 2026
 
 OmaChat is listed at exact snapshot
@@ -8,7 +26,7 @@ records publication on September 19, 2026 and a maintainer-reviewed baseline
 with no findings and the `package-manager`, `privilege`, `service-management`,
 and `installer` capabilities. See the [publication confirmation](https://github.com/omacom/omarchy-plugin-marketplace/issues/7193#issuecomment-5741298865)
 and [registry](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/registry.json).
-This approval covers that snapshot, not the unreleased contribution branches.
+This approval covers that snapshot, not v0.5.0.
 
 Future releases use the [newer-upstream verification and publication workflow](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md#promoting-a-plugin-update):
 provide the existing plugin ID, repository root, and full SHA of the final public
@@ -45,6 +63,39 @@ Vendored Go/race checks, fixture tests, and native manifest validation are local
 evidence. Full native Wayland focus/window behavior, installed-profile/provider
 acceptance, and the official marketplace baseline and maintainer decision for
 the final public SHA remain release requirements.
+
+### Locally integrated PR #9 extensions
+
+The selected original commits from PR #9 retain Matthias MB's authorship and
+source-SHA references. Shared Andrew Birklid/Alex Vlissidis contributions remain
+credited to their original authors. The optional unified inbox defaults off,
+combines enabled services only, and keeps service-qualified identities, drafts,
+notification suppression, and message requests separate.
+
+Keyboard/emoji changes add no dependency installation or runtime metadata
+fetch. Emojibase 17.0.0 metadata, source checksums, and MIT/Unicode/CLDR/JoyPixels
+non-artwork notices ship locally. The manual generator reads a pinned local
+archive and verifies its contents before producing JSON; no downloaded code or
+third-party artwork is executed or included.
+
+WhatsApp history adds bounded private SQLite/index storage separate from device
+credentials. Local unpair and phone logout close/detach the old history handle
+and clear account-specific anchors, requests, and photo state before cleanup.
+A new explicit pairing opens a fresh cache. Photo downloads and redirects allow
+HTTPS WhatsApp domains only, validate bounded decoded images, and store private
+local paths. Fetch errors exclude provider-issued signed URLs. The eventual
+manual marketplace review must cover this provider transport and cache behavior
+alongside the existing chat/media and notification capabilities.
+
+The alternate local installer and early-bin/cache staging patch from PR #9 are
+excluded. Installation remains `omarchy plugin add`, with no installer hook,
+automatic package installation, new systemd unit, or tracked executable binary.
+Signal and conversation creation remain separate review candidates.
+
+Local test/manifest evidence does not cover the official marketplace baseline,
+maintainer approval, native Wayland focus/rendering, or real provider accounts.
+The final public full SHA must be held fixed through the fresh compatibility,
+baseline, and authorized-maintainer update workflow described above.
 
 The sections below retain historical submission evidence from before approval.
 

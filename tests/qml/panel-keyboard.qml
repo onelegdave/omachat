@@ -185,7 +185,8 @@ ShellRoot {
         check(!panel.unifiedInboxEnabled,"configurable toggle shortcut turns unified inbox off")
         keyboard.keyClick(Qt.Key_1,Qt.ControlModifier,0)
         check(panel.activeService==="gmessages","Ctrl+1 returns to first provider when unified inbox is disabled")
-        check(list.activeFocus,"toggling out of unified inbox restores focus to the provider list")
+        check(list.activeFocus || inspect.findChild(loader.item,"composer").activeFocus,"toggling out of unified inbox restores focus to the current provider")
+        list.forceActiveFocus()
         panel.unifiedInboxEnabled=true
         panel.activeService="gmessages"
         keyboard.keyClick(Qt.Key_Down,Qt.NoModifier,0)

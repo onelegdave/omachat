@@ -265,3 +265,12 @@ func TestAvatarWorkerDoesNotCommitAfterSessionGenerationChanges(t *testing.T) {
 	}
 	t.Fatal("stale avatar worker did not finish")
 }
+
+func TestAvatarFetchErrorDoesNotExposeSignedURL(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := fetchWhatsAppAvatarImage(ctx, "https://mmg.whatsapp.net/avatar?synthetic-token=private-marker")
+	if err == nil || strings.Contains(err.Error(), "private-marker") || strings.Contains(err.Error(), "https://") {
+		t.Fatalf("avatar error exposed request metadata: %v", err)
+	}
+}

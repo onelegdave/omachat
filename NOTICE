@@ -47,3 +47,10 @@ also retains its MIT terms. Other third-party files retain the licenses shipped
 beside them in vendor/.
 
 See CREDITS.md for project credits and links to retained third-party notices.
+
+Offline emoji metadata is derived from emojibase-data 17.0.0, pinned to
+commit a5fc630a91ca42cddf3f4a66492965600fd3bce8. Emojibase is MIT licensed;
+Unicode and CLDR notices and the JoyPixels non-artwork MIT declaration are
+retained in data/. No JoyPixels or GitHub image artwork is included.
+See docs/emoji-data.md and data/emoji-search.sources.json for provenance,
+checksums, included sources, and the manual offline generator.

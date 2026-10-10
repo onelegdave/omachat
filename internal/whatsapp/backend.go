@@ -525,6 +525,16 @@ func (b *Backend) Stop() {
 }
 
 func (b *Backend) initClientAndStoreLocked() error {
+	// Unpair/remote logout closed and detached the previous account's history.
+	// A fresh explicit pairing may use only a newly opened cache.
+	if b.historyStore == nil {
+		history, err := openHistoryStore(b.paths.WhatsAppHistoryFile(), b.historyCacheMB)
+		if err != nil {
+			b.log.Warn().Err(err).Msg("Could not open bounded WhatsApp history store")
+		} else {
+			b.historyStore = history
+		}
+	}
 	if b.client != nil {
 		return nil
 	}
@@ -791,7 +801,7 @@ func (b *Backend) Unpair(ctx context.Context) error {
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
 
-	cli, container, pairCancel, handlerID, paired, _ := b.retireGeneration(0, false)
+	cli, container, history, pairCancel, handlerID, paired, _ := b.retireGeneration(0, false)
 
 	if pairCancel != nil {
 		pairCancel()
@@ -814,7 +824,11 @@ func (b *Backend) Unpair(ctx context.Context) error {
 		_ = container.Close()
 	}
 
-	clearErr := b.paths.ClearWhatsAppSession()
+	var historyErr error
+	if history != nil {
+		historyErr = history.close()
+	}
+	clearErr := errors.Join(historyErr, b.paths.ClearWhatsAppSession())
 	statusErr := ""
 	if clearErr != nil {
 		b.log.Error().Err(clearErr).Msg("Failed to clear local WhatsApp session files")
@@ -837,7 +851,7 @@ func (b *Backend) Unpair(ctx context.Context) error {
 	return nil
 }
 
-func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, container *sqlstore.Container, pairCancel context.CancelFunc, handlerID uint32, paired bool, ok bool) {
+func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, container *sqlstore.Container, history *historyStore, pairCancel context.CancelFunc, handlerID uint32, paired bool, ok bool) {
 	b.mu.Lock()
 	if match && b.gen != expect {
 		b.mu.Unlock()
@@ -850,6 +864,15 @@ func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, conta
 	b.historyPending = nil
 	b.historyUnavailable = make(map[string]bool)
 	b.historyCooldown = make(map[string]time.Time)
+	history = b.historyStore
+	b.historyStore = nil
+	b.historyAnchors = make(map[hotHistoryAnchorKey]hotHistoryAnchor)
+	b.historyAnchorOrder = nil
+	b.avatarQueue = nil
+	b.avatarPending = make(map[string]uint64)
+	b.avatarAttempted = make(map[string]bool)
+	b.avatarRefresh = make(map[string]bool)
+	b.avatarEpoch = make(map[string]uint64)
 	cli = b.client
 	container = b.container
 	pairCancel = b.pairCancel
@@ -876,7 +899,7 @@ func (b *Backend) applyRemoteLogout(gen uint64, reason string) {
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
 
-	cli, container, pairCancel, handlerID, _, ok := b.retireGeneration(gen, true)
+	cli, container, history, pairCancel, handlerID, _, ok := b.retireGeneration(gen, true)
 	if !ok {
 		return
 	}
@@ -896,7 +919,11 @@ func (b *Backend) applyRemoteLogout(gen uint64, reason string) {
 	if reason != "" {
 		statusErr = "Logged out from phone (" + reason + "). Select Use a QR code to pair again."
 	}
-	if err := b.paths.ClearWhatsAppSession(); err != nil {
+	var historyErr error
+	if history != nil {
+		historyErr = history.close()
+	}
+	if err := errors.Join(historyErr, b.paths.ClearWhatsAppSession()); err != nil {
 		b.log.Error().Err(err).Msg("Failed to clear local WhatsApp session files after remote logout")
 		statusErr = "Logged out from phone, but local WhatsApp files could not be removed. Pairing is blocked until they can be deleted."
 		b.mu.Lock()
@@ -931,7 +958,7 @@ func (b *Backend) Conversations(count int) []wire.Conversation {
 		}
 		// Companion history can include contact stubs with no messages. Keep
 		// those out of the inbox until a real message creates the chat.
-		if len(b.messages[id]) == 0 {
+		if len(b.messages[id]) == 0 && b.convs[id].Timestamp == 0 {
 			continue
 		}
 		out = append(out, b.convs[id])
@@ -940,14 +967,23 @@ func (b *Backend) Conversations(count int) []wire.Conversation {
 }
 
 // Messages returns cached and synced messages for a WhatsApp chat with stable timestamp+ID tie breaking.
-func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.MessagesResult, error) {
+func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (result wire.MessagesResult, resultErr error) {
 	if len(p.ConversationID)+len(p.CursorID) > maxHotHistoryAnchorKeyBytes {
 		return wire.MessagesResult{}, fmt.Errorf("WhatsApp history identifiers exceed %d bytes", maxHotHistoryAnchorKeyBytes)
 	}
 	b.mu.RLock()
+	gen := b.gen
 	history := b.historyStore
 	msgs := append([]wire.Message(nil), b.messages[p.ConversationID]...)
 	b.mu.RUnlock()
+	defer func() {
+		b.mu.RLock()
+		defer b.mu.RUnlock()
+		if gen != b.gen {
+			result = wire.MessagesResult{}
+			resultErr = errors.New("WhatsApp history request belongs to a retired account")
+		}
+	}()
 	limit := int(p.Count)
 	if limit <= 0 {
 		limit = 60
@@ -960,6 +996,10 @@ func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.Mes
 		if len(page.Messages) > 0 {
 			first := page.Messages[0]
 			b.mu.Lock()
+			if gen != b.gen || history != b.historyStore {
+				b.mu.Unlock()
+				return wire.MessagesResult{}, errors.New("WhatsApp history request belongs to a retired account")
+			}
 			b.rememberHistoryAnchorLocked(p.ConversationID, first)
 			canFetch := !page.HasMore && b.canFetchHistoryLocked(p.ConversationID)
 			b.mu.Unlock()
@@ -979,7 +1019,7 @@ func (b *Backend) Messages(ctx context.Context, p wire.MessagesParams) (wire.Mes
 			if page.Gap && hotAnchor == nil {
 				hotAnchor = b.hotHistoryAnchor(p.ConversationID, p.CursorID)
 			}
-			state, notice := b.requestOlderHistory(ctx, p.ConversationID, p.CursorID, hotAnchor)
+			state, notice := b.requestOlderHistory(ctx, p.ConversationID, p.CursorID, hotAnchor, gen)
 			return wire.MessagesResult{ConversationID: p.ConversationID, CursorID: p.CursorID, CursorTime: p.CursorTime, HasMore: state == "loading" || state == "failed", CanFetchOlder: state == "loading" || state == "failed", HistoryFetchState: state, HistoryNotice: notice}, nil
 		}
 	}

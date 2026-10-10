@@ -34,7 +34,7 @@ test('forgotten account send reply cannot introduce a new-account error',()=>{
   assert.equal(n.errorText,'');assert.equal(n.sending,false);
 });
 function panel(s) {
-  return load('Panel.qml',['queueChatViewChange','saveChatView','flushChatViewChanges','retireChatView','suspendChatViewWrites'],{openPendingConfig:false,configGeneration:0,configLoadPending:false,panelConfigLoaded:false,service:s,savingChatView:false,chatViewInFlight:null,chatViewRevision:0,chatViewGeneration:0,configRequest:0,pendingChatViewChanges:[],pendingConversationID:'',lastConversations:{},chatViewLoaded:false,chatViewError:''});
+  return load('Panel.qml',['queueChatViewChange','saveChatView','flushChatViewChanges','retireChatView','suspendChatViewWrites'],{sharedDraftStore:{drafts:{}},unifiedPreferenceGeneration:0,savingUnifiedInboxPreference:false,openPendingConfig:false,configGeneration:0,configLoadPending:false,panelConfigLoaded:false,service:s,savingChatView:false,chatViewInFlight:null,chatViewRevision:0,chatViewGeneration:0,configRequest:0,pendingChatViewChanges:[],pendingConversationID:'',lastConversations:{},chatViewLoaded:false,chatViewError:''});
 }
 test('offline chat preferences coalesce per service without losing newest fields',()=>{
   const s=service();s.connected=false;const p=panel(s);
@@ -52,7 +52,7 @@ test('retired A-B-A chat-view reply cannot release or flush a new service write'
   assert.equal(p.savingChatView,true);assert.equal(p.chatViewError,'');assert.equal(a.requests.length,1);
 });
 test('saved restoration avoids missing chats while preserving an explicit in-session selection',()=>{
- const values={composer:{},selectedConvID:'',_selectedByNet:{},network:'telegram',lastConversations:{telegram:'missing'},conversations:[],selectConversation(id){values.selectedConvID=id;}};
+ const values={detailOnly:false,detailConversationID:'',composer:{},selectedConvID:'',_selectedByNet:{},network:'telegram',lastConversations:{telegram:'missing'},conversations:[],selectConversation(id){values.selectedConvID=id;}};
  const inbox=load('InboxView.qml',['restoreConversation'],values);
  inbox.restoreConversation();assert.equal(inbox.selectedConvID,'');
  inbox._selectedByNet={telegram:'draft-chat'};inbox.restoreConversation();assert.equal(inbox.selectedConvID,'draft-chat');

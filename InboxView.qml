@@ -19,6 +19,7 @@ Item {
   property var host: null
   property var settings: null
   property var keyboardActionRouter: null
+  property var draftStore: null
   property string network: "gmessages"
   property bool detailOnly: false
   property string detailConversationID: ""
@@ -51,6 +52,7 @@ Item {
   readonly property bool panelOpen: viewActive && host && host.opened === true
   onPanelOpenChanged: {
     if (panelOpen) {
+      if (draftStore && composer && selectedConvID) composer.text = (_draftsByNet[network] || {})[selectedConvID] || ""
       scrollToLatest()
       focusComposer()
       markThreadRead()
@@ -82,7 +84,7 @@ Item {
   readonly property var conversations: service ? (typeof service.conversationsFor === "function" ? service.conversationsFor(root.network) : (service.conversations || [])) : []
   property string searchQuery: ""
   property string selectedConvID: ""
-  property var _draftsByNet: ({})
+  property var _draftsByNet: draftStore ? draftStore.drafts : ({})
   property var _pendingSends: ({})
   property var _networkEpochs: ({})
   property int mediaSendToken: 0
@@ -206,7 +208,7 @@ Item {
       var netDrafts = Object.assign({}, saved[prev] || {})
       netDrafts[selectedConvID] = composer ? composer.text : ""
       saved[prev] = netDrafts
-      _draftsByNet = saved
+      setDrafts(saved)
     }
     var nextSel = Object.assign({}, _selectedByNet)
     nextSel[prev] = selectedConvID
@@ -231,7 +233,8 @@ Item {
 
   onConversationsChanged: restoreConversation()
   onDetailConversationIDChanged: {
-    if (!root.detailOnly || !root.detailConversationID || root.detailConversationID === root.selectedConvID) return
+    if (!root.detailOnly || root.detailConversationID === root.selectedConvID) return
+    if (!root.detailConversationID) { root.selectConversation("", false); return }
     if (root.conversations.some(function(conv) { return conv.id === root.detailConversationID }))
       root.selectConversation(root.detailConversationID, false)
   }
@@ -362,6 +365,8 @@ Item {
   }
 
   function focusConversationList() {
+    if (detailOnly) { if (host && host.focusConversationList) host.focusConversationList(); return }
+    if (!sidebarVisible && host && host.toggleSidebar) host.toggleSidebar()
     if (!convList || convList.count < 1) return
     var selectedIndex = -1
     for (var i = 0; i < visibleConversations.length; i++) {
@@ -402,6 +407,7 @@ Item {
 
   function handleKeyboardAction(actionId) {
     if (actionId === "search") {
+      if (!sidebarVisible && host && host.toggleSidebar) host.toggleSidebar()
       searchField.forceActiveFocus()
       searchField.selectAll()
     } else if (actionId === "compose") {
@@ -420,6 +426,20 @@ Item {
     }
   }
 
+  function setDrafts(drafts) {
+    if (draftStore) draftStore.drafts = drafts
+    else _draftsByNet = drafts
+  }
+
+  function rememberDraft(text) {
+    if (!draftStore || !selectedConvID) return
+    var drafts = Object.assign({}, _draftsByNet)
+    var chats = Object.assign({}, drafts[network] || {})
+    chats[selectedConvID] = text
+    drafts[network] = chats
+    setDrafts(drafts)
+  }
+
   function selectConversation(id, remember) {
     if (sendingMedia) return
     if (id === selectedConvID) { focusComposer(); return }
@@ -428,7 +448,7 @@ Item {
       var netDrafts = Object.assign({}, saved[network] || {})
       netDrafts[selectedConvID] = composer.text
       saved[network] = netDrafts
-      _draftsByNet = saved
+      setDrafts(saved)
     }
     selectionGeneration++
     historyRequest++
@@ -568,6 +588,17 @@ Item {
       }
       markThreadRead()
     }, root.network)
+  }
+
+  function queueOlderMessages() {
+    var source = service
+    var net = network
+    var conversation = selectedConvID
+    var generation = selectionGeneration
+    Qt.callLater(function() {
+      if (source === root.service && net === root.network && conversation === root.selectedConvID
+          && generation === root.selectionGeneration && root.panelOpen) root.loadOlderMessages()
+    })
   }
 
   function loadOlderMessages() {
@@ -1054,7 +1085,7 @@ Item {
       root.historyNotice = String(update.notice || "")
       if (update.state === "complete") {
         root.historyError = ""
-        if (root.hasOlder && !root.loadingOlder) Qt.callLater(function() { root.loadOlderMessages() })
+        if (root.hasOlder && !root.loadingOlder) root.queueOlderMessages()
       } else if (update.state === "failed") {
         root.hasOlder = true
         root.historyError = root.historyNotice || "Could not load older messages. Try again."
@@ -1083,7 +1114,7 @@ Item {
       root._selectedByNet = nextSel
       var nextDrafts = Object.assign({}, root._draftsByNet)
       delete nextDrafts[net]
-      root._draftsByNet = nextDrafts
+      root.setDrafts(nextDrafts)
       var nextPending = Object.assign({}, root._pendingSends)
       delete nextPending[net]
       root._pendingSends = nextPending
@@ -1098,7 +1129,7 @@ Item {
     root._selectedByNet = s2
     var d2 = Object.assign({}, root._draftsByNet)
     delete d2[root.network]
-    root._draftsByNet = d2
+    root.setDrafts(d2)
     var p2 = Object.assign({}, root._pendingSends)
     delete p2[root.network]
     root._pendingSends = p2
@@ -1589,12 +1620,7 @@ Item {
         if (contentY > height * 0.15) historyAutoBlocked = false
         else if (!historyAutoBlocked && contentY < previous && root.hasOlder && !root.loadingOlder && !root.loadingMessages) {
           historyAutoBlocked = true
-          var generation = root.selectionGeneration
-          var conversation = root.selectedConversationId
-          var source = root.serviceSource
-          Qt.callLater(function() {
-            if (root.selectionGeneration === generation && root.selectedConversationId === conversation && root.serviceSource === source) root.loadOlderMessages()
-          })
+          root.queueOlderMessages()
         }
       }
       onWidthChanged: if (root.panelOpen && root.followingLatest && !root.positioningMessages && !root.pendingLatestScroll) root.scrollToLatest()
@@ -2276,6 +2302,7 @@ Item {
       TextField {
         id: composer
         objectName: "composer"
+        onTextChanged: root.rememberDraft(text)
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           if ((event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) !== 0

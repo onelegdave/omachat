@@ -14,6 +14,7 @@ RowLayout {
   property string fontFamily: "sans-serif"
   property int fontSize: 14
   property bool recording: false
+  readonly property bool editorFocused: shortcutInput.activeFocus
   signal saveRequested(string actionId, string shortcut)
   signal resetRequested(string actionId)
 

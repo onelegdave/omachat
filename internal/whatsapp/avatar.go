@@ -70,11 +70,11 @@ func fetchWhatsAppAvatarImage(ctx context.Context, raw string) ([]byte, error) {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("could not create WhatsApp avatar request")
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch WhatsApp avatar: %w", err)
+		return nil, errors.New("WhatsApp avatar fetch failed")
 	}
 	defer resp.Body.Close()
 	return readWhatsAppAvatarResponse(resp)

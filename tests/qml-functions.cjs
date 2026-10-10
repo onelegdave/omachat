@@ -7,6 +7,11 @@ const vm = require('node:vm');
 exports.load = function(file, names, values) {
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
   const ctx = vm.createContext(values);
+  if (!ctx.Keybindings) {
+    const keyboard = vm.createContext({});
+    vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "Keybindings.js"), "utf8").replace(".pragma library", ""), keyboard);
+    ctx.Keybindings = keyboard;
+  }
   ctx.root = ctx;
   for (const name of names) {
     const match = source.match(new RegExp('^  function ' + name + '\\([^\\n]*\\) \\{[\\s\\S]*?^  \\}', 'm'));

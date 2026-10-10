@@ -410,10 +410,10 @@ func (c *ConfigStore) SetWhatsAppHistoryCacheMB(size int) error {
 
 var defaultKeyboardShortcuts = map[string][]string{
 	"help": {"?", "Ctrl+Shift+p"}, "search": {"/", "Ctrl+f"}, "compose": {"i"},
-	"history": {"m"}, "nextUnread": {"u"}, "newConversation": {"Ctrl+n"},
+	"history": {"m"}, "nextUnread": {"u"},
 	"settings": {"Ctrl+,"}, "emojiPicker": {"Ctrl+e"}, "attach": {"Ctrl+o"},
 	"refresh": {"r", "Ctrl+r"}, "toggleUnifiedInbox": {"Ctrl+Shift+a"}, "service.gmessages": {"1"}, "service.whatsapp": {"2"},
-	"service.telegram": {"3"}, "service.messenger": {"4"}, "service.signal": {"5"},
+	"service.telegram": {"3"}, "service.messenger": {"4"},
 }
 
 func normalizeKeyboardShortcut(value string) (string, error) {
@@ -432,11 +432,11 @@ func normalizeKeyboardShortcut(value string) (string, error) {
 		modifiers[modifier] = true
 	}
 	key := strings.TrimSpace(parts[len(parts)-1])
-	if len(key) != 1 || strings.ContainsRune("+ 	\r\n", rune(key[0])) {
+	if len(key) != 1 || key[0] < 33 || key[0] > 126 || key == "+" {
 		return "", fmt.Errorf("shortcut key must be one printable character")
 	}
 	key = strings.ToLower(key)
-	if strings.ContainsRune("?/,.-", rune(key[0])) {
+	if key[0] < 'a' || key[0] > 'z' {
 		delete(modifiers, "Shift")
 	}
 	var prefix []string
@@ -449,6 +449,9 @@ func normalizeKeyboardShortcut(value string) (string, error) {
 }
 
 func isReservedKeyboardShortcut(shortcut string) bool {
+	if len(shortcut) == 6 && strings.HasPrefix(shortcut, "Ctrl+") && shortcut[5] >= '1' && shortcut[5] <= '9' {
+		return true
+	}
 	return strings.Contains(" Tab Backtab Left Right Up Down Home End PageUp PageDown Enter Return Escape Space Backspace Delete ", " "+shortcut+" ")
 }
 
@@ -480,7 +483,7 @@ func validateKeyboardShortcuts(shortcuts map[string]string) error {
 		if err != nil {
 			return fmt.Errorf("invalid shortcut for %s: %w", id, err)
 		}
-		if isReservedKeyboardShortcut(strings.Split(normalized, "+")[len(strings.Split(normalized, "+"))-1]) {
+		if isReservedKeyboardShortcut(normalized) {
 			return fmt.Errorf("shortcut %q is reserved for keyboard navigation", normalized)
 		}
 		effective[id] = []string{normalized}

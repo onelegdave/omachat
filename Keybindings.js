@@ -7,7 +7,6 @@ var ACTIONS = [
   { id: "compose", label: "Focus message composer", category: "Conversation", context: "navigation", defaultShortcut: "i", keywords: "write message reply type" },
   { id: "history", label: "Focus message history", category: "Conversation", context: "navigation", defaultShortcut: "m", keywords: "messages scroll" },
   { id: "nextUnread", label: "Open next unread conversation", category: "Navigation", context: "navigation", defaultShortcut: "u", keywords: "unread" },
-  { id: "newConversation", label: "New conversation", category: "Conversation", context: "global", defaultShortcut: "Ctrl+N", keywords: "new chat group" },
   { id: "settings", label: "Open settings", category: "Application", context: "global", defaultShortcut: "Ctrl+,", keywords: "preferences configure" },
   { id: "emojiPicker", label: "Open emoji picker", category: "Conversation", context: "global", defaultShortcut: "Ctrl+E", keywords: "emoji reaction" },
   { id: "attach", label: "Attach file or photo", category: "Conversation", context: "global", defaultShortcut: "Ctrl+O", keywords: "upload image media" },
@@ -16,8 +15,7 @@ var ACTIONS = [
   { id: "service.gmessages", label: "Switch to Google Messages", category: "Services", context: "navigation", defaultShortcut: "1", keywords: "google messages" },
   { id: "service.whatsapp", label: "Switch to WhatsApp", category: "Services", context: "navigation", defaultShortcut: "2", keywords: "" },
   { id: "service.telegram", label: "Switch to Telegram", category: "Services", context: "navigation", defaultShortcut: "3", keywords: "" },
-  { id: "service.messenger", label: "Switch to Messenger", category: "Services", context: "navigation", defaultShortcut: "4", keywords: "facebook meta" },
-  { id: "service.signal", label: "Switch to Signal", category: "Services", context: "navigation", defaultShortcut: "5", keywords: "" }
+  { id: "service.messenger", label: "Switch to Messenger", category: "Services", context: "navigation", defaultShortcut: "4", keywords: "facebook meta" }
 ]
 
 function buildUnifiedConversations(sources) {
@@ -90,7 +88,7 @@ function normalizeShortcut(value) {
 }
 
 function isReserved(shortcut) {
-  return RESERVED.indexOf(shortcut.split("+").pop()) >= 0
+  return /^Ctrl\+[1-9]$/.test(shortcut) || RESERVED.indexOf(shortcut.split("+").pop()) >= 0
 }
 
 function shortcutContext(action, shortcut) {
