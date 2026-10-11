@@ -2162,6 +2162,7 @@ Item {
       SafeTextField {
         id: attachCaption
         maximumLength: 4096
+        allowLineBreaks: true
         pasteAllowed: root.panelOpen
         pasteContext: root.network + ":" + root.selectedConvID + ":" + root.selectionGeneration + ":" + root.pendingAttachment
         objectName: "attachCaption"
@@ -2308,6 +2309,7 @@ Item {
       SafeTextField {
         id: composer
         maximumLength: 32767
+        allowLineBreaks: true
         pasteAllowed: root.panelOpen
         pasteContext: root.network + ":" + root.selectedConvID + ":" + root.selectionGeneration
         objectName: "composer"

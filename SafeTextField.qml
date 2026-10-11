@@ -9,6 +9,8 @@ import qs.Ui as Ui
 Ui.TextField {
   id: root
   property bool pasteAllowed: true
+  // Message fields keep pasted line breaks, as Qt's native paste did.
+  property bool allowLineBreaks: false
   property string pasteContext: ""
   readonly property bool pasteBusy: _pasteSnapshot !== null || clipboardProcess.running
   property string pasteError: ""
@@ -59,8 +61,9 @@ Ui.TextField {
       pasteError = reply.error || "Clipboard text could not be read."
       return
     }
-    // Single-line fields do not accept line breaks or embedded NULs.
-    var value = reply.text.replace(/\r\n|[\r\n\u2028\u2029]/g, " ")
+    // Other fields flatten line breaks; no field accepts embedded NULs.
+    var value = reply.text.replace(/\r\n?/g, "\n")
+    if (!allowLineBreaks) value = value.replace(/[\n\u2028\u2029]/g, " ")
     if (value.indexOf("\u0000") >= 0) {
       pasteError = "Clipboard text contains an unsupported character."
       return
@@ -150,7 +153,11 @@ Ui.TextField {
     stdout: StdioCollector { id: pasteOutput; waitForEnd: true }
     // Provider stderr is discarded by the reader; never show clipboard data or
     // credentials in logs. The reader kills its child group on SIGTERM too.
-    onExited: function(code) { pasteWatchdog.stop(); root.finishPaste(code, pasteOutput.text) }
+    onExited: function(code) {
+      pasteWatchdog.stop()
+      pasteKill.stop()
+      root.finishPaste(code, pasteOutput.text)
+    }
   }
   Timer {
     id: pasteWatchdog
@@ -159,9 +166,17 @@ Ui.TextField {
       var pending = root._pasteSnapshot !== null
       var started = clipboardProcess.running
       root.cancelPaste()
-      clipboardProcess.signal(9)
+      // SIGTERM lets the reader kill its whole provider group. An immediate
+      // SIGKILL would orphan wl-paste's own copy child, so escalate only if
+      // the reader ignores SIGTERM.
+      if (started) pasteKill.restart()
       if (pending) root.pasteError = started ? "Paste timed out. Try copying the text again."
         : "Paste could not start. Check Python 3 and wl-clipboard in Settings."
     }
+  }
+  Timer {
+    id: pasteKill
+    interval: 1000
+    onTriggered: if (clipboardProcess.running) clipboardProcess.signal(9)
   }
 }

@@ -106,6 +106,46 @@ class ClipboardTest(unittest.TestCase):
                 process.kill()
                 process.wait()
 
+    def wait_until_gone(self, pid):
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            stat = Path("/proc") / str(pid) / "stat"
+            if not stat.exists() or stat.read_text().split(") ", 1)[1].startswith("Z "):
+                return
+            time.sleep(0.01)
+        self.fail("Clipboard provider process %d survived" % pid)
+
+    def recorded_pids(self, count):
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            lines = self.record.read_text().splitlines() if self.record.exists() else []
+            if len(lines) >= count:
+                return [json.loads(line)["pid"] for line in lines]
+            time.sleep(0.01)
+        self.fail("Clipboard provider did not start")
+
+    def test_deadline_and_cancellation_kill_provider_descendants(self):
+        reply = self.run_reader(mode="fork-stall")
+        self.assertIn("timed out", reply["error"])
+        for pid in self.recorded_pids(2):
+            self.wait_until_gone(pid)
+        self.record.unlink()
+        self.settings.write_text(json.dumps({"mode": "fork-stall", "record": str(self.record)}))
+        process = subprocess.Popen([sys.executable, str(REPO / "scripts/clipboard.py")],
+                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            pids = self.recorded_pids(2)
+            process.send_signal(signal.SIGTERM)
+            out, error = process.communicate(timeout=1)
+            self.assertEqual(error, b"")
+            self.assertFalse(json.loads(out)["ok"])
+            for pid in pids:
+                self.wait_until_gone(pid)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+
     def test_forced_reader_death_stops_provider(self):
         self.settings.write_text(json.dumps({"mode": "stall", "record": str(self.record)}))
         process = subprocess.Popen([sys.executable, str(REPO / "scripts/clipboard.py")],

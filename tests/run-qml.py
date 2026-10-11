@@ -11,7 +11,7 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description="Run isolated native QML fixtures")
-parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox", "clipboard", "clipboard-unavailable"])
+parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox", "clipboard", "clipboard-unavailable", "clipboard-watchdog"])
 args = parser.parse_args()
 go_cache = subprocess.check_output(["go", "env", "GOCACHE"], text=True,
                                  env=dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")).strip()
@@ -57,6 +57,19 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     qs_executable = shutil.which("qs")
     clipboard_env = dict(env, PATH=str(clipboard_tools) + os.pathsep + env["PATH"],
                          OMACHAT_CLIPBOARD_FIXTURE=str(clipboard_config))
+    hung_tools = config / "clipboard-hung-tools"
+    hung_tools.mkdir()
+    hung_reader = hung_tools / "python3"
+    hung_reader.write_text((repo / "tests/fixtures/clipboard-hung-reader.sh").read_text())
+    hung_reader.chmod(0o700)
+    (config / "clipboard-hang-mode").write_text("graceful")
+    fixture_envs = {
+        "clipboard": clipboard_env,
+        "clipboard-unavailable": missing_clipboard_env,
+        "clipboard-watchdog": dict(env, PATH=str(hung_tools) + os.pathsep + env["PATH"],
+                                   OMACHAT_CLIPBOARD_HANG_MODE=str(config / "clipboard-hang-mode"),
+                                   OMACHAT_CLIPBOARD_HANG_RECORD=str(config / "clipboard-hang-record")),
+    }
     build = config / "Build"
     build.mkdir()
     (build / "Service.qml").write_text((repo / "Service.qml").read_text())
@@ -66,7 +79,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     (build / "scripts/updates.py").write_text((repo / "scripts/updates.py").read_text())
     if args.fixture:
         (config / "shell.qml").write_text((repo / ("tests/qml/" + args.fixture + ".qml")).read_text())
-        result = subprocess.run([qs_executable, "-p", str(config)], env=clipboard_env if args.fixture == "clipboard" else missing_clipboard_env if args.fixture == "clipboard-unavailable" else env, text=True,
+        result = subprocess.run([qs_executable, "-p", str(config)], env=fixture_envs.get(args.fixture, env), text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
         print(result.stdout)
         marker = "OMACHAT_" + ("QML" if args.fixture == "shell" else args.fixture.replace("-", "_").upper())
@@ -79,9 +92,9 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
                                 ("media", "OMACHAT_MEDIA"), ("review", "OMACHAT_REVIEW"),
                                 ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"),
                                 ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"), ("avatar", "OMACHAT_AVATAR"),
-                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("clipboard", "OMACHAT_CLIPBOARD"), ("clipboard-unavailable", "OMACHAT_CLIPBOARD_UNAVAILABLE")):
+                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("clipboard", "OMACHAT_CLIPBOARD"), ("clipboard-unavailable", "OMACHAT_CLIPBOARD_UNAVAILABLE"), ("clipboard-watchdog", "OMACHAT_CLIPBOARD_WATCHDOG")):
             (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
-            result = subprocess.run([qs_executable, "-p", str(config)], env=clipboard_env if fixture == "clipboard" else missing_clipboard_env if fixture == "clipboard-unavailable" else env, text=True,
+            result = subprocess.run([qs_executable, "-p", str(config)], env=fixture_envs.get(fixture, env), text=True,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
             print(result.stdout)
             if result.returncode or marker + "_PASS" not in result.stdout or marker + "_FAIL" in result.stdout or "ERROR" in result.stdout:

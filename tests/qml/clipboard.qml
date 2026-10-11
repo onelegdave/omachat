@@ -11,6 +11,9 @@ ShellRoot {
   property int ticks: 0
   function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
   function configure(value) { provider.setText(JSON.stringify(value)) }
+  // Put text on Qt's in-process offscreen clipboard, never the desktop's.
+  function seedNative(value) { other.text = value; other.selectAll(); other.copy(); other.text = "" }
+  function noNative(value) { return value.indexOf("NATIVE") < 0 }
   FileView { id: provider; path: Quickshell.env("OMACHAT_CLIPBOARD_FIXTURE"); atomicWrites: true }
   FloatingWindow {
     id: window
@@ -27,6 +30,9 @@ ShellRoot {
       Keys.onPressed: function(event) { if (event.key === Qt.Key_F2) event.accepted = true }
     }
     Chat.SafeTextField { id: other; width: 550; x: 20; y: 100 }
+    Chat.SafeTextField { id: message; width: 550; x: 20; y: 140; allowLineBreaks: true }
+    // Unguarded control that shows what Qt's native paste would insert.
+    Controls.TextField { id: nativeProbe; width: 550; x: 20; y: 180 }
     TestEvent { id: keyboard }
   }
   Timer {
@@ -35,9 +41,15 @@ ShellRoot {
       stop()
       try {
         if (++root.ticks > 100) throw new Error("fixture timed out")
-        if (field.pasteBusy) { restart(); return }
+        if (field.pasteBusy || other.pasteBusy || message.pasteBusy) { restart(); return }
         switch (root.step++) {
         case 0:
+          root.seedNative("line1\nline2")
+          nativeProbe.paste()
+          check(nativeProbe.text === "line1\nline2", "native paste keeps line breaks, so message fields should too")
+          root.seedNative("NATIVE_SENTINEL")
+          nativeProbe.text = ""; nativeProbe.paste()
+          check(nativeProbe.text === "NATIVE_SENTINEL", "native clipboard holds a sentinel that native paste would insert")
           field.forceActiveFocus()
           keyboard.keyClick(Qt.Key_A, Qt.NoModifier, 0)
           keyboard.keyClick(Qt.Key_B, Qt.NoModifier, 0)
@@ -46,7 +58,7 @@ ShellRoot {
           keyboard.keyClick(Qt.Key_V, Qt.ControlModifier, 0)
           break
         case 1:
-          check(field.text === "PASTEb" && field.cursorPosition === 5, "Ctrl+V replaces selection through bounded reader despite instance key handler")
+          check(field.text === "PASTEb" && field.cursorPosition === 5, "Ctrl+V replaces selection through bounded reader, not native paste, despite instance key handler")
           keyboard.keyClick(Qt.Key_Z, Qt.ControlModifier, 0)
           check(field.text === "ab", "one Undo restores text replaced by paste")
           keyboard.keyClick(Qt.Key_Z, Qt.ControlModifier | Qt.ShiftModifier, 0)
@@ -56,7 +68,7 @@ ShellRoot {
           keyboard.keyClick(Qt.Key_Insert, Qt.ShiftModifier, 0)
           break
         case 2:
-          check(field.text === "PASTE", "Shift+Insert uses bounded reader and ignores duplicate requests")
+          check(field.text === "PASTE", "Shift+Insert uses bounded reader, not native paste, and ignores duplicate requests")
           field.text = ""
           field.Controls.ContextMenu.menu.popup()
           break
@@ -66,7 +78,7 @@ ShellRoot {
           menu.itemAt(5).triggered(); menu.close()
           break
         case 4:
-          check(field.text === "PASTE", "menu paste uses bounded reader")
+          check(field.text === "PASTE", "menu paste uses bounded reader, not native paste")
           field.text = ""
           keyboard.mouseClick(field, 15, field.height / 2, Qt.MiddleButton, Qt.NoModifier, 0)
           break
@@ -124,7 +136,18 @@ ShellRoot {
           check(field.text === "keep" && field.pasteError.indexOf("too long") >= 0, "field limit rejects whole paste without destructive truncation")
           field.pasteAllowed = false
           keyboard.keyClick(Qt.Key_V, Qt.ControlModifier, 0)
-          check(!field.pasteBusy && field.text === "keep", "disabled paste is consumed without native fallback")
+          check(!field.pasteBusy && field.text === "keep" && root.noNative(field.text), "disabled paste is consumed without native fallback")
+          configure({text: "one\r\ntwo\rthree\nfour"})
+          break
+        case 19:
+          message.forceActiveFocus(); message.requestPaste(false)
+          break
+        case 20:
+          check(message.text === "one\ntwo\nthree\nfour", "message field keeps pasted line breaks, normalized to newlines")
+          other.forceActiveFocus(); other.requestPaste(false)
+          break
+        case 21:
+          check(other.text === "one two three four", "other fields flatten pasted line breaks to spaces")
           console.log("OMACHAT_CLIPBOARD_PASS")
           Qt.quit(); return
         }

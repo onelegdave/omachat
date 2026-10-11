@@ -39,12 +39,17 @@ nonblocking pipe and holds at most 65,537 incoming bytes before rejecting an
 oversized transfer. A successful transfer contains at most 65,536 bytes.
 The 1.5-second deadline covers the whole child transfer and exit, including a
 provider that keeps delivering small chunks or closes stdout without exiting.
-The QML launcher has a separate 3-second watchdog for startup failures.
+The QML launcher has a separate 3-second watchdog for a reader that fails to
+start or hangs. It stops the reader with SIGTERM, so the reader can kill its
+whole provider group, and sends SIGKILL only if it is still running a second
+later.
 
 Only complete, successful UTF-8 text reaches the field. Empty, invalid,
 oversized, timed-out, and failed transfers leave the existing text and selection
 unchanged. Embedded NULs and pastes exceeding the field's own length limit are
-rejected. Line breaks become spaces in these single-line fields. Cursor movement
+rejected. The composer and attachment captions keep pasted line breaks,
+normalized to newlines, as Qt's native paste did. Other fields turn them into
+spaces. Cursor movement
 separates undo groups so pasting does not merge with adjacent typing.
 
 One request per field can run at a time. Changing focus, text, selection,
@@ -55,7 +60,8 @@ conversation.
 
 The child process group is killed and the child is reaped on completion, rejection, and
 cancellation. Linux's parent-death signal kills `wl-paste` if the reader itself
-is forcibly killed. The child also has a 128 MiB address-space limit, 2-second
+is forcibly killed. That signal does not reach the `cat` child that `wl-paste`
+starts to copy the transfer, which is why the watchdog sends SIGTERM first. The child also has a 128 MiB address-space limit, 2-second
 CPU limit, and disabled core dumps. Provider stderr is discarded. No clipboard
 content is logged or written to disk by this reader. Python 3 and wl-clipboard
 are user-installed dependencies; missing tools fail closed with visible guidance.
@@ -68,15 +74,21 @@ Run the isolated checks with:
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'clipboard_test.py'
 OMACHAT_QML_HEADLESS=1 dbus-run-session -- python3 tests/run-qml.py --fixture clipboard
 OMACHAT_QML_HEADLESS=1 dbus-run-session -- python3 tests/run-qml.py --fixture clipboard-unavailable
+OMACHAT_QML_HEADLESS=1 dbus-run-session -- python3 tests/run-qml.py --fixture clipboard-watchdog
 ```
 
 The provider fixture supplies invented text over real subprocess pipes. It
 covers exact/over-limit UTF-8, infinite streams, stalls, continuous trickles,
-early pipe closure, failure after partial data, missing tools, SIGTERM cleanup,
-and forced reader death. A source check rejects unguarded product input types.
+early pipe closure, failure after partial data, missing tools, SIGTERM cleanup
+including a forked provider descendant, and forced reader death. A source check rejects unguarded product input types.
 Actual QML controls exercise typing, selection replacement, one-step undo/redo,
 all four paste routes, duplicate suppression, field limits, and stale-result
 cancellation, including instances with their own focus and key handlers.
+Qt's in-process test clipboard holds a sentinel during these checks, and an
+unguarded control proves native paste would insert it. The offscreen backend
+has no PRIMARY selection, so native middle-click paste cannot be exercised
+there; the guard consumes the middle button regardless. A watchdog fixture uses
+a fake reader that hangs, then checks SIGTERM cleanup and the SIGKILL fallback.
 
 The local UI checks use Qt 6.11.2's offscreen backend and a fake `wl-paste`.
 They do not reproduce a foreign streaming provider against Qt 6.12 on a real

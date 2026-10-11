@@ -20,6 +20,14 @@ elif mode == "trickle":
 elif mode == "stream":
     while True:
         os.write(1, b"x" * 4096)
+elif mode == "fork-stall":
+    # Real wl-paste forks cat to copy the provider pipe; mirror that descendant.
+    if os.fork() == 0:
+        with open(settings["record"], "a") as output:
+            output.write(json.dumps({"pid": os.getpid(), "argv": ["descendant"]}) + "\n")
+        time.sleep(30)
+        os._exit(0)
+    time.sleep(30)
 elif mode == "close-and-stall":
     os.close(1)
     time.sleep(30)
