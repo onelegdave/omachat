@@ -1,5 +1,14 @@
 # Marketplace readiness
 
+## v0.5.1 clipboard correction
+
+Marketplace review of v0.5.0 found that Qt's native Wayland paste could buffer
+unbounded clipboard data in the shell. v0.5.1 routes every paste through a
+bounded reader outside the shell; see [clipboard safety](clipboard-safety.md).
+Following the Marketplace rule to correct an existing request rather than open
+a duplicate, the open v0.5.0 update request was edited to target the v0.5.1
+commit. Fresh exact-commit checks and maintainer approval are required.
+
 ## v0.5.0 update preparation
 
 The release includes the reviewed build, unread/read-state, pop-out, restoration,
@@ -26,7 +35,7 @@ records publication on September 19, 2026 and a maintainer-reviewed baseline
 with no findings and the `package-manager`, `privilege`, `service-management`,
 and `installer` capabilities. See the [publication confirmation](https://github.com/omacom/omarchy-plugin-marketplace/issues/7193#issuecomment-5741298865)
 and [registry](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/registry.json).
-This approval covers that snapshot, not v0.5.0.
+This approval covers that snapshot, not v0.5.0 or v0.5.1.
 
 Future releases use the [newer-upstream verification and publication workflow](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md#promoting-a-plugin-update):
 provide the existing plugin ID, repository root, and full SHA of the final public
