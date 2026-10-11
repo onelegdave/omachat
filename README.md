@@ -81,6 +81,14 @@ The shell owns the helper as a child process. There is no systemd unit,
 installer hook, or automatic privileged step. Only the explicit dependency
 Install action can request sudo in a terminal, after your confirmation.
 
+Text fields paste through a separate, bounded clipboard reader. Ctrl+V,
+Shift+Insert, the Paste menu action, and middle-click use the same protection.
+A paste must finish within 1.5 seconds and contain at most 64 KiB of UTF-8
+text; incomplete, oversized, or invalid transfers leave the field unchanged.
+Search and credential fields also have smaller length limits. Pasting requires
+Python 3 and `wl-paste` from wl-clipboard; missing tools produce a visible error.
+See [clipboard safety and verification limits](docs/clipboard-safety.md).
+
 See [dependencies and optional features](docs/dependencies.md) for the full
 tool list. Availability varies by desktop; do not assume a tool is installed.
 
@@ -318,7 +326,8 @@ Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
 
 Community contributors include [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs),
 [Alex Vlissidis (@alexvlis)](https://github.com/alexvlis),
-[Matthias MB (@Hizoul)](https://github.com/Hizoul), and [@ozz1ee-dev](https://github.com/ozz1ee-dev).
+[Matthias MB (@Hizoul)](https://github.com/Hizoul), [@ozz1ee-dev](https://github.com/ozz1ee-dev),
+and [HANCORE-linux](https://github.com/HANCORE-linux), who reported the clipboard safety issue.
 See [community contributions and their review status](CREDITS.md#community-contributors).
 Codex and Claude have provided AI assistance with code and reviews.
 

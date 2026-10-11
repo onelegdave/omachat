@@ -22,7 +22,7 @@ TOOLS = [
     tool("ffmpeg", "FFmpeg and FFplay", "Voice recording and playback for all services, plus WhatsApp GIF conversion.", ["ffmpeg", "ffplay"], "ffmpeg"),
     tool("sqlite", "SQLite CLI", "Read the selected Google browser profile for pairing.", ["sqlite3"], "sqlite"),
     tool("libsecret", "Secret Service tool", "Google browser pairing; also needs an unlocked desktop keyring.", ["secret-tool"], "libsecret"),
-    tool("clipboard", "Wayland clipboard", "Copy message text.", ["wl-copy"], "wl-clipboard"),
+    tool("clipboard", "Wayland clipboard", "Copy and safely paste text.", ["wl-copy", "wl-paste"], "wl-clipboard"),
     tool("xdg", "Desktop link opener", "Open links, source pages, and downloaded files.", ["xdg-open"], "xdg-utils"),
     tool("python", "Python 3", "Build and verify the helper, check releases, and run setup tools.", ["python3"], "python"),
 ]

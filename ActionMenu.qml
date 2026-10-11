@@ -58,8 +58,10 @@ Controls.Popup {
       }
     }
 
-    Controls.TextField {
+    SafeTextField {
       id: search
+      maximumLength: 256
+      pasteAllowed: root.opened
       objectName: "keyboardActionSearch"
       Layout.fillWidth: true
       placeholderText: "Search actions…"

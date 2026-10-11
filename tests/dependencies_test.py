@@ -21,6 +21,11 @@ class DependenciesTest(unittest.TestCase):
         with patch.object(deps.shutil, "which", side_effect=lambda name: "/bin/clang" if name == "clang" else None):
             self.assertTrue(deps.check(deps.TOOLS[1])["installed"])
 
+    def test_clipboard_requires_copy_and_paste_tools(self):
+        entry = next(t for t in deps.TOOLS if t["id"] == "clipboard")
+        with patch.object(deps.shutil, "which", side_effect=lambda name: "/bin/wl-copy" if name == "wl-copy" else None):
+            self.assertFalse(deps.check(entry)["installed"])
+
     def test_go_minimum_and_no_toolchain_download(self):
         for version, expected in [("go1.26.4", False), ("go1.27.0", True), ("go1.28rc1", False), ("unknown", False)]:
             with self.subTest(version=version), patch.object(deps.shutil, "which", return_value="/bin/go"), patch.object(deps.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "go version " + version)) as run:

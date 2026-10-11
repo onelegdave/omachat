@@ -132,8 +132,10 @@ Item {
       fontFamily: root.fontFamily
     }
 
-    TextField {
+    SafeTextField {
       id: searchField
+      maximumLength: 256
+      pasteAllowed: root.viewActive && root.host && root.host.opened === true
       objectName: "unifiedSearchField"
       anchors.left: parent.left
       anchors.right: parent.right

@@ -32,8 +32,10 @@ RowLayout {
     Accessible.ignored: true
   }
 
-  Controls.TextField {
+  SafeTextField {
     id: shortcutInput
+    maximumLength: 40
+    pasteAllowed: !root.recording
     objectName: "shortcutInput_" + root.action.id
     Layout.preferredWidth: Style.space(142)
     Accessible.name: "Shortcut for " + root.action.label

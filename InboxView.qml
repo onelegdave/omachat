@@ -1306,9 +1306,12 @@ Item {
       fontFamily: root.fontFamily
     }
 
-    TextField {
+    SafeTextField {
       id: searchField
-        objectName: "searchField"
+      maximumLength: 256
+      pasteAllowed: root.panelOpen
+      pasteContext: root.network
+      objectName: "searchField"
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: inboxHeader.bottom
@@ -2156,8 +2159,11 @@ Item {
         onClicked: root.openImage(root.pendingAttachment)
       }
 
-      TextField {
+      SafeTextField {
         id: attachCaption
+        maximumLength: 4096
+        pasteAllowed: root.panelOpen
+        pasteContext: root.network + ":" + root.selectedConvID + ":" + root.selectionGeneration + ":" + root.pendingAttachment
         objectName: "attachCaption"
         visible: !root.pendingIsVoice
         anchors.left: attachPreview.right
@@ -2299,8 +2305,11 @@ Item {
         }
       }
 
-      TextField {
+      SafeTextField {
         id: composer
+        maximumLength: 32767
+        pasteAllowed: root.panelOpen
+        pasteContext: root.network + ":" + root.selectedConvID + ":" + root.selectionGeneration
         objectName: "composer"
         onTextChanged: root.rememberDraft(text)
         Keys.priority: Keys.BeforeItem
@@ -2346,8 +2355,11 @@ Item {
       border.color: Color.popups.border
       clip: true
 
-      TextField {
+      SafeTextField {
         id: emojiSearchField
+        maximumLength: 256
+        pasteAllowed: root.panelOpen
+        pasteContext: root.network + ":" + root.selectedConvID + ":" + root.selectionGeneration
         objectName: "emojiSearchField"
         Accessible.name: "Search emoji by name, keyword, alias, or glyph"
         anchors.left: parent.left
