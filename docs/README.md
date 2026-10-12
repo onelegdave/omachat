@@ -1,8 +1,10 @@
 # OmaChat documentation
 
-The current stable release is OmaChat v0.4.3. Documentation on the `dev`
-branch may also describe unreleased work intended for a later beta or stable
-release.
+The current stable release is OmaChat v0.5.2, which completes the clipboard
+safety fix from v0.5.1. See the [v0.5.2 release notes](history/RELEASE-0.5.2.md),
+[v0.5.1 release notes](history/RELEASE-0.5.1.md), and the
+[v0.5.0 release notes](history/RELEASE-0.5.0.md) for included contributions and
+verification limits.
 
 - [Theme screenshots with fictional chats](screenshots/README.md)
 - [Marketplace readiness and review limits](marketplace-readiness.md)

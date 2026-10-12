@@ -28,7 +28,7 @@ All five services share a locally compiled helper:
 | Requirement | Purpose | Your choice |
 | --- | --- | --- |
 | Go 1.27.0 or newer (see `go.mod`) | Compile the helper from `vendor/` | Install Go yourself if you want to build and use OmaChat |
-| Python 3 | Offline helper builds, source checks, release checks, and setup tools | Required for the in-app build and update workflow |
+| Python 3 | Offline helper builds, source checks, release checks, setup tools, and safe paste | Required for the in-app build, update, and paste workflows |
 | C compiler (`gcc` or `clang`) | CGO SQLite in the shared helper | Required at build time for every service |
 | `qrencode` | Render pairing QR codes | Needed for WhatsApp/Telegram QR pairing and Google's QR fallback |
 
@@ -58,7 +58,7 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 | Voice notes on all services | `ffmpeg` to record and `ffplay` to play audio |
 | WhatsApp GIF sending | `ffmpeg` to convert GIF files to WhatsApp's MP4 playback format |
 | File selection | Working desktop portal and its file-picker backend |
-| Copy message | `wl-copy` from wl-clipboard |
+| Copy and paste text | `wl-copy` and `wl-paste` from wl-clipboard; Python 3 for bounded paste |
 | Open links or downloaded files | `xdg-open` and an appropriate installed browser/image/video application |
 
 For example, if you want voice notes, you can run `omarchy pkg add ffmpeg`

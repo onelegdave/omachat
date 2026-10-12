@@ -337,6 +337,23 @@ function avatarColor(hex, seed, fallback) {
   return Qt.hsla((h % 360) / 360, 0.45, 0.5, 1)
 }
 
+// Summarize only the enabled providers supplied by the caller. A connected
+// helper does not imply every provider (or its phone) is available.
+function combinedConnectionStatus(statuses) {
+  var list = Array.isArray(statuses) ? statuses : []
+  var online = list.filter(function(s) { return s && s.state === "connected" && s.phoneOK !== false }).length
+  if (!list.length) return { label: "SERVICES OFF", connected: false }
+  if (online === list.length) return { label: "CONNECTED", connected: true }
+  if (online) return { label: online + "/" + list.length + " CONNECTED", connected: false }
+  if (list.some(function(s) { return s && (s.state === "connecting" || s.state === "pairing" || s.state === "gaiaPairing") }))
+    return { label: "CONNECTING", connected: false }
+  if (list.every(function(s) { return s && s.state === "unpaired" }))
+    return { label: "NOT PAIRED", connected: false }
+  if (list.every(function(s) { return s && s.state === "connected" && s.phoneOK === false }))
+    return { label: "PHONE OFFLINE", connected: false }
+  return { label: "SERVICES OFFLINE", connected: false }
+}
+
 function statusLine(status) {
   if (!status) return "Disconnected"
   switch (status.state) {

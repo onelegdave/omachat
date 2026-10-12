@@ -50,7 +50,19 @@ Item {
   property bool viewActive: true
   readonly property bool panelOpen: viewActive && host && host.opened === true
   onPanelOpenChanged: {
-    if (panelOpen) return
+    if (panelOpen) {
+      if (draftStore && composer && selectedConvID) composer.text = (_draftsByNet[network] || {})[selectedConvID] || ""
+      scrollToLatest()
+      focusComposer()
+      markThreadRead()
+      return
+    }
+    pendingLatestScroll = false
+    followingLatest = false
+    focusRequest++
+    if (composer) composer.focus = false
+    if (searchField) searchField.focus = false
+    if (attachCaption) attachCaption.focus = false
     if (recording) stopRecording(false)
     stopPlayback()
   }
@@ -71,7 +83,7 @@ Item {
   readonly property var conversations: service ? (typeof service.conversationsFor === "function" ? service.conversationsFor(root.network) : (service.conversations || [])) : []
   property string searchQuery: ""
   property string selectedConvID: ""
-  property var _draftsByNet: ({})
+  property var _draftsByNet: draftStore ? draftStore.drafts : ({})
   property var _pendingSends: ({})
   property var _networkEpochs: ({})
   property int mediaSendToken: 0
@@ -112,6 +124,9 @@ Item {
   property int historyRequest: 0
   property int viewportRevision: 0
   property var pendingAnchor: null
+  property bool pendingLatestScroll: false
+  property bool followingLatest: false
+  property bool positioningMessages: false
   property string threadError: ""
   property var mediaPaths: ({})
   property var _mediaNetworks: ({})
@@ -123,7 +138,8 @@ Item {
   property bool emojiPickerForReact: false
   property string reactingTo: ""
   property bool copied: false
-  property bool composerFocus: false
+  readonly property bool composerFocus: composer.activeFocus || searchField.activeFocus || attachCaption.activeFocus
+  property int focusRequest: 0
   property bool linkConfirmOpen: false
   property bool newChatOpen: false
   property bool newChatGroup: false
@@ -191,6 +207,8 @@ Item {
     var prev = _previousNetwork
     _previousNetwork = network
     if (prev === network) return
+    pendingLatestScroll = false
+    followingLatest = false
     mediaSendToken++
     sendingMedia = false
     mediaRequests = ({})
@@ -206,7 +224,7 @@ Item {
       var netDrafts = Object.assign({}, saved[prev] || {})
       netDrafts[selectedConvID] = composer ? composer.text : ""
       saved[prev] = netDrafts
-      _draftsByNet = saved
+      setDrafts(saved)
     }
     var nextSel = Object.assign({}, _selectedByNet)
     nextSel[prev] = selectedConvID
@@ -469,12 +487,14 @@ Item {
       var netDrafts = Object.assign({}, saved[network] || {})
       netDrafts[selectedConvID] = composer.text
       saved[network] = netDrafts
-      _draftsByNet = saved
+      setDrafts(saved)
     }
     selectionGeneration++
     historyRequest++
     viewportRevision++
     pendingAnchor = null
+    pendingLatestScroll = false
+    followingLatest = false
     loadingOlder = false
     hasOlder = false
     historyExpanded = false
@@ -505,6 +525,7 @@ Item {
     grouped = []
     threadError = ""
     loadMessages()
+    focusComposer()
   }
 
   function refreshThread() {
@@ -527,6 +548,7 @@ Item {
   }
 
   function displayMessages(next, followEnd) {
+    followEnd = followEnd || (pendingLatestScroll && panelOpen)
     var anchor = followEnd ? null : captureViewport()
     pendingAnchor = anchor
     messages = next
@@ -537,9 +559,8 @@ Item {
       if (revision !== viewportRevision || generation !== selectionGeneration) return
       messageList.forceLayout()
       if (followEnd) {
-        messageList.positionViewAtEnd()
-        messageList.forceLayout()
-        messageList.positionViewAtEnd()
+        positionMessagesAtEnd()
+        pendingLatestScroll = false
       }
       else if (anchor) {
         for (var i = 0; i < grouped.length; i++) {
@@ -608,6 +629,17 @@ Item {
     }, root.network)
   }
 
+  function queueOlderMessages() {
+    var source = service
+    var net = network
+    var conversation = selectedConvID
+    var generation = selectionGeneration
+    Qt.callLater(function() {
+      if (source === root.service && net === root.network && conversation === root.selectedConvID
+          && generation === root.selectionGeneration && root.panelOpen) root.loadOlderMessages()
+    })
+  }
+
   function loadOlderMessages() {
     if (!service || selectedConvID === "" || loadingMessages || loadingOlder || historyFetchState === "loading" || !hasOlder) return
     loadingOlder = true
@@ -654,7 +686,13 @@ Item {
     // event that OmaChat does not render. Messenger likewise supports
     // conversation-level acknowledgement without a rendered message ID.
     if (!last && !root.isTelegram && !root.isMessenger) return
-    service.call("markRead", { conversationID: selectedConvID, messageID: last ? last.id : "" }, function(ok, error) {
+    var source = service
+    var target = selectedConvID
+    var targetNet = network
+    var generation = selectionGeneration
+    source.call("markRead", { conversationID: target, messageID: last ? last.id : "" }, function(ok, error) {
+      if (source !== root.service || target !== root.selectedConvID
+          || targetNet !== root.network || generation !== root.selectionGeneration) return
       if (!ok) root.threadError = String(error)
     }, root.network)
   }
@@ -1074,7 +1112,8 @@ Item {
     ignoreUnknownSignals: true
     function onMessageReceived(msg, net) {
       root.mergeMessage(msg, net || root.network)
-      if ((!net || net === root.network) && msg.conversationID === root.selectedConvID && root.panelOpen && !msg.fromMe) root.markThreadRead()
+      if ((!net || net === root.network) && msg.conversationID === root.selectedConvID
+          && root.panelOpen && !msg.fromMe && msg.id && !msg.provisional) root.markThreadRead(true)
     }
     function onPaired(net) {
       root.clearNetwork(net)
@@ -1114,7 +1153,7 @@ Item {
       root._selectedByNet = nextSel
       var nextDrafts = Object.assign({}, root._draftsByNet)
       delete nextDrafts[net]
-      root._draftsByNet = nextDrafts
+      root.setDrafts(nextDrafts)
       var nextPending = Object.assign({}, root._pendingSends)
       delete nextPending[net]
       root._pendingSends = nextPending
@@ -1129,7 +1168,7 @@ Item {
     root._selectedByNet = s2
     var d2 = Object.assign({}, root._draftsByNet)
     delete d2[root.network]
-    root._draftsByNet = d2
+    root.setDrafts(d2)
     var p2 = Object.assign({}, root._pendingSends)
     delete p2[root.network]
     root._pendingSends = p2
@@ -1306,9 +1345,12 @@ Item {
       fontFamily: root.fontFamily
     }
 
-    TextField {
+    SafeTextField {
       id: searchField
-        objectName: "searchField"
+      maximumLength: 256
+      pasteAllowed: root.panelOpen
+      pasteContext: root.network
+      objectName: "searchField"
       anchors.left: parent.left
       anchors.right: newChatButton.left
       anchors.rightMargin: Style.space(6)
@@ -1319,7 +1361,7 @@ Item {
       font.pixelSize: fs(Style.font.body)
       foreground: root.foreground
       onTextChanged: root.searchQuery = text
-      onActiveFocusChanged: root.composerFocus = activeFocus
+      onActiveFocusChanged: if (activeFocus) root.focusRequest++
     }
 
     Button {
@@ -1347,11 +1389,19 @@ Item {
       color: Style.normalFillFor(root.foreground, Color.accent)
 
       MouseArea {
+        id: nextUnreadAction
+        objectName: "nextUnreadButton"
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
         onClicked: {
+          if (!root.panelOpen || root.sendingMedia) return
+          var source = root.service
+          var targetNet = root.network
+          var generation = root.selectionGeneration
           searchField.text = ""
           Qt.callLater(function() {
+            if (source !== root.service || targetNet !== root.network
+                || generation !== root.selectionGeneration || !root.panelOpen || root.sendingMedia) return
             for (var i = 0; i < root.visibleConversations.length; i++) {
               if (root.visibleConversations[i].unread === true) {
                 if (root.visibleConversations[i].id === root.selectedConvID) root.markThreadRead()
@@ -1888,7 +1938,7 @@ Item {
                 id: bubbleText
                 width: parent.width
                 visible: !!(row.hasText || (row.msg && row.msg.deleted === true))
-                height: visible ? implicitHeight : 0
+                height: row.hasText || (row.msg && row.msg.deleted === true) ? implicitHeight : 0
                 text: {
                   if (row.msg && row.msg.deleted) return "Message deleted"
                   return Model.linkify(row.msg ? (row.msg.text || "") : "")
@@ -2158,8 +2208,12 @@ Item {
         onClicked: root.openImage(root.pendingAttachment)
       }
 
-      TextField {
+      SafeTextField {
         id: attachCaption
+        maximumLength: 4096
+        allowLineBreaks: true
+        pasteAllowed: root.panelOpen
+        pasteContext: root.network + ":" + root.selectedConvID + ":" + root.selectionGeneration + ":" + root.pendingAttachment
         objectName: "attachCaption"
         visible: !root.pendingIsVoice
         anchors.left: attachPreview.right
@@ -2174,7 +2228,7 @@ Item {
         foreground: root.foreground
         enabled: !root.sendingMedia
         onAccepted: root.sendAttachment(text)
-        onActiveFocusChanged: root.composerFocus = activeFocus
+        onActiveFocusChanged: if (activeFocus) root.focusRequest++
       }
 
       Row {
@@ -2301,8 +2355,12 @@ Item {
         }
       }
 
-      TextField {
+      SafeTextField {
         id: composer
+        maximumLength: 32767
+        allowLineBreaks: true
+        pasteAllowed: root.panelOpen
+        pasteContext: root.network + ":" + root.selectedConvID + ":" + root.selectionGeneration
         objectName: "composer"
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
@@ -2323,11 +2381,11 @@ Item {
           return "Write a message"
         }
         enabled: root.service && root.service.connected && (typeof root.service.stateFor === "function" ? root.service.stateFor(root.network) : root.service.state) === "connected" && !(root.selectedConv && root.selectedConv.readOnly)
+        onEnabledChanged: if (enabled) root.focusComposer()
         onAccepted: {
           root.sendMessage(text)
           text = ""
         }
-        onActiveFocusChanged: root.composerFocus = activeFocus
       }
     }
 

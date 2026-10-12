@@ -259,7 +259,7 @@ ShellRoot {
     delayedPanel.close()
     disconnectedPanel.service=disconnectedService
     disconnectedPanel.open()
-    root.check(!disconnectedPanel.opened && disconnectedPanel.openPendingConfig && !disconnectedPanel.panelConfigLoaded,"failed startup config read keeps the open request pending")
+    root.check(disconnectedPanel.opened && !disconnectedPanel.openPendingConfig && !disconnectedPanel.panelConfigLoaded,"failed startup config keeps helper recovery accessible")
     disconnectedPanel.close()
     settings.saveWindowPreferences(true,"tiled")
     root.check(settings.alwaysPopout && settings.popoutMode === "tiled","window opening preferences save through the helper")

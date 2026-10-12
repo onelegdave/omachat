@@ -90,6 +90,7 @@ type GotdClient struct {
 	stopped     bool
 	onMessage   func(Message)
 	onReaction  func(int64, int64, []wire.Reaction)
+	selfID      int64
 	mediaRefs   map[string]tg.InputFileLocationClass
 	mediaExts   map[string]string
 	downloadWG  sync.WaitGroup
@@ -232,6 +233,9 @@ func (g *GotdClient) Start(ctx context.Context) error {
 				ready <- errUnauth
 				return errUnauth
 			}
+			if st.User != nil {
+				g.setAccountIdentity(st.User.ID)
+			}
 			ready <- nil
 
 			<-clientCtx.Done()
@@ -296,7 +300,27 @@ func (g *GotdClient) IsAuthorized(ctx context.Context) (bool, error) {
 		}
 		return false, err
 	}
+	if st.User != nil {
+		g.setAccountIdentity(st.User.ID)
+	}
 	return st.Authorized, nil
+}
+
+func (g *GotdClient) setAccountIdentity(id int64) {
+	g.mu.Lock()
+	g.selfID = id
+	g.mu.Unlock()
+}
+
+// AccountIdentity is learned during the existing authentication flow; Status
+// never performs a provider request or opens a session file to obtain it.
+func (g *GotdClient) AccountIdentity() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.selfID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("tg:%d", g.selfID)
 }
 
 // GetQRChannel starts MTProto client connection and drives gotd QR login flow,
@@ -337,7 +361,11 @@ func (g *GotdClient) GetQRChannel(ctx context.Context) (<-chan QRChannelItem, er
 			if authErr != nil {
 				return authErr
 			}
-			_ = authRes
+			if authRes != nil {
+				if user, ok := authRes.User.(*tg.User); ok && user != nil {
+					g.setAccountIdentity(user.ID)
+				}
+			}
 
 			select {
 			case qrChan <- QRChannelItem{Event: QRChannelEventSuccess}:
@@ -965,6 +993,9 @@ func (c *cappedWriter) Write(p []byte) (int, error) {
 }
 
 func (g *GotdClient) DownloadMedia(ctx context.Context, key, dir string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	g.mu.Lock()
 	if g.stopped {
 		g.mu.Unlock()

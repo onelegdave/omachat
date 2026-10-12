@@ -103,6 +103,7 @@ ShellRoot {
   Timer {
     interval:200; running:true; repeat:true
     onTriggered: {
+      stop()
       try {
         if (root.step++ === 0) { panel.open(); return }
         // QtTest key events pump a nested event loop. Do not run this handler

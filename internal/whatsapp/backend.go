@@ -363,6 +363,11 @@ func (b *Backend) Start(ctx context.Context) error {
 	b.gen++
 	b.container = container
 	b.device = deviceStore
+	if deviceStore.ID != nil {
+		b.status.AccountIdentity = deviceStore.ID.ToNonAD().String()
+	} else {
+		b.status.AccountIdentity = ""
+	}
 	b.bindClientLocked(live, isPaired)
 	gen = b.gen
 	b.mu.Unlock()
@@ -520,6 +525,16 @@ func (b *Backend) Stop() {
 }
 
 func (b *Backend) initClientAndStoreLocked() error {
+	// Unpair/remote logout closed and detached the previous account's history.
+	// A fresh explicit pairing may use only a newly opened cache.
+	if b.historyStore == nil {
+		history, err := openHistoryStore(b.paths.WhatsAppHistoryFile(), b.historyCacheMB)
+		if err != nil {
+			b.log.Warn().Err(err).Msg("Could not open bounded WhatsApp history store")
+		} else {
+			b.historyStore = history
+		}
+	}
 	if b.client != nil {
 		return nil
 	}
@@ -542,6 +557,12 @@ func (b *Backend) initClientAndStoreLocked() error {
 	cli := whatsmeow.NewClient(deviceStore, waLog.Zerolog(b.log))
 	b.gen++
 	b.container = container
+	b.device = deviceStore
+	if deviceStore.ID != nil {
+		b.status.AccountIdentity = deviceStore.ID.ToNonAD().String()
+	} else {
+		b.status.AccountIdentity = ""
+	}
 	b.bindClientLocked(cli, deviceStore.ID != nil)
 	return nil
 }
@@ -780,7 +801,7 @@ func (b *Backend) Unpair(ctx context.Context) error {
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
 
-	cli, container, pairCancel, handlerID, paired, _ := b.retireGeneration(0, false)
+	cli, container, history, pairCancel, handlerID, paired, _ := b.retireGeneration(0, false)
 
 	if pairCancel != nil {
 		pairCancel()
@@ -803,7 +824,11 @@ func (b *Backend) Unpair(ctx context.Context) error {
 		_ = container.Close()
 	}
 
-	clearErr := b.paths.ClearWhatsAppSession()
+	var historyErr error
+	if history != nil {
+		historyErr = history.close()
+	}
+	clearErr := errors.Join(historyErr, b.paths.ClearWhatsAppSession())
 	statusErr := ""
 	if clearErr != nil {
 		b.log.Error().Err(clearErr).Msg("Failed to clear local WhatsApp session files")
@@ -826,7 +851,7 @@ func (b *Backend) Unpair(ctx context.Context) error {
 	return nil
 }
 
-func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, container *sqlstore.Container, pairCancel context.CancelFunc, handlerID uint32, paired bool, ok bool) {
+func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, container *sqlstore.Container, history *historyStore, pairCancel context.CancelFunc, handlerID uint32, paired bool, ok bool) {
 	b.mu.Lock()
 	if match && b.gen != expect {
 		b.mu.Unlock()
@@ -850,6 +875,7 @@ func (b *Backend) retireGeneration(expect uint64, match bool) (cli Client, conta
 	b.handlerID = 0
 	b.container = nil
 	b.device = nil
+	b.status.AccountIdentity = ""
 	b.convs = make(map[string]wire.Conversation)
 	b.order = nil
 	b.messages = make(map[string][]wire.Message)
@@ -864,7 +890,7 @@ func (b *Backend) applyRemoteLogout(gen uint64, reason string) {
 	b.sessionMu.Lock()
 	defer b.sessionMu.Unlock()
 
-	cli, container, pairCancel, handlerID, _, ok := b.retireGeneration(gen, true)
+	cli, container, history, pairCancel, handlerID, _, ok := b.retireGeneration(gen, true)
 	if !ok {
 		return
 	}
@@ -884,7 +910,11 @@ func (b *Backend) applyRemoteLogout(gen uint64, reason string) {
 	if reason != "" {
 		statusErr = "Logged out from phone (" + reason + "). Select Use a QR code to pair again."
 	}
-	if err := b.paths.ClearWhatsAppSession(); err != nil {
+	var historyErr error
+	if history != nil {
+		historyErr = history.close()
+	}
+	if err := errors.Join(historyErr, b.paths.ClearWhatsAppSession()); err != nil {
 		b.log.Error().Err(err).Msg("Failed to clear local WhatsApp session files after remote logout")
 		statusErr = "Logged out from phone, but local WhatsApp files could not be removed. Pairing is blocked until they can be deleted."
 		b.mu.Lock()
@@ -1676,6 +1706,18 @@ func (b *Backend) handleEvent(evt any) {
 
 func (b *Backend) handleEventFor(gen uint64, evt any) {
 	switch e := evt.(type) {
+	case *events.PairSuccess:
+		// PairSuccess carries an immutable identity. Do not poll Store.ID while
+		// whatsmeow's pairing goroutine may be assigning it.
+		b.mu.Lock()
+		if b.gen != gen {
+			b.mu.Unlock()
+			return
+		}
+		b.status.AccountIdentity = e.ID.ToNonAD().String()
+		b.mu.Unlock()
+		b.publishStatus()
+
 	case *events.Connected:
 		b.mu.Lock()
 		if b.gen != gen {

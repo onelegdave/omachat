@@ -40,6 +40,13 @@ on the official site and pair again.
 - Contact and group avatars cached privately in the background.
 - Mark-as-read support.
 
+Opening an unread encrypted thread can acknowledge it even when its older
+messages are unavailable. Read acknowledgments are retained in the local
+conversation cache across helper restarts. Older sync snapshots do not move
+the thread's latest activity backward, and a read acknowledgment does not
+clear activity newer than its requested timestamp. A failed acknowledgment
+leaves the unread state intact and shows an error in the current thread.
+
 Calling is not available. Attachment downloads and uploads are limited to 25 MB
 each; avatars are limited to 5 MB. Media downloads remain lazy, so opening a
 conversation does not download its entire attachment history.
@@ -64,6 +71,7 @@ bug reports.
 | --- | --- |
 | Session cookies | `~/.local/share/omachat/messenger_session.json` |
 | Encrypted-device state | `~/.local/share/omachat/messenger.db` |
+| Conversation cache and read timestamps | `~/.local/share/omachat/messenger_store.json` |
 | Media and avatar cache | `~/.cache/omachat/media_messenger/` |
 | Browser-profile choice | `~/.local/share/omachat/config.json` |
 

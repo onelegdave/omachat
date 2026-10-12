@@ -108,7 +108,7 @@ Item {
     return servicesConfigLoaded && enabledServices.indexOf(net) >= 0
   }
 
-  function applyServiceConfig(config) {
+  function applyServiceConfig(config, notificationRevision) {
     if (config && config.restartRequired === true) return false
     if (!config || !Array.isArray(config.enabledServices)) {
       servicesError = "Rebuild the helper to use service selection."
@@ -133,13 +133,15 @@ Item {
   function loadServiceConfig() {
     if (!connected || (savingServices && !restartingServices)) return
     var generation = servicesGeneration
+    var connection = connectionGeneration
+    var notificationRevision = notificationManager.configRevision
     call("config", null, function(ok, res) {
-      if ((savingServices && !restartingServices) || generation !== servicesGeneration) return
+      if (connection !== connectionGeneration || (savingServices && !restartingServices) || generation !== servicesGeneration) return
       if (!ok) { servicesError = String(res); return }
       if (res && res.restartRequired === true) return
       if (restartingServices && connectionGeneration <= restartConnectionGeneration) return
       var expected=pendingServiceChoice
-      var applied=applyServiceConfig(res)
+      var applied=applyServiceConfig(res, notificationRevision)
       if (applied) enabledServices.forEach(function(net) { root.loadConversations(net) })
       if (restartingServices && applied) {
         var matches=expected && JSON.stringify(expected.slice().sort()) === JSON.stringify(enabledServices.slice().sort())
@@ -328,8 +330,10 @@ Item {
     buildLog = ""
     building = true
     helperState = "building"
-    mkdirBin.running = false
-    mkdirBin.running = true
+    buildProc.command = ["python3", root.pluginDir + "/scripts/updates.py", "build"]
+    buildProc.running = false
+    buildProc.running = true
+    buildStartTimeout.restart()
   }
 
   function startHelper() {
@@ -375,23 +379,6 @@ Item {
     onExited: function(code) {
       root.goPresent = code === 0
       root.checkHelper()
-    }
-  }
-
-  Process {
-    id: mkdirBin
-    command: ["/usr/bin/mkdir", "-p", root.pluginDir + "/bin"]
-    onExited: function(code) {
-      if (code !== 0) {
-        root.building = false
-        root.helperState = "missing"
-        root.helperError = "Could not create " + root.pluginDir + "/bin"
-        return
-      }
-      buildProc.command = ["python3", root.pluginDir + "/scripts/updates.py", "build"]
-      buildProc.running = false
-      buildProc.running = true
-      buildStartTimeout.restart()
     }
   }
 

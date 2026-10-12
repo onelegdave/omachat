@@ -150,6 +150,12 @@ type Status struct {
 	Error       string `json:"error,omitempty"`
 	SelfPhone   string `json:"selfPhone,omitempty"`
 	LastSyncSec int64  `json:"lastSyncSec,omitempty"`
+	// Inbox clients bind durable feedback to an account, not a connection.
+	// This contains a provider account ID only, never a credential or store path.
+	AccountIdentity string `json:"accountIdentity,omitempty"`
+	// BoundedRead advertises markRead with ThroughTimestamp. Old helpers must
+	// not be assumed to enforce an unknown optional field.
+	BoundedRead bool `json:"boundedRead,omitempty"`
 }
 
 // Conversation is a flattened gmproto.Conversation, carrying only what the
@@ -445,6 +451,31 @@ type SetUiScaleParams struct {
 	Scale float64 `json:"scale"`
 }
 
+type SetUnifiedInboxPreferenceParams struct {
+	Enabled bool `json:"enabled"`
+}
+
+type SetChatViewParams struct {
+	LastService      *string `json:"lastService,omitempty"`
+	SidebarCollapsed *bool   `json:"sidebarCollapsed,omitempty"`
+	ConversationID   *string `json:"conversationID,omitempty"`
+}
+
+type SetNotificationsParams struct {
+	Enabled  *bool `json:"enabled,omitempty"`
+	Previews *bool `json:"previews,omitempty"`
+}
+
+type NotifyMessageParams struct {
+	Message          Message `json:"message"`
+	ConversationName string  `json:"conversationName,omitempty"`
+}
+
+type NotificationTarget struct {
+	Network        string `json:"network"`
+	ConversationID string `json:"conversationID"`
+}
+
 type SetWindowPreferencesParams struct {
 	AlwaysPopout bool   `json:"alwaysPopout"`
 	PopoutMode   string `json:"popoutMode"`
@@ -498,8 +529,9 @@ type PickImageResult struct {
 }
 
 type MarkReadParams struct {
-	ConversationID string `json:"conversationID"`
-	MessageID      string `json:"messageID"`
+	ConversationID   string `json:"conversationID"`
+	MessageID        string `json:"messageID"`
+	ThroughTimestamp int64  `json:"throughTimestamp,omitempty"`
 }
 
 type MediaParams struct {

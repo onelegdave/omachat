@@ -10,6 +10,7 @@ It builds on the work of the following projects and their contributors.
 | [whatsmeow](https://github.com/tulir/whatsmeow) | WhatsApp protocol and linked-device client | [MPL-2.0](vendor/go.mau.fi/whatsmeow/LICENSE) |
 | [gotd/td](https://github.com/gotd/td) | Telegram MTProto client | [MIT](vendor/github.com/gotd/td/LICENSE), copyright Aleksandr Razumov |
 | [mautrix-meta](https://github.com/mautrix/meta) | Facebook Messenger client, including encrypted conversations | [GNU AGPL v3](vendor/go.mau.fi/mautrix-meta/LICENSE) and [upstream exceptions](vendor/go.mau.fi/mautrix-meta/LICENSE.exceptions) |
+| [Emojibase](https://github.com/milesj/emojibase), [Unicode](https://www.unicode.org/), [CLDR](https://cldr.unicode.org/), and [JoyPixels](https://github.com/joypixels/emoji-toolkit) | Offline English emoji names, keywords, and aliases; no third-party artwork | [Dataset provenance and retained MIT/Unicode notices](docs/emoji-data.md) |
 | [go-sqlite3](https://github.com/mattn/go-sqlite3) | WhatsApp device database adapter | [MIT](vendor/github.com/mattn/go-sqlite3/LICENSE), copyright Yasuhiro Matsumoto; bundled SQLite notices retained upstream |
 | [Omarchy](https://github.com/basecamp/omarchy) | Shell lifecycle, native UI components, and theme system | Supplied by the user's Omarchy installation |
 | [Quickshell](https://quickshell.org/) and [Qt](https://www.qt.io/) | QML rendering and desktop integration | Supplied by the user's desktop installation |
@@ -30,7 +31,31 @@ remain alongside their code in [vendor/](vendor/). The inventory below links
 the retained notices directly.
 
 Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
-([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex.
+([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex and Claude.
+
+## Community contributors
+
+Thank you to the people contributing code, testing, and useful bug reports.
+Contributions prepared on a development branch are not a released feature until
+they complete verification and release review.
+
+| Contributor | Contribution | Current status |
+| --- | --- | --- |
+| [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs) | Original [empty-thread unread fix](https://github.com/onelegdave/omachat/pull/2), [Git-independent build fix](https://github.com/onelegdave/omachat/pull/3), and [Messenger read-state fix](https://github.com/onelegdave/omachat/pull/5); [automatic pop-out](https://github.com/onelegdave/omachat/pull/7); proposed [Signal support](https://github.com/onelegdave/omachat/pull/4), [conversation creation](https://github.com/onelegdave/omachat/pull/6) | Build, unread/read-state, and pop-out changes included in v0.5.0 with original commit authorship; Signal and conversation creation under review |
+| [Alex Vlissidis (@alexvlis)](https://github.com/alexvlis) | [Chat restoration, sidebar controls, desktop notifications, and Telegram photos](https://github.com/onelegdave/omachat/pull/8), including reopening at the latest messages | Included in v0.5.0 with original commit authorship |
+| [Matthias MB (@Hizoul)](https://github.com/Hizoul) | [Combined contribution branch and additional keyboard, emoji, history, photo, and unified-inbox work](https://github.com/onelegdave/omachat/pull/9); [Signal testing feedback](https://github.com/onelegdave/omachat/pull/4#issuecomment-5893757340) | Keyboard, offline emoji, bounded WhatsApp history/photos, and optional unified inbox included in v0.5.0 with original authorship; shared work remains credited to its original contributors |
+| [@ozz1ee-dev](https://github.com/ozz1ee-dev) | [Detailed build-loop reproduction and proposed staging approach](https://github.com/onelegdave/omachat/issues/1) | Report informed the build fix included in v0.5.0 |
+| [HANCORE-linux](https://github.com/HANCORE-linux) | [Native Wayland clipboard resource-exhaustion finding during Marketplace review](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6104289546) | Report informed the bounded clipboard paste correction; pending release review |
+
+Original contributor commits are retained in the integration history. Release
+notes name contributors whose work is included in each release. OneLegDave
+remains the maintainer. Codex assists with review, integration, and verification;
+historical Claude assistance and upstream copyright notices remain credited.
+
+The maintainer reports successful fresh-install use with Google Messages disabled.
+Google Messages was not tested in this acceptance pass. The unified-inbox status
+quirk found in that pass is covered by enabled-service and native-panel fixtures.
+This feedback does not establish every provider or recovery scenario.
 
 ## Vendored license inventory
 

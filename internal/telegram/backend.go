@@ -561,7 +561,12 @@ func mergeHistory(existing, incoming []wire.Message) []wire.Message {
 func (b *Backend) Status() wire.Status {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.status
+	status := b.status
+	status.BoundedRead = true
+	if identity, ok := b.client.(interface{ AccountIdentity() string }); ok {
+		status.AccountIdentity = identity.AccountIdentity()
+	}
+	return status
 }
 
 func (b *Backend) recountUnreadLocked() {
@@ -932,6 +937,33 @@ func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 			return err
 		}
 	}
+	// A bounded Inbox acknowledgement must name a message actually loaded by
+	// this helper. Capture the visible cache before the network call; a newer
+	// arrival during it must keep the local unread flag as well as provider state.
+	known := map[string]bool{}
+	var before wire.Conversation
+	newerAlreadyKnown := false
+	if p.ThroughTimestamp != 0 {
+		if p.ThroughTimestamp < 0 || messageID <= 0 {
+			return errors.New("invalid read boundary")
+		}
+		b.mu.RLock()
+		before = b.convs[p.ConversationID]
+		found := false
+		for _, message := range b.messages[p.ConversationID] {
+			known[message.ID] = true
+			if id, err := parseTelegramMessageID(message.ID); err == nil && id > messageID {
+				newerAlreadyKnown = true
+			}
+			if message.ID == p.MessageID && message.Timestamp == p.ThroughTimestamp {
+				found = true
+			}
+		}
+		b.mu.RUnlock()
+		if !found || before.Timestamp > p.ThroughTimestamp {
+			return errors.New("stale read boundary")
+		}
+	}
 	if err := syncClient.MarkRead(ctx, conversationID, messageID); err != nil {
 		return err
 	}
@@ -941,7 +973,18 @@ func (b *Backend) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 		return context.Canceled
 	}
 	if conv, exists := b.convs[p.ConversationID]; exists {
-		conv.Unread = false
+		clear := true
+		if p.ThroughTimestamp != 0 {
+			clear = !newerAlreadyKnown && conv.Timestamp == before.Timestamp && conv.Preview == before.Preview
+			for _, message := range b.messages[p.ConversationID] {
+				if !known[message.ID] {
+					clear = false
+				}
+			}
+		}
+		if clear {
+			conv.Unread = false
+		}
 		b.convs[p.ConversationID] = conv
 		if b.publish != nil {
 			b.publish(wire.Event{Event: wire.EventConversation, Network: wire.NetworkTelegram, Data: conv})

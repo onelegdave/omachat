@@ -34,3 +34,33 @@ func TestServeChmodFailure(t *testing.T) {
 		t.Fatalf("socket file should have been removed, stat err: %v", err)
 	}
 }
+
+func TestStaleSocketNeverDeletesRegularFileOrSymlink(t *testing.T) {
+	for _, link := range []bool{false, true} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "daemon.sock")
+		target := filepath.Join(dir, "keep")
+		if err := os.WriteFile(target, []byte("synthetic store"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if link {
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if err := os.WriteFile(path, []byte("synthetic store"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := removeStaleSocket(path); err == nil {
+			t.Fatal("accepted a non-socket")
+		}
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatal("removed a non-socket")
+		}
+		got, err := os.ReadFile(target)
+		if err != nil || string(got) != "synthetic store" {
+			t.Fatal("changed target")
+		}
+	}
+}

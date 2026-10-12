@@ -377,6 +377,41 @@ func (c *ConfigStore) SetUiScale(scale float64) error {
 	})
 }
 
+// SetChatView merges only the supplied preferences so switching one service
+// cannot overwrite another service's remembered conversation.
+func (c *ConfigStore) SetChatView(network string, conversationID, lastService *string, sidebarCollapsed *bool) error {
+	knownService := func(service string) bool {
+		return service == "gmessages" || service == "whatsapp" || service == "telegram" || service == "messenger"
+	}
+	if lastService != nil && !knownService(*lastService) {
+		return errors.New("unknown last service")
+	}
+	if conversationID != nil && (!knownService(network) || len(*conversationID) > 1024) {
+		return errors.New("invalid remembered conversation")
+	}
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		if lastService != nil {
+			cfg["lastService"] = *lastService
+			loaded.LastService = *lastService
+		}
+		if sidebarCollapsed != nil {
+			cfg["sidebarCollapsed"] = *sidebarCollapsed
+			loaded.SidebarCollapsed = *sidebarCollapsed
+		}
+		if conversationID != nil {
+			if loaded.LastConversations == nil {
+				loaded.LastConversations = make(map[string]string)
+			}
+			if *conversationID == "" {
+				delete(loaded.LastConversations, network)
+			} else {
+				loaded.LastConversations[network] = *conversationID
+			}
+			cfg["lastConversations"] = loaded.LastConversations
+		}
+	})
+}
+
 // SetWindowPreferences persists how OmaChat opens from the bar.
 func (c *ConfigStore) SetWindowPreferences(alwaysPopout bool, mode string) error {
 	if mode != "floating" && mode != "tiled" {

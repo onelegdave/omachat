@@ -152,10 +152,12 @@ def build():
             if source_id() != source or installed() != release:
                 raise RuntimeError('Source changed during the build. Please rebuild again.')
             os.chmod(name, 0o755)
-            os.replace(name, target / 'omachatd')
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
+            if target.is_dir():
+                os.replace(name, target / 'omachatd')
+            else:
+                # First install publishes the directory and complete helper at
+                # once; creating an empty bin earlier would also trigger reload.
+                os.replace(staged_bin, target)
     return {'sourceID': source, 'installed': release}
 
 

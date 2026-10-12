@@ -5,7 +5,7 @@ and an experimental Signal integration.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.4.4**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.4.4).
+Current stable release: **0.5.2**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.2).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -23,6 +23,18 @@ Never include private conversations or account details in public screenshots.
 
 These demo captures use stock theme base colors with default control styling.
 See the [gallery and reproduction details](docs/screenshots/README.md).
+
+</details>
+
+<details>
+<summary>Unified inbox and offline emoji search</summary>
+
+![Optional unified inbox with fictional WhatsApp, Telegram, and Messenger conversations](docs/screenshots/unified-inbox.png)
+
+![Offline emoji search in a fictional Messenger conversation](docs/screenshots/emoji-search.png)
+
+These captures use fictional conversations and simulated connection states.
+The unified example has Google Messages disabled.
 
 </details>
 
@@ -69,6 +81,14 @@ the helper starts automatically on success, or the panel displays a build error.
 The shell owns the helper as a child process. There is no systemd unit,
 installer hook, or automatic privileged step. Only the explicit dependency
 Install action can request sudo in a terminal, after your confirmation.
+
+Text fields paste through a separate, bounded clipboard reader. Ctrl+V,
+Shift+Insert, the Paste menu action, and middle-click use the same protection.
+A paste must finish within 1.5 seconds and contain at most 64 KiB of UTF-8
+text; incomplete, oversized, or invalid transfers leave the field unchanged.
+Search and credential fields also have smaller length limits. Pasting requires
+Python 3 and `wl-paste` from wl-clipboard; missing tools produce a visible error.
+See [clipboard safety and verification limits](docs/clipboard-safety.md).
 
 See [dependencies and optional features](docs/dependencies.md) for the full
 tool list. Availability varies by desktop; do not assume a tool is installed.
@@ -269,6 +289,11 @@ See [Contributing](CONTRIBUTING.md) for prerequisites and verification,
 [Security](SECURITY.md) for reporting, and the [documentation index](docs/README.md)
 for service guides, release notes, and historical reviews.
 
+OmaChat 0.4.4 is listed in the [Omarchy Marketplace](https://omarchyplugins.com/plugin.html?id=onelegdave.omachat)
+at snapshot `dd77f2ca16e7c701851450578fd9ec51b7eba1a2`. Development changes
+require fresh validation and marketplace maintainer approval before that
+snapshot is updated. See [marketplace readiness](docs/marketplace-readiness.md)
+for the exact snapshot, review capabilities, and their limits.
 
 ## Support my work
 
@@ -277,7 +302,14 @@ I build OmaChat as a free, open-source project. If you find it useful, you can [
 ## Credits and license
 
 Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
-([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex.
+([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)).
+
+Community contributors include [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs),
+[Alex Vlissidis (@alexvlis)](https://github.com/alexvlis),
+[Matthias MB (@Hizoul)](https://github.com/Hizoul), [@ozz1ee-dev](https://github.com/ozz1ee-dev),
+and [HANCORE-linux](https://github.com/HANCORE-linux), who reported the clipboard safety issue.
+See [community contributions and their review status](CREDITS.md#community-contributors).
+Codex and Claude have provided AI assistance with code and reviews.
 
 The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin).
 Google Messages uses [mautrix libgm](https://github.com/mautrix/gmessages),

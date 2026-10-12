@@ -1,10 +1,6 @@
 # Working on OmaChat
 
-Created and maintained by OneLegDave. Report issues with your Omarchy version,
-whether `omachatd` was running, and the action that failed. Never put real
-names, message text, phone numbers, account IDs, cookies, tokens, API keys,
-session files, databases, or screenshots of real conversations in public
-diagnostics. Reproduce visual problems with invented content when possible.
+Created and maintained by OneLegDave. Report issues with your Omarchy version, whether `omachatd` was running, and the action that failed. Strip phone numbers, message bodies, cookies, and API credentials from public diagnostics.
 
 ## Verify a change
 
@@ -17,8 +13,16 @@ omarchy plugin validate .
 `make helper` and the panel Build helper button compile `omachatd` with
 `CGO_ENABLED=1` through `scripts/updates.py build`. This stamps a source
 fingerprint for the running-helper check and replaces the executable only
-after a successful offline build. Direct `go build` remains useful for
+after a successful offline build. Go's automatic VCS stamping is disabled,
+so installed copies do not need usable Git metadata; the helper retains its
+release version and source fingerprint. Direct `go build` remains useful for
 development, but an unstamped helper will prompt for a rebuild in the UI.
+Builds use a private, hidden staging directory beside the plugin checkout and
+keep their lock under `$XDG_STATE_HOME/omachat/` (default `~/.local/state/omachat/`).
+The shell ignores hidden sibling directories. Only the completed executable,
+or the complete `bin/` directory on first install, is renamed into the plugin.
+The checkout's parent must be writable and on the same filesystem as `bin/`
+for atomic installation. A failed build or rename preserves the old helper.
 WhatsApp session storage uses `github.com/mattn/go-sqlite3`,
 which needs a C compiler (`gcc` or `clang`). The plugin does not install Go
 or a C toolchain automatically.
@@ -34,6 +38,19 @@ the app so the user can choose whether to install them. Keep all three
 [service guides](docs/README.md) aligned with actual supported behavior.
 
 ## Release
+
+Keep original contributor authorship when integrating community commits. Record
+each contributor's actual work in [CREDITS.md](CREDITS.md#community-contributors),
+link the originating pull request or issue, and thank included contributors in
+the release notes. Shared code in a combined PR remains credited to its original
+contributors. Keep proposed features visibly separate from shipped features.
+
+`make test-ui-headless` runs JavaScript/Python tests and thirteen real QML fixtures
+using offscreen software rendering and isolated settings, data, and D-Bus.
+It needs the already installed `qs` and `dbus-run-session` commands; it installs
+nothing. This subset does not replace `make test-ui` in an isolated Wayland
+session for native panel, keyboard, pop-out, unpair, build, upgrade, and connection
+acceptance. Never count a pass marker followed by a crash as a successful test.
 
 1. Keep the default branch release-ready: the native Omarchy updater fetches
    its HEAD, not the latest GitHub Release tag. Prepare release changes together

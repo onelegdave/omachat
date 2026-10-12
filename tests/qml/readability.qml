@@ -99,7 +99,7 @@ ShellRoot {
         root.check(Model.contrastRatio(page.item.foreground, Color.popups.background) >= 4.5,"page foreground contrast")
         root.inspect(page.item)
         if(root.frame % 4 >= 2) {
-          var title=root.findText(page.item,root.frame % 4 === 2 ? "Dependencies and User Choice" : "Upstream Credits and Licenses")
+          var title=root.findText(page.item,root.frame % 4 === 2 ? "Dependencies and User Choice" : "Contributors, Upstream Credits, and Licenses")
           root.check(!!title,"settings section exists")
           page.item.jumpTo(title.parent)
         }

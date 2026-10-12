@@ -90,9 +90,12 @@ Flickable {
   }
 
   function load() {
-    if (!service) return
+    if (!service || service.connected === false || savingWindowPreferences || savingEmojiSearchPreference || savingUnifiedInboxPreference || savingHistoryPreference) return
+    var target = service
+    var generation = ++windowRequestGeneration
+    var revision = preferenceRevision
     service.call("config", null, function(ok, res) {
-      if (!ok || !res) return
+      if (root.service !== target || generation !== root.windowRequestGeneration || revision !== root.preferenceRevision || !ok || !res) return
       root.telegramConfigured = res.telegramConfigured === true
       root.telegramApiId = Number(res.telegramApiId) || 0
       var s = Number(res.uiScale)
@@ -123,17 +126,27 @@ Flickable {
   }
 
   function saveWindowPreferences(always, mode) {
-    if (!service || savingWindowPreferences) return
+    if (!service || service.connected === false || savingWindowPreferences) return
+    if (mode !== "floating" && mode !== "tiled") return
+    var target = service
+    var generation = ++windowRequestGeneration
+    preferenceRevision++
     savingWindowPreferences = true
     windowStatusText = ""
     service.call("setWindowPreferences", { alwaysPopout: always, popoutMode: mode }, function(ok, res) {
+      if (root.service !== target || generation !== root.windowRequestGeneration) return
       root.savingWindowPreferences = false
       if (!ok) {
         root.windowStatusText = String(res)
         root.load()
         return
       }
-      root.alwaysPopout = res && res.alwaysPopout === true
+      if (!res || typeof res.alwaysPopout !== "boolean"
+          || (res.popoutMode !== "floating" && res.popoutMode !== "tiled")) {
+        root.windowStatusText = "Window preferences could not be confirmed. Refresh Settings before retrying."
+        return
+      }
+      root.alwaysPopout = res.alwaysPopout === true
       root.popoutMode = res && res.popoutMode === "tiled" ? "tiled" : "floating"
       root.windowPreferencesSaved(root.alwaysPopout, root.popoutMode)
     }, "gmessages")
@@ -213,7 +226,20 @@ Flickable {
   }
 
   Component.onCompleted: load()
-  onServiceChanged: load()
+  function retireWindowRequests() {
+    windowRequestGeneration++
+    preferenceRevision++
+    emojiPreferenceGeneration++; unifiedPreferenceGeneration++; historyPreferenceGeneration++
+    savingEmojiSearchPreference = false; savingUnifiedInboxPreference = false; savingHistoryPreference = false
+    savingWindowPreferences = false
+    windowStatusText = ""
+  }
+  onServiceChanged: { retireWindowRequests(); load() }
+  Connections {
+    target: root.service
+    ignoreUnknownSignals: true
+    function onConnectedChanged() { root.retireWindowRequests(); root.load() }
+  }
 
   Column {
     id: col
@@ -311,6 +337,175 @@ Flickable {
       fontFamily: root.fontFamily
       uiScale: root.uiScale
       foreground: root.copyColor
+    }
+
+    Column {
+      id: unifiedInboxSection
+      objectName: "unifiedInboxSection"
+      width: parent.width
+      spacing: Style.space(8)
+      Text {
+        width: parent.width
+        text: "Inbox"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+      Item {
+        id: unifiedInboxSwitch
+        objectName: "unifiedInboxSwitch"
+        width: parent.width
+        implicitHeight: Math.max(unifiedInboxLabels.implicitHeight, unifiedInboxToggle.implicitHeight)
+        enabled: !root.savingUnifiedInboxPreference
+        activeFocusOnTab: true
+        opacity: enabled ? 1 : 0.45
+        Keys.onReturnPressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Keys.onEnterPressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Keys.onSpacePressed: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        Column {
+          id: unifiedInboxLabels
+          anchors.left: parent.left
+          anchors.right: unifiedInboxToggle.left
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+          Text {
+            width: parent.width
+            text: "Unified inbox"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Show all enabled services in one conversation list. Toggle with Ctrl+Shift+A."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.caption)
+          }
+        }
+        ToggleSwitch {
+          id: unifiedInboxToggle
+          objectName: "unifiedInboxToggle"
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          checked: root.unifiedInboxEnabled
+          busy: root.savingUnifiedInboxPreference
+          interactive: unifiedInboxSwitch.enabled
+          hasCursor: unifiedInboxSwitch.activeFocus
+          foreground: root.foreground
+          accent: root.accentColor
+          onToggled: root.saveUnifiedInboxPreference(!root.unifiedInboxEnabled)
+        }
+      }
+      Text {
+        width: parent.width
+        visible: root.unifiedInboxPreferenceStatusText !== ""
+        wrapMode: Text.Wrap
+        text: root.unifiedInboxPreferenceStatusText
+        color: root.urgentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
+      }
+    }
+
+    KeyboardShortcutsView {
+      id: keyboardSection
+      objectName: "keyboardShortcutsSection"
+      width: parent.width
+      service: root.service
+      overrides: root.keyboardShortcuts
+      foreground: root.copyColor
+      mutedColor: root.mutedColor
+      accentColor: root.accentColor
+      errorColor: root.urgentColor
+      fontFamily: root.fontFamily
+      fontSize: fs(Style.font.body)
+      onSaved: function(shortcuts) {
+        root.keyboardShortcuts = shortcuts
+        root.keyboardShortcutsSaved(shortcuts)
+      }
+    }
+
+    Column {
+      id: emojiPickerSection
+      objectName: "emojiPickerSection"
+      width: parent.width
+      spacing: Style.space(8)
+
+      Text {
+        width: parent.width
+        text: "Emoji picker"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+        font.bold: true
+      }
+
+      Item {
+        id: keepPreviousEmojiSearchTextSwitch
+        objectName: "keepPreviousEmojiSearchTextSwitch"
+        width: parent.width
+        implicitHeight: Math.max(emojiSearchLabels.implicitHeight, emojiSearchToggle.implicitHeight)
+        enabled: !root.savingEmojiSearchPreference
+        activeFocusOnTab: true
+        opacity: enabled ? 1 : 0.45
+        Keys.onReturnPressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        Keys.onEnterPressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        Keys.onSpacePressed: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+
+        Column {
+          id: emojiSearchLabels
+          anchors.left: parent.left
+          anchors.right: emojiSearchToggle.left
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+
+          Text {
+            width: parent.width
+            text: "Keep previous emoji search text"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+          }
+
+          Text {
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: "Keep and reapply the last emoji search when opening the picker."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.caption)
+          }
+        }
+
+        ToggleSwitch {
+          id: emojiSearchToggle
+          objectName: "keepPreviousEmojiSearchTextToggle"
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          checked: root.keepPreviousEmojiSearchText
+          busy: root.savingEmojiSearchPreference
+          interactive: keepPreviousEmojiSearchTextSwitch.enabled
+          hasCursor: keepPreviousEmojiSearchTextSwitch.activeFocus
+          foreground: root.foreground
+          accent: root.accentColor
+          onToggled: root.saveEmojiSearchPreference(!root.keepPreviousEmojiSearchText)
+        }
+      }
+
+      Text {
+        width: parent.width
+        visible: root.emojiSearchPreferenceStatusText !== ""
+        wrapMode: Text.Wrap
+        text: root.emojiSearchPreferenceStatusText
+        color: root.urgentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
+      }
     }
 
     Column {
@@ -720,6 +915,15 @@ Flickable {
       color: Color.popups.border
     }
 
+    NotificationSettings {
+      id: notificationsSection
+      width: parent.width
+      service: root.service
+      fontFamily: root.fontFamily
+      uiScale: root.uiScale
+      foreground: root.copyColor
+    }
+
     // Section 3: Dependencies and User Choice
     Column {
       id: toolsSection
@@ -976,8 +1180,10 @@ Flickable {
             font.pixelSize: fs(Style.font.body)
           }
 
-          TextField {
+          SafeTextField {
             id: tgIdField
+            maximumLength: 10
+            pasteAllowed: !root.savingTelegram
             objectName: "telegramApiIdField"
             width: parent.width
             placeholderText: root.telegramConfigured ? ("Configured API ID: " + root.telegramApiId) : "Enter numeric api_id (e.g. 1234567)"
@@ -1003,15 +1209,16 @@ Flickable {
             font.pixelSize: fs(Style.font.body)
           }
 
-          TextField {
+          SafePasswordField {
             id: tgHashField
+            maximumLength: 32
+            pasteAllowed: !root.savingTelegram
             objectName: "telegramApiHashField"
             width: parent.width
             placeholderText: root.telegramConfigured ? "Replacement api_hash (leave blank to keep current)" : "Enter 32-character hex api_hash"
             placeholderTextColor: root.mutedColor
             font.pixelSize: fs(Style.font.body)
             foreground: root.foreground
-            password: true
             text: root.telegramHashDraft
             onTextChanged: root.telegramHashDraft = text
             onAccepted: root.saveTelegramCredentials()
@@ -1080,7 +1287,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "Upstream Credits and Licenses"
+        text: "Contributors, Upstream Credits, and Licenses"
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.heading)
@@ -1090,7 +1297,7 @@ Flickable {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
-        text: "Original OmaChat code is MIT licensed. Included third-party code retains its own terms, including AGPL terms for libgm and mautrix-meta and the MPL-2.0 license for whatsmeow."
+        text: "OmaChat v0.4.3 and later is AGPL-3.0-or-later. Earlier releases and Marc Ford's adapted code retain their MIT grants. Included third-party code retains its own terms, including AGPL terms for libgm and mautrix-meta and the MPL-2.0 license for whatsmeow."
         color: root.copyColor
         font.family: root.fontFamily
         font.pixelSize: fs(Style.font.body)
@@ -1100,6 +1307,25 @@ Flickable {
       Column {
         width: parent.width
         spacing: Style.space(8)
+
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "Community Contributors"
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "Andrew Birklid (@tumbleweedlabs): unread and Messenger read-state fixes, Git-independent builds, and automatic pop-out. Alex Vlissidis (@alexvlis): chat restoration, sidebar controls, notifications, and Telegram photos. Matthias MB (@Hizoul): keyboard navigation, offline emoji search, WhatsApp history/photos, and the optional unified inbox. @ozz1ee-dev: detailed build-loop reproduction. HANCORE-linux: native clipboard safety report during Marketplace review. Original authorship and upstream notices are preserved; see All credits and licenses for PR links and review status."
+          color: root.mutedColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          lineHeight: 1.25
+        }
 
         Column {
           width: parent.width

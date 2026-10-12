@@ -34,7 +34,23 @@ func (d *Daemon) Status() wire.Status {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.status.Unread = d.unreadCountLocked()
-	return d.status
+	status := d.status
+	status.AccountIdentity = status.SelfPhone
+	if status.AccountIdentity == "" {
+		status.AccountIdentity = pairedPhoneIdentity(d.client)
+	}
+	return status
+}
+
+// pairedPhoneIdentity names the paired phone, stable across restarts because the
+// pairing is stored, so a client can keep per-account state (Patchbay's triage
+// corrections) for Google Messages. SelfPhone is never learned for this service.
+// Empty until paired.
+func pairedPhoneIdentity(c *libgm.Client) string {
+	if c == nil || c.AuthData == nil || c.AuthData.Mobile.GetSourceID() == "" {
+		return ""
+	}
+	return "gmessages:" + c.AuthData.Mobile.GetSourceID()
 }
 
 // Conversations returns the cached conversation list, newest first.
