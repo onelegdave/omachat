@@ -12,7 +12,7 @@ ShellRoot {
   function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
   function configure(value) { provider.setText(JSON.stringify(value)) }
   // Put text on Qt's in-process offscreen clipboard, never the desktop's.
-  function seedNative(value) { other.text = value; other.selectAll(); other.copy(); other.text = "" }
+  function seedNative(value) { nativeProbe.text = value; nativeProbe.selectAll(); nativeProbe.copy(); nativeProbe.text = "" }
   function noNative(value) { return value.indexOf("NATIVE") < 0 }
   FileView { id: provider; path: Quickshell.env("OMACHAT_CLIPBOARD_FIXTURE"); atomicWrites: true }
   FloatingWindow {

@@ -11,7 +11,7 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description="Run isolated native QML fixtures")
-parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox", "clipboard", "clipboard-unavailable", "clipboard-watchdog"])
+parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox", "clipboard", "clipboard-unavailable", "clipboard-watchdog", "safe-fields"])
 args = parser.parse_args()
 go_cache = subprocess.check_output(["go", "env", "GOCACHE"], text=True,
                                  env=dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")).strip()
@@ -65,6 +65,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     (config / "clipboard-hang-mode").write_text("graceful")
     fixture_envs = {
         "clipboard": clipboard_env,
+        "safe-fields": clipboard_env,
         "clipboard-unavailable": missing_clipboard_env,
         "clipboard-watchdog": dict(env, PATH=str(hung_tools) + os.pathsep + env["PATH"],
                                    OMACHAT_CLIPBOARD_HANG_MODE=str(config / "clipboard-hang-mode"),
@@ -92,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
                                 ("media", "OMACHAT_MEDIA"), ("review", "OMACHAT_REVIEW"),
                                 ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"),
                                 ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"), ("avatar", "OMACHAT_AVATAR"),
-                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("clipboard", "OMACHAT_CLIPBOARD"), ("clipboard-unavailable", "OMACHAT_CLIPBOARD_UNAVAILABLE"), ("clipboard-watchdog", "OMACHAT_CLIPBOARD_WATCHDOG")):
+                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("clipboard", "OMACHAT_CLIPBOARD"), ("clipboard-unavailable", "OMACHAT_CLIPBOARD_UNAVAILABLE"), ("clipboard-watchdog", "OMACHAT_CLIPBOARD_WATCHDOG"), ("safe-fields", "OMACHAT_SAFE_FIELDS")):
             (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
             result = subprocess.run([qs_executable, "-p", str(config)], env=fixture_envs.get(fixture, env), text=True,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)

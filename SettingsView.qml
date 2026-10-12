@@ -1059,7 +1059,7 @@ Flickable {
             font.pixelSize: fs(Style.font.body)
           }
 
-          SafeTextField {
+          SafePasswordField {
             id: tgHashField
             maximumLength: 32
             pasteAllowed: !root.savingTelegram
@@ -1069,7 +1069,6 @@ Flickable {
             placeholderTextColor: root.mutedColor
             font.pixelSize: fs(Style.font.body)
             foreground: root.foreground
-            password: true
             text: root.telegramHashDraft
             onTextChanged: root.telegramHashDraft = text
             onAccepted: root.saveTelegramCredentials()

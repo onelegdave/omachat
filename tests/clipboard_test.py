@@ -173,10 +173,20 @@ class ClipboardTest(unittest.TestCase):
 
     def test_all_product_inputs_use_guarded_component(self):
         import re
+        native = r"\b(?:TextField|TextInput|TextArea|TextEdit)\s*\{"
         for path in REPO.glob("*.qml"):
-            if path.name == "SafeTextField.qml":
+            if path.name in ("SafeTextField.qml", "SafePasswordField.qml"):
                 continue
-            self.assertIsNone(re.search(r"\b(?:TextField|TextInput|TextArea|TextEdit)\s*\{", path.read_text()), path.name)
+            self.assertIsNone(re.search(native, path.read_text()), path.name)
+        # Through Qt 6.12.0 an editable TextInput reads the whole clipboard on
+        # every clipboard change (QTBUG-149610); TextEdit and read-only
+        # TextInput only inspect the offered formats.
+        field = (REPO / "SafeTextField.qml").read_text()
+        self.assertEqual(re.findall(native, field), ["TextEdit {"])
+        self.assertIn("textFormat: TextEdit.PlainText", field)
+        secret = (REPO / "SafePasswordField.qml").read_text()
+        self.assertEqual(re.findall(native, secret), ["TextField {"])
+        self.assertEqual(re.findall(r"\breadOnly\s*:.*", secret), ["readOnly: true"])
 
 
 if __name__ == "__main__":
