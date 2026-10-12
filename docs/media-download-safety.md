@@ -1,6 +1,6 @@
 # Attachment download limits
 
-The v0.5.3 candidate corrects the attachment limit bypass reported by
+OmaChat v0.5.3 corrects the attachment limit bypass reported by
 [HANCORE-linux](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6122021629).
 WhatsApp and encrypted Messenger previously embedded `*os.File` in their capped
 writers. Its promoted `ReadFrom` let the vendored downloader's `io.Copy` bypass

@@ -1,18 +1,15 @@
 # Marketplace readiness
 
-## v0.5.3 attachment-limit candidate
+## v0.5.3 attachment-limit correction
 
-The latest [review finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6122021629)
-identifies a write-limit bypass in WhatsApp and encrypted Messenger downloads.
-The local v0.5.3 candidate replaces both file-embedding wrappers with a shared
-bounded file interface, covers all copy/write/growth routes, and preserves
-normal decryption and retries. See [download safety](media-download-safety.md)
-and [candidate release notes](history/RELEASE-0.5.3.md).
-
-The public request still targets v0.5.2. Updating it, replying on GitHub, and
-requesting approval are intentionally held for the maintainer's decision.
-The candidate needs a new public SHA and fresh complete review; current bot
-validation does not cover this local change.
+Review of v0.5.2 [found](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6122021629)
+a write-limit bypass in WhatsApp and encrypted Messenger downloads. v0.5.3
+replaces both file-embedding wrappers with a shared bounded file interface,
+covers all copy/write/growth routes, and preserves normal decryption and
+retries. See [download safety](media-download-safety.md) and the
+[release notes](history/RELEASE-0.5.3.md). The same open update request was
+edited again to target the v0.5.3 commit. Fresh exact-commit checks and a
+complete maintainer review are required.
 
 ## v0.5.2 clipboard-change correction
 
@@ -59,7 +56,7 @@ records publication on September 19, 2026 and a maintainer-reviewed baseline
 with no findings and the `package-manager`, `privilege`, `service-management`,
 and `installer` capabilities. See the [publication confirmation](https://github.com/omacom/omarchy-plugin-marketplace/issues/7193#issuecomment-5741298865)
 and [registry](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/registry.json).
-This approval covers that snapshot, not v0.5.0, v0.5.1, or v0.5.2.
+This approval covers that snapshot, not v0.5.0 through v0.5.3.
 
 Future releases use the [newer-upstream verification and publication workflow](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md#promoting-a-plugin-update):
 provide the existing plugin ID, repository root, and full SHA of the final public

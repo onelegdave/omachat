@@ -28,4 +28,4 @@ Use the [current documentation](../README.md) for setup and capabilities.
 - [v0.5.0 release notes](RELEASE-0.5.0.md)
 - [v0.5.1 release notes](RELEASE-0.5.1.md)
 - [v0.5.2 release notes](RELEASE-0.5.2.md)
-- [v0.5.3 candidate release notes](RELEASE-0.5.3.md)
+- [v0.5.3 release notes](RELEASE-0.5.3.md)
