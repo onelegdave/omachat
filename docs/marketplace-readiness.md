@@ -1,5 +1,15 @@
 # Marketplace readiness
 
+## v0.5.2 clipboard-change correction
+
+Review of v0.5.1 found that Qt 6.12.0 and earlier read the whole clipboard
+into every editable TextInput when the clipboard changes, without a paste
+(QTBUG-149610, fixed for Qt 6.12.1). v0.5.2 edits with a plain-text TextEdit
+and keeps the API hash in a read-only TextInput; see
+[clipboard safety](clipboard-safety.md#clipboard-change-reads). The same open
+update request was edited again to target the v0.5.2 commit. Fresh
+exact-commit checks and a complete maintainer review are required.
+
 ## v0.5.1 clipboard correction
 
 Marketplace review of v0.5.0 found that Qt's native Wayland paste could buffer
@@ -35,7 +45,7 @@ records publication on September 19, 2026 and a maintainer-reviewed baseline
 with no findings and the `package-manager`, `privilege`, `service-management`,
 and `installer` capabilities. See the [publication confirmation](https://github.com/omacom/omarchy-plugin-marketplace/issues/7193#issuecomment-5741298865)
 and [registry](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/registry.json).
-This approval covers that snapshot, not v0.5.0 or v0.5.1.
+This approval covers that snapshot, not v0.5.0, v0.5.1, or v0.5.2.
 
 Future releases use the [newer-upstream verification and publication workflow](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md#promoting-a-plugin-update):
 provide the existing plugin ID, repository root, and full SHA of the final public

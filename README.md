@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messeng
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.5.1**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.1).
+Current stable release: **0.5.2**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.2).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
