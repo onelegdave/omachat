@@ -109,8 +109,11 @@ class ClipboardTest(unittest.TestCase):
     def wait_until_gone(self, pid):
         deadline = time.monotonic() + 1
         while time.monotonic() < deadline:
-            stat = Path("/proc") / str(pid) / "stat"
-            if not stat.exists() or stat.read_text().split(") ", 1)[1].startswith("Z "):
+            # The process can exit between any check and read; that is success.
+            try:
+                if (Path("/proc") / str(pid) / "stat").read_text().split(") ", 1)[1].startswith("Z "):
+                    return
+            except FileNotFoundError:
                 return
             time.sleep(0.01)
         self.fail("Clipboard provider process %d survived" % pid)
@@ -158,14 +161,7 @@ class ClipboardTest(unittest.TestCase):
             pid = json.loads(self.record.read_text().splitlines()[0])["pid"]
             process.kill()
             process.wait(timeout=1)
-            deadline = time.monotonic() + 1
-            while time.monotonic() < deadline:
-                stat = Path("/proc") / str(pid) / "stat"
-                if not stat.exists() or stat.read_text().split(") ", 1)[1].startswith("Z "):
-                    break
-                time.sleep(0.01)
-            else:
-                self.fail("Clipboard provider survived forced reader death")
+            self.wait_until_gone(pid)
         finally:
             if process.poll() is None:
                 process.kill()
