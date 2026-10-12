@@ -6,27 +6,37 @@ function service() {
 }
 function manager(s) {
   return load('DesktopNotifications.qml',['retireConnection','applyConfig','savePreferences','test','forgetNetwork','flush'],
-    {service:s,connected:true,loaded:true,enabled:true,previews:false,saving:false,sending:false,errorText:'',generation:0,configRevision:0,sendRequest:0,networkEpochs:{},seen:[],views:[],queue:[],Qt:{callLater(fn){fn();}}});
+    {service:s,connected:true,loaded:true,enabled:true,legacyPreviews:false,saving:false,sending:false,errorText:'',generation:0,configRevision:0,sendRequest:0,networkEpochs:{},seen:[],views:[],queue:[],Qt:{callLater(fn){fn();}}});
 }
 test('reconnect retires notification save, send and test callbacks',()=>{
   for (const method of ['save','send','test']) {
     const s=service(), n=manager(s);
-    if(method==='save')n.savePreferences({previews:true});
+    if(method==='save')n.savePreferences({enabled:true});
     else if(method==='test')n.test();
     else { n.queue=[{network:'telegram',params:{message:{conversationID:'demo'}}}];n.flush(); }
     const stale=s.requests.pop().callback;
     n.connected=false;n.retireConnection();n.connected=true;n.retireConnection();
-    n.applyConfig({notificationsEnabled:false,notificationPreviews:false});
+    n.applyConfig({notificationsEnabled:false});
     stale(true,{notificationsEnabled:true,notificationPreviews:true});
-    assert.equal(n.enabled,false);assert.equal(n.previews,false);assert.equal(n.errorText,'');assert.equal(n.saving,false);assert.equal(n.sending,false);
+    assert.equal(n.enabled,false);assert.equal(n.legacyPreviews,false);assert.equal(n.errorText,'');assert.equal(n.saving,false);assert.equal(n.sending,false);
   }
 });
 test('stale config and malformed saves cannot overwrite notification preferences',()=>{
   const s=service(),n=manager(s), revision=n.configRevision;
-  n.savePreferences({previews:true});s.requests.pop().callback(true,{notificationsEnabled:true,notificationPreviews:true});
-  assert.equal(n.applyConfig({notificationsEnabled:false,notificationPreviews:false},revision),false);assert.equal(n.previews,true);
-  n.savePreferences({previews:false});s.requests.pop().callback(true,{});
-  assert.equal(n.previews,true);assert.match(n.errorText,/could not be confirmed/);
+  n.savePreferences({enabled:false});s.requests.pop().callback(true,{notificationsEnabled:false});
+  assert.equal(n.applyConfig({notificationsEnabled:true},revision),false);assert.equal(n.enabled,false);
+  n.savePreferences({enabled:true});s.requests.pop().callback(true,{});
+  assert.equal(n.enabled,false);assert.match(n.errorText,/could not be confirmed/);
+});
+test('an outdated helper with previews on gets no alerts until it confirms they are off',()=>{
+  const s=service(),n=manager(s);n.queue=[{network:'telegram',params:{message:{conversationID:'demo'}}}];
+  assert.equal(n.applyConfig({notificationsEnabled:true,notificationPreviews:true}),true);
+  let retire=s.requests.pop();assert.equal(retire.method,'setNotifications');assert.equal(JSON.stringify(retire.params),'{"previews":false}');
+  retire.callback(false,'Could not save');n.flush();
+  assert.equal(n.legacyPreviews,true);assert.equal(s.requests.length,0);assert.equal(n.queue.length,1);
+  n.applyConfig({notificationsEnabled:true,notificationPreviews:true});retire=s.requests.pop();
+  retire.callback(true,{notificationsEnabled:true,notificationPreviews:false});
+  assert.equal(n.legacyPreviews,false);assert.equal(s.requests.length,1);assert.equal(s.requests[0].method,'notifyMessage');
 });
 test('forgotten account send reply cannot introduce a new-account error',()=>{
   const s=service(),n=manager(s);n.queue=[{network:'telegram',params:{message:{conversationID:'demo'}}}];n.flush();

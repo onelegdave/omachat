@@ -37,24 +37,32 @@ ShellRoot {
     interval: 100; running: true
     onTriggered: {
       try {
-        alerts.applyConfig({notificationsEnabled:true,notificationPreviews:false})
+        alerts.applyConfig({notificationsEnabled:true})
         alerts.registerView(view)
-        var previews = inspect.findChild(controls, "notificationPreviewsToggle")
-        previews.clicked()
+        check(!inspect.findChild(controls, "notificationPreviewsToggle"), "settings offer no message preview option")
+        var toggle = inspect.findChild(controls, "desktopNotificationsToggle")
+        toggle.clicked()
         var save = fake.last("setNotifications")
-        check(save.params.previews === true && alerts.saving && !alerts.previews, "preview control waits for helper acknowledgement")
+        check(save.params.enabled === false && alerts.saving && alerts.enabled, "notification control waits for helper acknowledgement")
         fake.connected = false
-        check(!alerts.loaded && !alerts.saving && !previews.enabled, "disconnect retires pending notification preferences and disables controls")
+        check(!alerts.loaded && !alerts.saving && !toggle.enabled, "disconnect retires pending notification preferences and disables controls")
         fake.connected = true
-        alerts.applyConfig({notificationsEnabled:true,notificationPreviews:false})
-        save.callback(true,{notificationsEnabled:true,notificationPreviews:true})
-        check(!alerts.previews && !alerts.errorText, "same-service reconnect rejects the old preview acknowledgement")
+        alerts.applyConfig({notificationsEnabled:true})
+        save.callback(true,{notificationsEnabled:false})
+        check(alerts.enabled && !alerts.errorText, "same-service reconnect rejects the old acknowledgement")
+        // A helper built before 0.5.4 still reports and applies its preview setting.
+        alerts.applyConfig({notificationsEnabled:true,notificationPreviews:true})
+        var retire = fake.last("setNotifications")
+        check(retire !== save && retire.params.previews === false && alerts.legacyPreviews, "an outdated helper is told to turn previews off")
         var message = {id:"demo-new",conversationID:"demo-chat",text:"Synthetic incoming message",timestamp:Date.now()*1000}
         alerts.handleMessage(message,"telegram",false)
         check(!fake.last("notifyMessage"), "history never requests a desktop alert")
         alerts.handleMessage(message,"telegram",true)
+        check(!fake.last("notifyMessage"), "alerts wait until the outdated helper confirms previews are off")
+        retire.callback(true,{notificationsEnabled:true,notificationPreviews:false})
         var sent = fake.last("notifyMessage")
-        check(sent && sent.network === "telegram" && alerts.sending, "live message queues a notification on its own service")
+        check(sent && sent.network === "telegram" && alerts.sending && !alerts.legacyPreviews, "live message queues a notification on its own service")
+        check(JSON.stringify(Object.keys(sent.params)) === '["message"]', "the panel sends no conversation name for alerts")
         alerts.forgetNetwork("telegram")
         sent.callback(false,"Retired account failure")
         check(!alerts.sending && !alerts.errorText, "unpairing retires notification reply errors")

@@ -42,49 +42,34 @@ func (f *fakeNotifications) stop() {}
 
 func TestNotificationPreferencesPersistAndPreserveConfig(t *testing.T) {
 	d := freshSelectionDaemon(t)
-	if !d.PluginConfig().NotificationsEnabled || d.PluginConfig().NotificationPreviews {
+	if !d.PluginConfig().NotificationsEnabled {
 		t.Fatal("incorrect notification defaults")
 	}
 	if err := d.config.SetTelegramCredentials(123, strings.Repeat("a", 32)); err != nil {
 		t.Fatal(err)
 	}
-	for _, values := range []map[string]any{{"enabled": false}, {"previews": true}} {
-		resp := d.dispatch(context.Background(), wire.Request{Method: wire.MethodSetNotifications, Params: values})
-		if !resp.OK {
-			t.Fatal(resp.Error)
-		}
+	resp := d.dispatch(context.Background(), wire.Request{Method: wire.MethodSetNotifications, Params: map[string]any{"enabled": false}})
+	if !resp.OK {
+		t.Fatal(resp.Error)
 	}
 	cfg := store.NewConfigStore(d.paths.ConfigFile()).Get()
-	if cfg.NotificationsOn() || !cfg.NotificationPreviews || cfg.TelegramAPIID != 123 || cfg.TelegramAPIHash != strings.Repeat("a", 32) {
+	if cfg.NotificationsOn() || cfg.TelegramAPIID != 123 || cfg.TelegramAPIHash != strings.Repeat("a", 32) {
 		t.Fatal("notification preferences did not survive reload or replaced unrelated config")
 	}
-	for _, values := range []any{nil, map[string]any{"enabled": "yes"}, map[string]any{"previews": 42}} {
+	// The preview option was removed in 0.5.4; asking for it is not a preference.
+	for _, values := range []any{nil, map[string]any{"enabled": "yes"}, map[string]any{"previews": true}} {
 		if d.dispatch(context.Background(), wire.Request{Method: wire.MethodSetNotifications, Params: values}).OK {
 			t.Fatalf("accepted invalid preferences: %v", values)
 		}
 	}
 }
 
-func TestNotificationFormattingRespectsPreviewPreference(t *testing.T) {
-	p := wire.NotifyMessageParams{ConversationName: "Demo Contact", Message: wire.Message{Text: "<b>hello</b> & \"world\""}}
-	title, body := notificationText("telegram", p, false)
-	if title != "OmaChat · Telegram" || body != "New message" {
-		t.Fatal("disabled previews exposed sender or message content")
-	}
-	title, body = notificationText("telegram", p, true)
-	if title != "Demo Contact · Telegram" || body != "&lt;b&gt;hello&lt;/b&gt; &amp; &#34;world&#34;" {
-		t.Fatalf("preview was not escaped: %q %q", title, body)
-	}
-	p.Message.Text = strings.Repeat("😀", 300)
-	_, body = notificationText("telegram", p, true)
-	if len([]rune(body)) != 241 {
-		t.Fatal("notification preview is not bounded by characters")
-	}
-	p.Message.Text = ""
-	p.Message.Attachments = []wire.Attachment{{IsAudio: true}}
-	_, body = notificationText("whatsapp", p, true)
-	if body != "Voice message" {
-		t.Fatal("attachment-only message has no useful preview")
+func TestNotificationTextNeverIncludesConversationDetails(t *testing.T) {
+	for network, service := range map[string]string{"gmessages": "Google Messages", "whatsapp": "WhatsApp", "telegram": "Telegram", "messenger": "Messenger"} {
+		title, body := notificationText(network)
+		if title != "OmaChat · "+service || body != "New message" {
+			t.Fatalf("%s notification is not generic: %q %q", network, title, body)
+		}
 	}
 }
 
@@ -189,7 +174,7 @@ func TestNotificationIconUsesMatchingServiceAvatar(t *testing.T) {
 	}
 }
 
-func TestNotificationRPCUsesAvatarWithoutEnablingTextPreviews(t *testing.T) {
+func TestNotificationRPCSendsAvatarAndGenericTextOnly(t *testing.T) {
 	d := freshSelectionDaemon(t)
 	d.activeServices["telegram"] = true
 	d.tg.SetState(wire.StateConnected, "")
@@ -203,10 +188,12 @@ func TestNotificationRPCUsesAvatarWithoutEnablingTextPreviews(t *testing.T) {
 	d.tg.AddTestConversation(wire.Conversation{ID: "tg:42", AvatarPath: path})
 	transport := &fakeNotifications{server: ":1.99"}
 	d.notifications.transport = transport
-	p := wire.NotifyMessageParams{ConversationName: "Demo Contact", Message: wire.Message{ID: "fixture", ConversationID: "tg:42", Text: "Synthetic message"}}
-	resp := d.dispatch(context.Background(), wire.Request{Network: "telegram", Method: wire.MethodNotifyMessage, Params: p})
+	// The panel sends the whole message, but none of its text may reach the
+	// notification server, even with a preview setting left by an old release.
+	params := map[string]any{"conversationName": "Demo Contact", "message": map[string]any{"id": "fixture", "conversationID": "tg:42", "senderName": "Demo Sender", "text": "Synthetic message"}}
+	resp := d.dispatch(context.Background(), wire.Request{Network: "telegram", Method: wire.MethodNotifyMessage, Params: params})
 	if !resp.OK || transport.icon != (&url.URL{Scheme: "file", Path: path}).String() || transport.title != "OmaChat · Telegram" || transport.body != "New message" {
-		t.Fatal("contact avatar was not used independently of text previews")
+		t.Fatalf("notification was not generic with the contact avatar: %q %q %q", transport.icon, transport.title, transport.body)
 	}
 	if resp := d.dispatch(context.Background(), wire.Request{Method: wire.MethodTestNotification}); !resp.OK || transport.icon != "mail-unread" {
 		t.Fatal("test notification should keep its generic icon")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -47,44 +46,13 @@ func notificationKey(target wire.NotificationTarget) string {
 	return string(data)
 }
 
-func notificationText(network string, p wire.NotifyMessageParams, previews bool) (string, string) {
+// notificationText is deliberately generic. Notification servers can pass
+// alert text to their own subprocesses; Omarchy's history writer puts it in a
+// command line that other local accounts can read through /proc. Conversation
+// names and message text therefore stay inside OmaChat.
+func notificationText(network string) (string, string) {
 	service := map[string]string{"gmessages": "Google Messages", "whatsapp": "WhatsApp", "telegram": "Telegram", "messenger": "Messenger"}[network]
-	title, body := "OmaChat · "+service, "New message"
-	if !previews {
-		return title, body
-	}
-	if name := strings.TrimSpace(p.ConversationName); name != "" {
-		title = truncateNotification(name, 120) + " · " + service
-	} else if name := strings.TrimSpace(p.Message.SenderName); name != "" {
-		title = truncateNotification(name, 120) + " · " + service
-	}
-	if text := strings.TrimSpace(p.Message.Text); text != "" {
-		body = truncateNotification(text, 240)
-	} else if len(p.Message.Attachments) > 0 {
-		attachment := p.Message.Attachments[0]
-		switch {
-		case attachment.IsAudio:
-			body = "Voice message"
-		case attachment.IsGif:
-			body = "GIF"
-		case attachment.IsVideo:
-			body = "Video"
-		case attachment.IsImage:
-			body = "Photo"
-		default:
-			body = "Attachment"
-		}
-	}
-	return title, html.EscapeString(body)
-}
-
-func truncateNotification(text string, limit int) string {
-	text = strings.Join(strings.Fields(text), " ")
-	runes := []rune(text)
-	if len(runes) > limit {
-		return string(runes[:limit]) + "…"
-	}
-	return text
+	return "OmaChat · " + service, "New message"
 }
 
 func (n *desktopNotifications) send(ctx context.Context, target wire.NotificationTarget, icon, title, body string) error {
@@ -223,10 +191,10 @@ func (d *Daemon) handleNotificationRequest(ctx context.Context, req wire.Request
 		if err != nil {
 			return fail(err)
 		}
-		if err := d.config.SetNotifications(p.Enabled, p.Previews); err != nil {
+		if err := d.config.SetNotifications(p.Enabled); err != nil {
 			return fail(err)
 		}
-		if (p.Enabled != nil && !*p.Enabled) || (p.Previews != nil && !*p.Previews) {
+		if p.Enabled != nil && !*p.Enabled {
 			d.notifications.dismiss(ctx, "")
 		}
 		return wire.Response{ID: req.ID, OK: true, Result: d.PluginConfig()}
@@ -273,7 +241,7 @@ func (d *Daemon) handleNotificationRequest(ctx context.Context, req wire.Request
 	if msg.FromMe || msg.Deleted || msg.Pending || msg.Failed || msg.Provisional || (strings.TrimSpace(msg.Text) == "" && len(msg.Attachments) == 0) {
 		return wire.Response{ID: req.ID, OK: true, Result: false}
 	}
-	title, body := notificationText(network, p, cfg.NotificationPreviews)
+	title, body := notificationText(network)
 	icon := d.notificationIcon(network, msg.ConversationID)
 	if err := d.notifications.send(ctx, wire.NotificationTarget{Network: network, ConversationID: msg.ConversationID}, icon, title, body); err != nil {
 		return fail(err)
