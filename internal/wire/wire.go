@@ -407,6 +407,11 @@ func (p *SetTelegramCredentialsParams) UnmarshalJSON(data []byte) error {
 
 // ConfigResult is safe to show in the panel. The Telegram API hash stays in
 // the daemon config file and is never sent to QML.
+//
+// On the notification-previews branch, NotificationPreviews reports the
+// optional preview setting. Panel services from releases before 0.5.4 also
+// require the field: they stay loaded across plugin updates (keepLoaded) and
+// ignore a config without it until the shell restarts.
 type ConfigResult struct {
 	EnabledServices             []string          `json:"enabledServices"`
 	ServiceSelectionRequired    bool              `json:"serviceSelectionRequired"`

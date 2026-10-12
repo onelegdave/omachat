@@ -10,7 +10,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messeng
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.5.4**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.4).
+Current stable release: **0.5.5**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.5).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -234,8 +234,9 @@ controls Do Not Disturb and sounds.
 previews** setting, off by default. When it was on, alerts showed the
 conversation name and the start of the message. OmaChat 0.5.4 removes the
 setting, and alerts always read "OmaChat · *service*" and "New message". If you
-had previews on, the panel turns them off right after the update, and the
-rebuilt helper deletes the saved setting.
+had previews on, they stop when you rebuild the helper, which the panel asks you
+to do after updating, or when the shell next restarts. The rebuilt helper also
+deletes the saved setting.
 
 **Why.** Omarchy's notification service saves each alert to its history by
 starting a `bash` command with the whole notification, text included, as a
@@ -260,14 +261,15 @@ git fetch origin notification-previews
 git switch --track origin/notification-previews
 ```
 
-Then use **Build helper** when the panel asks, and turn on the setting in
-**Settings > Notifications**. The in-app **Update** button and
-`omarchy plugin update` follow the main release only and will report an error on
-this branch, so update with
-`git -C ~/.config/omarchy/plugins/onelegdave.omachat pull --ff-only` and rebuild
-the helper. To return to the main release, run
-`git -C ~/.config/omarchy/plugins/onelegdave.omachat switch main`, then rebuild
-the helper.
+Then run `omarchy restart shell`, because OmaChat's background service keeps
+the code it started with until the shell restarts. Use **Build helper** when the
+panel asks, and turn on the setting in **Settings > Notifications**. The in-app
+**Update** button and `omarchy plugin update` follow the main release only and
+will report an error on this branch, so update with
+`git -C ~/.config/omarchy/plugins/onelegdave.omachat pull --ff-only`, restart the
+shell, and rebuild the helper. To return to the main release, run
+`git -C ~/.config/omarchy/plugins/onelegdave.omachat switch main`, restart the
+shell, and rebuild the helper.
 
 Use the arrow beside the OmaChat title to hide the conversation sidebar; the
 menu button brings it back. OmaChat remembers this layout, the last service,

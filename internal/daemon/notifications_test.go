@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -62,6 +63,27 @@ func TestNotificationPreferencesPersistAndPreserveConfig(t *testing.T) {
 		if d.dispatch(context.Background(), wire.Request{Method: wire.MethodSetNotifications, Params: values}).OK {
 			t.Fatalf("accepted invalid preferences: %v", values)
 		}
+	}
+}
+
+// A panel service from an earlier release keeps running after a plugin update
+// until the shell restarts. It only accepts a config with both notification
+// booleans, so the rebuilt helper must keep reporting previews as off.
+func TestConfigStaysReadableByEarlierPanelServices(t *testing.T) {
+	d := freshSelectionDaemon(t)
+	data, err := json.Marshal(d.PluginConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, ok := config["notificationsEnabled"].(bool); !ok || !enabled {
+		t.Fatalf("notificationsEnabled missing: %s", data)
+	}
+	if previews, ok := config["notificationPreviews"].(bool); !ok || previews {
+		t.Fatalf("notificationPreviews must be present and false: %s", data)
 	}
 }
 
