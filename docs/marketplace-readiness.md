@@ -1,5 +1,19 @@
 # Marketplace readiness
 
+## v0.5.3 attachment-limit candidate
+
+The latest [review finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6122021629)
+identifies a write-limit bypass in WhatsApp and encrypted Messenger downloads.
+The local v0.5.3 candidate replaces both file-embedding wrappers with a shared
+bounded file interface, covers all copy/write/growth routes, and preserves
+normal decryption and retries. See [download safety](media-download-safety.md)
+and [candidate release notes](history/RELEASE-0.5.3.md).
+
+The public request still targets v0.5.2. Updating it, replying on GitHub, and
+requesting approval are intentionally held for the maintainer's decision.
+The candidate needs a new public SHA and fresh complete review; current bot
+validation does not cover this local change.
+
 ## v0.5.2 clipboard-change correction
 
 Review of v0.5.1 found that Qt 6.12.0 and earlier read the whole clipboard

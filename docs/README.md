@@ -6,6 +6,10 @@ safety fix from v0.5.1. See the [v0.5.2 release notes](history/RELEASE-0.5.2.md)
 [v0.5.0 release notes](history/RELEASE-0.5.0.md) for included contributions and
 verification limits.
 
+The [v0.5.3 candidate](history/RELEASE-0.5.3.md) closes the attachment download
+limit bypass. See [download safety](media-download-safety.md). Publication and
+the Marketplace update remain pending.
+
 - [Theme screenshots with fictional chats](screenshots/README.md)
 - [Marketplace readiness and review limits](marketplace-readiness.md)
 - [Oldsmaru acceptance record](oldsmaru-checklist.md)

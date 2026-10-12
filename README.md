@@ -6,6 +6,11 @@ sessions, conversation drafts, history, and inline media.
 
 Current stable release: **0.5.2**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.2).
 
+This branch prepares the **0.5.3 candidate**, which fixes attachment download
+limits. See [candidate release notes](docs/history/RELEASE-0.5.3.md) and
+[download safety](docs/media-download-safety.md). It is awaiting publication
+and fresh Marketplace review.
+
 ![OmaChat inbox with invented demo contacts](preview.png)
 
 The preview shows the current QML panel with fictional contacts and messages,
@@ -327,7 +332,7 @@ Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
 Community contributors include [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs),
 [Alex Vlissidis (@alexvlis)](https://github.com/alexvlis),
 [Matthias MB (@Hizoul)](https://github.com/Hizoul), [@ozz1ee-dev](https://github.com/ozz1ee-dev),
-and [HANCORE-linux](https://github.com/HANCORE-linux), who reported the clipboard safety issue.
+and [HANCORE-linux](https://github.com/HANCORE-linux), who reported clipboard and attachment-download safety issues.
 See [community contributions and their review status](CREDITS.md#community-contributors).
 Codex and Claude have provided AI assistance with code and reviews.
 

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/onelegdave/omachat/internal/boundedfile"
 	appStore "github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/wire"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
@@ -178,6 +179,9 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	record := *stored
 	if record.path != "" {
 		if fi, err := os.Lstat(record.path); err == nil && fi.Mode().IsRegular() && fi.Mode()&os.ModeSymlink == 0 {
+			if fi.Size() > maxMessengerInboundBytes {
+				return wire.MediaResult{}, boundedfile.ErrLimit
+			}
 			return wire.MediaResult{Key: key, Path: record.path}, nil
 		}
 	}
@@ -194,7 +198,7 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	limited := &limitedFile{File: tmp, remaining: maxMessengerInboundBytes}
+	limited := boundedfile.New(tmp, maxMessengerInboundBytes)
 	if record.fbTransport != nil {
 		if e2ee == nil {
 			_ = tmp.Close()
@@ -226,19 +230,7 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	return wire.MediaResult{Key: key, Path: path}, nil
 }
 
-type limitedFile struct {
-	*os.File
-	remaining int64
-}
-
-func (f *limitedFile) Write(p []byte) (int, error) {
-	if int64(len(p)) > f.remaining {
-		return 0, errors.New("Messenger attachment exceeds the 25 MB download limit")
-	}
-	n, err := f.File.Write(p)
-	f.remaining -= int64(n)
-	return n, err
-}
+var _ whatsmeow.File = (*boundedfile.File)(nil)
 
 func downloadMessengerURL(ctx context.Context, raw string, dst io.Writer, max int64) error {
 	u, err := url.Parse(raw)
@@ -502,7 +494,7 @@ func (b *Backend) fetchAvatars(jobs []avatarJob) {
 		sum := sha256.Sum256([]byte(job.rawURL))
 		tmp, err := os.CreateTemp(dir, ".avatar-*")
 		if err == nil {
-			err = downloadMessengerURL(ctx, job.rawURL, tmp, maxMessengerAvatarBytes)
+			err = downloadMessengerURL(ctx, job.rawURL, boundedfile.New(tmp, maxMessengerAvatarBytes), maxMessengerAvatarBytes)
 			_ = tmp.Close()
 		}
 		cancel()

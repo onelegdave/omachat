@@ -35,6 +35,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/onelegdave/omachat/internal/boundedfile"
 	appStore "github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/wire"
 )
@@ -1542,8 +1543,11 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	for _, ext := range []string{".jpg", ".png", ".webp", ".gif", ".mp4", ".bin"} {
 		candidate := filepath.Join(cacheDir, opaque+ext)
 		fi, err := os.Lstat(candidate)
-		if err != nil || fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+		if err != nil || !fi.Mode().IsRegular() || fi.Mode()&os.ModeSymlink != 0 {
 			continue
+		}
+		if fi.Size() > maxInboundMediaBytes {
+			return wire.MediaResult{}, errInboundMediaTooLarge
 		}
 		return wire.MediaResult{Key: key, Path: candidate}, nil
 	}
@@ -1597,7 +1601,7 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	capped := &cappedFile{File: tmp, max: maxInboundMediaBytes}
+	capped := boundedfile.New(tmp, maxInboundMediaBytes)
 	if err := cli.DownloadToFile(ctx, dl, capped); err != nil {
 		_ = tmp.Close()
 		return wire.MediaResult{}, fmt.Errorf("download media: %w", err)
