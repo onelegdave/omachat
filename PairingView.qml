@@ -51,7 +51,11 @@ Item {
     if (!url) return
     qrError = ""
     qrProc.running = false
-    qrProc.command = ["qrencode", "-o", root.qrPath, "-s", "6", "-m", "2", "--", url]
+    // The pairing link goes through stdin, not argv, which other local
+    // accounts can read through /proc.
+    qrProc.pairingURL = url
+    qrProc.stdinEnabled = true
+    qrProc.command = ["qrencode", "-o", root.qrPath, "-s", "6", "-m", "2"]
     qrProc.running = true
     qrTimeout.restart()
   }
@@ -85,6 +89,12 @@ Item {
   Process {
     id: qrProc
     objectName: "qrProcess"
+    property string pairingURL: ""
+    onStarted: {
+      write(pairingURL)
+      pairingURL = ""
+      stdinEnabled = false
+    }
     onExited: function(code) {
       qrTimeout.stop()
       if (code === 0) root.qrRevision++

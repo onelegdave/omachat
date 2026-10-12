@@ -11,7 +11,7 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description="Run isolated native QML fixtures")
-parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox", "clipboard", "clipboard-unavailable", "clipboard-watchdog", "safe-fields"])
+parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox", "clipboard", "clipboard-unavailable", "clipboard-watchdog", "safe-fields", "pairing-qr", "notifications", "notification-lifetimes"])
 args = parser.parse_args()
 go_cache = subprocess.check_output(["go", "env", "GOCACHE"], text=True,
                                  env=dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")).strip()
@@ -63,6 +63,11 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     hung_reader.write_text((repo / "tests/fixtures/clipboard-hung-reader.sh").read_text())
     hung_reader.chmod(0o700)
     (config / "clipboard-hang-mode").write_text("graceful")
+    qr_tools = config / "qr-tools"
+    qr_tools.mkdir()
+    qr_recorder = qr_tools / "qrencode"
+    qr_recorder.write_text((repo / "tests/fixtures/qrencode-recorder.sh").read_text())
+    qr_recorder.chmod(0o700)
     fixture_envs = {
         "clipboard": clipboard_env,
         "safe-fields": clipboard_env,
@@ -70,6 +75,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
         "clipboard-watchdog": dict(env, PATH=str(hung_tools) + os.pathsep + env["PATH"],
                                    OMACHAT_CLIPBOARD_HANG_MODE=str(config / "clipboard-hang-mode"),
                                    OMACHAT_CLIPBOARD_HANG_RECORD=str(config / "clipboard-hang-record")),
+        "pairing-qr": dict(env, PATH=str(qr_tools) + os.pathsep + env["PATH"], OMACHAT_QR_RECORD=str(config / "qr-record")),
     }
     build = config / "Build"
     build.mkdir()
@@ -93,7 +99,8 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
                                 ("media", "OMACHAT_MEDIA"), ("review", "OMACHAT_REVIEW"),
                                 ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"),
                                 ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"), ("avatar", "OMACHAT_AVATAR"),
-                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("clipboard", "OMACHAT_CLIPBOARD"), ("clipboard-unavailable", "OMACHAT_CLIPBOARD_UNAVAILABLE"), ("clipboard-watchdog", "OMACHAT_CLIPBOARD_WATCHDOG"), ("safe-fields", "OMACHAT_SAFE_FIELDS")):
+                                ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("clipboard", "OMACHAT_CLIPBOARD"), ("clipboard-unavailable", "OMACHAT_CLIPBOARD_UNAVAILABLE"), ("clipboard-watchdog", "OMACHAT_CLIPBOARD_WATCHDOG"), ("safe-fields", "OMACHAT_SAFE_FIELDS"),
+                                ("pairing-qr", "OMACHAT_PAIRING_QR")):
             (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
             result = subprocess.run([qs_executable, "-p", str(config)], env=fixture_envs.get(fixture, env), text=True,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
