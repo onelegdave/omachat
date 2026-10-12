@@ -36,15 +36,21 @@ Update preferences and cached public release metadata live in
 separate from messaging credentials. Daily checks are off by default.
 
 Desktop alerts use the local `org.freedesktop.Notifications` D-Bus service.
-Notifications are enabled by default, but sender/message previews are off.
-Alerts can show the conversation's cached profile photo even with text previews
-off. Icons use local image files from that service's media cache; unavailable
-photos fall back to a generic icon.
-Enabling previews sends conversation names and a bounded text preview to the
-desktop notification service, which may retain them in its notification history.
-OmaChat does not put message content in notification command-line arguments or
-logs. Desktop notification actions are accepted only from the service's current
-D-Bus owner and route through locally held service/conversation identifiers.
+Notifications are enabled by default. Alert text is always generic: "OmaChat ·
+*service*" and "New message". Conversation names and message text are never sent
+to the notification service, because a notification service may pass alert text
+to its own subprocesses; Omarchy's history writer puts it in a `bash` command
+line that other local accounts can read through `/proc`. The optional preview
+setting was removed in 0.5.4 for this reason; see the
+[README](README.md#notification-previews-removed-in-054).
+Alerts can show the conversation's cached profile photo. Icons use local image
+files from that service's media cache, named by hash; unavailable photos fall
+back to a generic icon. Desktop notification actions are accepted only from the
+service's current D-Bus owner and route through locally held
+service/conversation identifiers.
+
+OmaChat keeps message content and pairing links out of the command lines of the
+programs it starts. The pairing link reaches `qrencode` on standard input.
 
 ## What is enforced
 

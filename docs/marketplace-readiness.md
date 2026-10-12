@@ -1,5 +1,21 @@
 # Marketplace readiness
 
+## v0.5.4 notification-text correction
+
+Review of v0.5.3 [found](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6128565247)
+that optional message previews sent conversation names and message text to
+Omarchy's notification service, whose history writer passes them to `bash` as
+a command-line argument readable through `/proc`. v0.5.4 removes the preview
+setting: alerts always read "OmaChat · *service*" and "New message", the panel
+no longer sends conversation names, an outdated helper is told to turn previews
+off before any alert is sent, and the rebuilt helper deletes the saved setting.
+The pairing link also moved from `qrencode`'s arguments to its standard input.
+See the [release notes](history/RELEASE-0.5.4.md). The README documents the
+removal and an unlisted `notification-previews` branch for users who accept the
+risk; that branch is not part of this request. The same open update request was
+edited again to target the v0.5.4 commit. Fresh exact-commit checks and a
+complete maintainer review are required.
+
 ## v0.5.3 attachment-limit correction
 
 Review of v0.5.2 [found](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6122021629)
@@ -56,7 +72,7 @@ records publication on September 19, 2026 and a maintainer-reviewed baseline
 with no findings and the `package-manager`, `privilege`, `service-management`,
 and `installer` capabilities. See the [publication confirmation](https://github.com/omacom/omarchy-plugin-marketplace/issues/7193#issuecomment-5741298865)
 and [registry](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/registry.json).
-This approval covers that snapshot, not v0.5.0 through v0.5.3.
+This approval covers that snapshot, not v0.5.0 through v0.5.4.
 
 Future releases use the [newer-upstream verification and publication workflow](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md#promoting-a-plugin-update):
 provide the existing plugin ID, repository root, and full SHA of the final public
@@ -78,8 +94,8 @@ The October 9 local review preserves Alex Vlissidis's original PR #8 commits
 and Andrew Birklid's original PR #7 commits. This batch adds no package or
 privileged install action. Desktop alerts use the session D-Bus notification
 service; action signals must come from its current unique owner, and alert IDs
-are never forwarded to a replacement notification server. Text previews remain
-off by default. Cached contact photos can still identify a conversation; this
+are never forwarded to a replacement notification server. Text previews were
+off by default; v0.5.4 removed them. Cached contact photos can still identify a conversation; this
 is disclosed in Settings and the security documentation.
 
 Profile downloads retain Telegram's account epoch, bounded worker count, byte

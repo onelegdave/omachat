@@ -1,8 +1,10 @@
 # OmaChat documentation
 
-The current stable release is OmaChat v0.5.3, which enforces attachment
-download limits. See the [v0.5.3 release notes](history/RELEASE-0.5.3.md) and
-[download safety](media-download-safety.md). The
+The current stable release is OmaChat v0.5.4, which keeps conversation names
+and message text out of desktop notifications. See the
+[v0.5.4 release notes](history/RELEASE-0.5.4.md). The
+[v0.5.3 release notes](history/RELEASE-0.5.3.md) and
+[download safety](media-download-safety.md) cover attachment download limits. The
 [v0.5.2](history/RELEASE-0.5.2.md) and [v0.5.1](history/RELEASE-0.5.1.md)
 notes cover the clipboard safety fixes, and the
 [v0.5.0 release notes](history/RELEASE-0.5.0.md) cover included contributions

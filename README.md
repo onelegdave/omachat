@@ -4,7 +4,7 @@ A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messeng
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.5.3**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.3).
+Current stable release: **0.5.4**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.4).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -213,14 +213,55 @@ The [bundled metadata and license notices](docs/emoji-data.md) ship with the
 plugin; emoji search makes no network requests and installs no packages.
 
 Desktop notifications are enabled by default for new incoming messages while
-OmaChat is running. Open **Settings > Notifications** to turn them off, enable
-sender and message previews, or send a test notification. Previews are off by
-default: alert text shows only OmaChat, the service, and "New message". The icon
-uses the conversation's cached profile photo when available, with a generic
-message icon as the fallback. Test notifications use the generic icon. Clicking an
-alert opens its conversation. The conversation you are actively reading stays
-quiet; history refreshes, outgoing messages, reactions, and receipt updates do
-not produce new alerts. Your desktop controls Do Not Disturb and sounds.
+OmaChat is running. Open **Settings > Notifications** to turn them off or send a
+test notification. Alert text shows only OmaChat, the service, and "New message";
+names and message text stay in OmaChat. The icon uses the conversation's cached
+profile photo when available, with a generic message icon as the fallback. Test
+notifications use the generic icon. Clicking an alert opens its conversation. The
+conversation you are actively reading stays quiet; history refreshes, outgoing
+messages, reactions, and receipt updates do not produce new alerts. Your desktop
+controls Do Not Disturb and sounds.
+
+### Notification previews (removed in 0.5.4)
+
+**What was removed.** Earlier releases had an optional **Show sender and message
+previews** setting, off by default. When it was on, alerts showed the
+conversation name and the start of the message. OmaChat 0.5.4 removes the
+setting, and alerts always read "OmaChat · *service*" and "New message". If you
+had previews on, the panel turns them off right after the update, and the
+rebuilt helper deletes the saved setting.
+
+**Why.** Omarchy's notification service saves each alert to its history by
+starting a `bash` command with the whole notification, text included, as a
+command-line argument. Any account on the same computer, including system
+service accounts, can normally read other processes' command lines through
+`/proc`, so previews could be read by someone other than you. OmaChat cannot
+control what a notification service does with alert text, so it no longer sends
+names or message text at all. This was found during
+[Omarchy Marketplace review](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6128565247).
+Previews may return if Omarchy stops passing notification text on command lines.
+
+**If you still want previews.** The
+[`notification-previews`](https://github.com/onelegdave/omachat/tree/notification-previews)
+branch is the current release with the setting restored, still off by default.
+It is not part of the Marketplace listing or its review. Use it only if you
+accept that other accounts on your computer may be able to read your message
+previews. To switch an installed copy:
+
+```sh
+cd ~/.config/omarchy/plugins/onelegdave.omachat
+git fetch origin notification-previews
+git switch --track origin/notification-previews
+```
+
+Then use **Build helper** when the panel asks, and turn on the setting in
+**Settings > Notifications**. The in-app **Update** button and
+`omarchy plugin update` follow the main release only and will report an error on
+this branch, so update with
+`git -C ~/.config/omarchy/plugins/onelegdave.omachat pull --ff-only` and rebuild
+the helper. To return to the main release, run
+`git -C ~/.config/omarchy/plugins/onelegdave.omachat switch main`, then rebuild
+the helper.
 
 Use the arrow beside the OmaChat title to hide the conversation sidebar; the
 menu button brings it back. OmaChat remembers this layout, the last service,
@@ -327,7 +368,7 @@ Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
 Community contributors include [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs),
 [Alex Vlissidis (@alexvlis)](https://github.com/alexvlis),
 [Matthias MB (@Hizoul)](https://github.com/Hizoul), [@ozz1ee-dev](https://github.com/ozz1ee-dev),
-and [HANCORE-linux](https://github.com/HANCORE-linux), who reported clipboard and attachment-download safety issues.
+and [HANCORE-linux](https://github.com/HANCORE-linux), who reported clipboard, attachment-download, and notification privacy issues.
 See [community contributions and their review status](CREDITS.md#community-contributors).
 Codex and Claude have provided AI assistance with code and reviews.
 
