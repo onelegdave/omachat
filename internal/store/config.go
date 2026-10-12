@@ -40,6 +40,7 @@ type Config struct {
 	SidebarCollapsed     bool              `json:"sidebarCollapsed,omitempty"`
 	LastConversations    map[string]string `json:"lastConversations,omitempty"`
 	NotificationsEnabled *bool             `json:"notificationsEnabled,omitempty"`
+	NotificationPreviews bool              `json:"notificationPreviews,omitempty"`
 
 	// AlwaysPopout opens OmaChat in its standalone window instead of the
 	// anchored bar panel. PopoutMode is "floating" or "tiled".
@@ -104,11 +105,10 @@ func NewConfigStore(path string) *ConfigStore {
 	return cs
 }
 
-// retiredConfigKeys were written by earlier releases for removed features: a
-// credential the daemon no longer uses, and the notification preview option
-// removed in 0.5.4. They are deleted on startup so a removed feature does not
-// leave its secret or setting behind on disk.
-var retiredConfigKeys = []string{"giphyApiKey", "notificationPreviews"}
+// retiredConfigKeys were written by earlier releases and hold credentials the
+// daemon no longer uses. They are deleted on startup so a removed feature does
+// not leave its secret behind on disk.
+var retiredConfigKeys = []string{"giphyApiKey"}
 
 // forgetRetiredKeys removes retired keys from the config file if any are
 // present. Failure is ignored: a stale key must never stop the daemon.
@@ -173,14 +173,20 @@ func (c Config) NotificationsOn() bool {
 	return c.NotificationsEnabled == nil || *c.NotificationsEnabled
 }
 
-func (c *ConfigStore) SetNotifications(enabled *bool) error {
-	if enabled == nil {
+func (c *ConfigStore) SetNotifications(enabled, previews *bool) error {
+	if enabled == nil && previews == nil {
 		return errors.New("notification preferences are required")
 	}
 	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
-		value := *enabled
-		cfg["notificationsEnabled"] = value
-		loaded.NotificationsEnabled = &value
+		if enabled != nil {
+			value := *enabled
+			cfg["notificationsEnabled"] = value
+			loaded.NotificationsEnabled = &value
+		}
+		if previews != nil {
+			cfg["notificationPreviews"] = *previews
+			loaded.NotificationPreviews = *previews
+		}
 	})
 }
 

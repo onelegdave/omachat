@@ -26,6 +26,7 @@ func (d *Daemon) PluginConfig() wire.ConfigResult {
 		SidebarCollapsed:            cfg.SidebarCollapsed,
 		LastConversations:           cfg.LastConversations,
 		NotificationsEnabled:        cfg.NotificationsOn(),
+		NotificationPreviews:        cfg.NotificationPreviews,
 		AlwaysPopout:                cfg.AlwaysPopout,
 		PopoutMode:                  mode,
 		KeyboardShortcuts:           cfg.KeyboardShortcuts,

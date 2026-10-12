@@ -7,10 +7,7 @@ Item {
   property bool connected: false
   property bool loaded: false
   property bool enabled: false
-  // A helper built before 0.5.4 may still have message previews on; alerts wait
-  // until it confirms they are off. Previews were removed because notification
-  // servers can put alert text in command lines other local accounts can read.
-  property bool legacyPreviews: false
+  property bool previews: false
   property bool saving: false
   property string errorText: ""
   property double connectedAt: 0
@@ -29,7 +26,7 @@ Item {
     sendRequest++
     loaded = false
     enabled = false
-    legacyPreviews = false
+    previews = false
     saving = false
     sending = false
     queue = []
@@ -41,12 +38,11 @@ Item {
 
   function applyConfig(config, revision) {
     if (revision !== undefined && revision !== configRevision) return false
-    if (saving || !config || typeof config.notificationsEnabled !== "boolean") return false
+    if (saving || !config || typeof config.notificationsEnabled !== "boolean" || typeof config.notificationPreviews !== "boolean") return false
     loaded = true
     enabled = config.notificationsEnabled
-    legacyPreviews = config.notificationPreviews === true
+    previews = config.notificationPreviews
     if (!enabled) queue = []
-    if (legacyPreviews) savePreferences({previews: false})
     return true
   }
 
@@ -62,7 +58,6 @@ Item {
       root.saving = false
       if (!ok) root.errorText = String(res)
       else if (!root.applyConfig(res)) root.errorText = "Notification preferences could not be confirmed. Refresh Settings before retrying."
-      root.flush()
     }, "gmessages")
   }
 
@@ -101,12 +96,17 @@ Item {
     if (!loaded || !enabled || !connected || !service || !service.isServiceEnabled(network)
         || service.stateFor(network) !== "connected") return
     if (views.some(function(view) { return view && view.isReadingConversation(network, message.conversationID) })) return
-    queue = queue.concat([{network:network, params:{message:message}}]).slice(-32)
+    var name = ""
+    var conversations = service.conversationsFor(network)
+    for (var i = 0; i < conversations.length; i++) {
+      if (conversations[i].id === message.conversationID) { name = conversations[i].name || ""; break }
+    }
+    queue = queue.concat([{network:network, params:{message:message, conversationName:name}}]).slice(-32)
     flush()
   }
 
   function flush() {
-    if (sending || legacyPreviews || !queue.length || !enabled || !connected || !service) return
+    if (sending || !queue.length || !enabled || !connected || !service) return
     var next = queue[0]
     queue = queue.slice(1)
     if (views.some(function(view) { return view && view.isReadingConversation(next.network, next.params.message.conversationID) })) {

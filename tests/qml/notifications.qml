@@ -30,7 +30,7 @@ ShellRoot {
     function conversationsFor(net) { return conversations }
     function unreadFor(net) { return 0 }
     function loadConversations(net) {}
-    function config() { return {uiScale:1,enabledServices:enabledServices,notificationsEnabled:notifications.enabled} }
+    function config() { return {uiScale:1,enabledServices:enabledServices,notificationsEnabled:notifications.enabled,notificationPreviews:notifications.previews} }
     function call(method, params, callback, network) {
       calls.push({method:method,params:params,network:network})
       if (method === "setNotifications") { saves.push(callback); return }
@@ -56,7 +56,7 @@ ShellRoot {
     onTriggered: {
       try {
         if (root.step === 0) {
-          notifications.applyConfig({notificationsEnabled:true})
+          notifications.applyConfig({notificationsEnabled:true,notificationPreviews:false})
           notifications.registerView(reading)
           var first = incoming("first")
           notifications.handleMessage(first,"telegram",true)
@@ -71,10 +71,10 @@ ShellRoot {
           notifications.handleMessage(incoming("reading"),"telegram",true)
           notifications.handleMessage(incoming("other-chat","demo-b"),"telegram",true)
           check(fake.alertCount() === 3,"only the actively read conversation is suppressed")
-          notifications.applyConfig({notificationsEnabled:false})
+          notifications.applyConfig({notificationsEnabled:false,notificationPreviews:false})
           notifications.handleMessage(incoming("disabled"),"telegram",true)
           check(fake.alertCount() === 3,"disabled notifications stay quiet")
-          notifications.applyConfig({notificationsEnabled:true})
+          notifications.applyConfig({notificationsEnabled:true,notificationPreviews:false})
           reading.active = false
           notifications.handleMessage(incoming("disabled"),"telegram",true)
           check(fake.alertCount() === 3,"re-enabling does not replay suppressed messages")
@@ -82,11 +82,9 @@ ShellRoot {
           check(notifications.enabled && notifications.saving,"preference toggle waits for the helper acknowledgement")
           fake.saves.pop()(false,"Could not save")
           check(notifications.enabled && !notifications.saving && notifications.errorText === "Could not save","failed preference save preserves the current setting")
-          notifications.savePreferences({enabled:false})
-          fake.saves.pop()(true,{notificationsEnabled:false})
-          check(!notifications.enabled && !notifications.saving,"successful preference save applies the acknowledged setting")
-          notifications.savePreferences({enabled:true})
-          fake.saves.pop()(true,{notificationsEnabled:true})
+          notifications.savePreferences({previews:true})
+          fake.saves.pop()(true,{notificationsEnabled:true,notificationPreviews:true})
+          check(notifications.previews,"successful preference save applies the acknowledged setting")
           notifications.unregisterView(reading)
           notifications.openConversation({network:"telegram",conversationID:"demo-b"})
         } else if (root.step === 1) {

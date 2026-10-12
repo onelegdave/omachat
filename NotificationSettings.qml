@@ -22,7 +22,7 @@ Column {
   }
   Text {
     width: parent.width
-    text: "Alerts appear for new incoming messages while OmaChat is running. They show only the service and \"New message\"; names and message text stay in OmaChat. The chat you are actively reading stays quiet. Click an alert to open its conversation. Your desktop controls Do Not Disturb and notification sounds."
+    text: "Alerts appear for new incoming messages while OmaChat is running. The chat you are actively reading stays quiet. Click an alert to open its conversation. Your desktop controls Do Not Disturb and notification sounds."
     textFormat: Text.PlainText
     wrapMode: Text.Wrap
     color: root.foreground
@@ -39,6 +39,19 @@ Column {
     fontFamily: root.fontFamily
     titleSize: root.fs(Style.font.body)
     onClicked: root.notifications.savePreferences({enabled: !checked})
+  }
+  Toggle {
+    objectName: "notificationPreviewsToggle"
+    width: parent.width
+    label: "Show sender and message previews"
+    description: "Off by default. Enabling this displays conversation names and message text in desktop alerts and notification history. Omarchy's notification history passes alert text on a command line, which other accounts on this computer may be able to read. Cached profile photos can appear even when text previews are off."
+    checked: !!root.notifications && root.notifications.previews
+    enabled: !!root.notifications && root.notifications.loaded && root.notifications.enabled && !root.notifications.saving && root.notifications.connected
+    foreground: root.foreground
+    fontFamily: root.fontFamily
+    titleSize: root.fs(Style.font.body)
+    descriptionSize: root.fs(Style.font.caption)
+    onClicked: root.notifications.savePreferences({previews: !checked})
   }
   Button {
     objectName: "testNotificationButton"

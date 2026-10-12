@@ -416,6 +416,7 @@ type ConfigResult struct {
 	SidebarCollapsed            bool              `json:"sidebarCollapsed"`
 	LastConversations           map[string]string `json:"lastConversations"`
 	NotificationsEnabled        bool              `json:"notificationsEnabled"`
+	NotificationPreviews        bool              `json:"notificationPreviews"`
 	TelegramConfigured          bool              `json:"telegramConfigured"`
 	TelegramAPIID               int               `json:"telegramApiId,omitempty"`
 	AlwaysPopout                bool              `json:"alwaysPopout"`
@@ -445,11 +446,13 @@ type SetChatViewParams struct {
 }
 
 type SetNotificationsParams struct {
-	Enabled *bool `json:"enabled,omitempty"`
+	Enabled  *bool `json:"enabled,omitempty"`
+	Previews *bool `json:"previews,omitempty"`
 }
 
 type NotifyMessageParams struct {
-	Message Message `json:"message"`
+	Message          Message `json:"message"`
+	ConversationName string  `json:"conversationName,omitempty"`
 }
 
 type NotificationTarget struct {

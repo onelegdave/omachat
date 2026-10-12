@@ -1,5 +1,11 @@
 # OmaChat
 
+> **You are on the `notification-previews` branch.** It is the current release
+> with the optional notification previews that the main release removed in
+> 0.5.4, and it is not part of the Omarchy Marketplace listing or its review.
+> Read [why previews were removed](#notification-previews-removed-in-054) before
+> turning them on.
+
 A **Native Omarchy Plugin** for Google Messages, WhatsApp, Telegram, and Messenger.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.

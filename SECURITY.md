@@ -49,6 +49,12 @@ back to a generic icon. Desktop notification actions are accepted only from the
 service's current D-Bus owner and route through locally held
 service/conversation identifiers.
 
+On the `notification-previews` branch, turning on **Show sender and message
+previews** sends conversation names and a bounded message preview to the
+notification service. Omarchy's history writer then passes them on a `bash`
+command line that other local accounts may be able to read. The setting is off
+by default.
+
 OmaChat keeps message content and pairing links out of the command lines of the
 programs it starts. The pairing link reaches `qrencode` on standard input.
 
