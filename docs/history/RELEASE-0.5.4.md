@@ -33,9 +33,16 @@ explains how to switch to it, update it, and switch back.
 - Alerts send only the service name and "New message" to the notification
   service. The panel no longer sends conversation names to the helper for
   alerts.
-- If you had previews on, the panel tells the running helper to turn them off
-  before it sends any alert, so previews stop even before you rebuild the
-  helper. The rebuilt helper deletes the saved setting.
+- If you had previews on, they stop when you rebuild the helper or the shell
+  next restarts. After a shell restart, the panel tells a helper that has not
+  been rebuilt to turn them off before it sends any alert. The rebuilt helper
+  deletes the saved setting.
+
+> **Correction:** these notes first said previews stop before the helper is
+> rebuilt. OmaChat's panel service stays loaded across plugin updates, so the
+> new panel code only runs after a shell restart. Rebuilding the helper on
+> v0.5.4 without restarting the shell also stopped all notifications until the
+> next restart. [v0.5.5](RELEASE-0.5.5.md) fixes that; use v0.5.5 instead.
 - The pairing QR link now reaches `qrencode` on standard input instead of its
   command line.
 

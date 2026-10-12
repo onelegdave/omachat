@@ -1,5 +1,17 @@
 # Marketplace readiness
 
+## v0.5.5 update compatibility correction
+
+Local verification after publishing v0.5.4 found that OmaChat's `keepLoaded`
+panel service keeps running the previous release's code until the shell
+restarts. That code ignores a config without `notificationPreviews`, so
+rebuilding the helper on v0.5.4 without a shell restart stopped all
+notifications. v0.5.5 makes the helper always report the field as `false`, and
+a test pins this contract. It also corrects the v0.5.4 documentation: previews
+stop when the helper is rebuilt or the shell restarts, and switching to or from
+the `notification-previews` branch needs a shell restart. The v0.5.4 commit is
+superseded; the same open update request was edited to target v0.5.5.
+
 ## v0.5.4 notification-text correction
 
 Review of v0.5.3 [found](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6128565247)
@@ -72,7 +84,7 @@ records publication on September 19, 2026 and a maintainer-reviewed baseline
 with no findings and the `package-manager`, `privilege`, `service-management`,
 and `installer` capabilities. See the [publication confirmation](https://github.com/omacom/omarchy-plugin-marketplace/issues/7193#issuecomment-5741298865)
 and [registry](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/registry.json).
-This approval covers that snapshot, not v0.5.0 through v0.5.4.
+This approval covers that snapshot, not v0.5.0 through v0.5.5.
 
 Future releases use the [newer-upstream verification and publication workflow](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md#promoting-a-plugin-update):
 provide the existing plugin ID, repository root, and full SHA of the final public
