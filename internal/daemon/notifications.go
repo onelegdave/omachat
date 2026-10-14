@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -249,7 +248,9 @@ func (d *Daemon) handleNotificationRequest(ctx context.Context, req wire.Request
 	return wire.Response{ID: req.ID, OK: true, Result: true}
 }
 
-func (d *Daemon) notificationIcon(network, conversationID string) string {
+// conversationsFor returns a service's conversations and the directory its
+// avatars are cached in.
+func (d *Daemon) conversationsFor(network, conversationID string) ([]wire.Conversation, string) {
 	var conversations []wire.Conversation
 	var directory string
 	switch network {
@@ -275,6 +276,25 @@ func (d *Daemon) notificationIcon(network, conversationID string) string {
 		}
 		directory = d.paths.MessengerMediaDir()
 	}
+	return conversations, directory
+}
+
+// republishConversation re-sends a conversation once its avatar preview is
+// ready. It sends current state, never the snapshot that was waiting.
+func (d *Daemon) republishConversation(waiter avatarWaiter) {
+	conversations, _ := d.conversationsFor(waiter.network, waiter.conversationID)
+	for _, conversation := range conversations {
+		if conversation.ID == waiter.conversationID && conversation.ID != "" {
+			d.PublishEvent(wire.Event{Event: wire.EventConversation, Network: waiter.network, Data: conversation})
+			return
+		}
+	}
+}
+
+// notificationIcon gives the notification server an avatar preview, never a
+// downloaded original: the receiver decodes it inside the shell process.
+func (d *Daemon) notificationIcon(network, conversationID string) string {
+	conversations, directory := d.conversationsFor(network, conversationID)
 	for _, conversation := range conversations {
 		if conversation.ID != conversationID || conversation.AvatarPath == "" {
 			continue
@@ -284,11 +304,11 @@ func (d *Daemon) notificationIcon(network, conversationID string) string {
 		if err != nil || !filepath.IsAbs(path) || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 			break
 		}
-		info, err := os.Lstat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+		preview := d.previews.now(path, avatarPreviewEdge)
+		if preview == "" {
 			break
 		}
-		return (&url.URL{Scheme: "file", Path: path}).String()
+		return (&url.URL{Scheme: "file", Path: preview}).String()
 	}
 	return "mail-unread"
 }

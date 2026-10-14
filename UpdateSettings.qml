@@ -13,6 +13,7 @@ Column {
   spacing:Style.space(8)
   function fs(n) { return Math.max(12,Math.round(n*uiScale)) }
   Text {
+    textFormat: Text.PlainText
     width:parent.width; text:"Updates"; color:root.foreground
     font.family:root.fontFamily; font.pixelSize:root.fs(Style.font.heading); font.bold:true
   }
@@ -67,6 +68,7 @@ Column {
     }
   }
   Text {
+    textFormat: Text.PlainText
     width:parent.width; wrapMode:Text.Wrap
     text:"Daily checks are optional and off by default. Checks request public release metadata from GitHub, which sees your IP address. No messages or account credentials are sent. The updater follows the default branch; review its changes in the terminal."
     color:root.mutedColor; font.family:root.fontFamily; font.pixelSize:root.fs(Style.font.bodySmall)

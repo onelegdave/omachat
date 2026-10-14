@@ -49,6 +49,7 @@ Item {
     border.color: Color.popups.border
     radius: Style.space(6)
     Text {
+      textFormat: Text.PlainText
       anchors.centerIn: parent
       text: "Media error"
       color: Model.readableInk(errorSurface.color, Color.popups.text)

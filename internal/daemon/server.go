@@ -133,18 +133,6 @@ func removeStaleSocket(path string) error {
 	return os.Remove(path)
 }
 
-// connWriter serialises writes from the request path and the event pump.
-type connWriter struct {
-	mu  sync.Mutex
-	enc *json.Encoder
-}
-
-func (w *connWriter) send(v any) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.enc.Encode(v)
-}
-
 func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	ctx, cancel := context.WithCancel(ctx)
 	var requests sync.WaitGroup
@@ -156,7 +144,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	go func() { <-ctx.Done(); conn.Close() }()
 	slots := make(chan struct{}, maxRequestsPerConnection)
 
-	w := &connWriter{enc: json.NewEncoder(conn)}
+	w := &connWriter{w: conn}
 
 	events, unsubscribe := d.Subscribe()
 	defer unsubscribe()
@@ -183,7 +171,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 				if !ok {
 					return
 				}
-				if err := w.send(evt); err != nil {
+				if err := w.send(d.previews.outbound(evt.Network, limitOutbound(evt))); err != nil {
 					cancel()
 					return
 				}
@@ -220,7 +208,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 				defer d.configResponseMu.Unlock()
 			}
 			resp := d.dispatch(ctx, req)
-			if err := w.send(resp); err != nil {
+			if err := w.send(d.previews.response(req, limitOutbound(resp).(wire.Response))); err != nil {
 				cancel()
 				return
 			}

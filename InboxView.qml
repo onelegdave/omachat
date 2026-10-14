@@ -129,7 +129,11 @@ Item {
   property bool followingLatest: false
   property bool positioningMessages: false
   property string threadError: ""
+  // mediaPaths holds downloaded originals, which only external applications
+  // open. mediaPreviews holds the helper's re-encoded copies: the only images
+  // this view decodes, since it runs inside the shared shell process.
   property var mediaPaths: ({})
+  property var mediaPreviews: ({})
   property var _mediaNetworks: ({})
   property var mediaRequests: ({})
   property string pendingAttachment: ""
@@ -603,6 +607,12 @@ Item {
 
   function loadOlderMessages() {
     if (!service || selectedConvID === "" || loadingMessages || loadingOlder || historyFetchState === "loading" || !hasOlder) return
+    // The thread holds a bounded number of messages; older ones stay on the phone.
+    if (messages.length >= Model.MAX_THREAD_MESSAGES) {
+      hasOlder = false
+      historyNotice = "Older messages are available in the app on your phone."
+      return
+    }
     loadingOlder = true
     historyError = ""
     var request = ++historyRequest
@@ -735,11 +745,11 @@ Item {
       root.storeLocalSends(net, msg.conversationID, Model.mergeMessage(convPending, msg))
     if (net === root.network && msg.conversationID === root.selectedConvID) {
       var follow = root.messages.length === 0 || messageList.atYEnd || (msg.fromMe && msg.provisional)
-      root.displayMessages(Model.mergeMessage(root.messages, msg), follow)
+      root.displayMessages(Model.boundThread(Model.mergeMessage(root.messages, msg)), follow)
     }
   }
 
-  function _withMedia(mediaID, value) {
+  function _withMedia(mediaID, value, preview) {
     var owners = Object.assign({}, _mediaNetworks)
     owners[mediaID] = root.network
     _mediaNetworks = owners
@@ -747,6 +757,10 @@ Item {
     for (var k in mediaPaths) next[k] = mediaPaths[k]
     next[mediaID] = value
     mediaPaths = next
+    var previews = Object.assign({}, mediaPreviews)
+    if (preview) previews[mediaID] = preview
+    else delete previews[mediaID]
+    mediaPreviews = previews
   }
 
   function _evictMedia(key) {
@@ -756,6 +770,9 @@ Item {
       if (k !== key) nextPaths[k] = mediaPaths[k]
     }
     mediaPaths = nextPaths
+    var nextPreviews = Object.assign({}, mediaPreviews)
+    delete nextPreviews[key]
+    mediaPreviews = nextPreviews
     var nextReqs = {}
     for (var rk in mediaRequests) {
       if (rk !== key) nextReqs[rk] = mediaRequests[rk]
@@ -765,16 +782,18 @@ Item {
 
   function _clearMediaForNetwork(net) {
     var target = net || root.network
-    var paths = {}, requests = {}, owners = {}
+    var paths = {}, previews = {}, requests = {}, owners = {}
     var keys = Object.assign({}, mediaPaths, mediaRequests, _mediaNetworks)
     for (var key in keys) {
       var owner = _mediaNetworks[key] || (key.indexOf("tg:") === 0 ? "telegram" : (key.indexOf("@") >= 0 ? "whatsapp" : "gmessages"))
       if (owner === target) continue
       if (mediaPaths[key]) paths[key] = mediaPaths[key]
+      if (mediaPreviews[key]) previews[key] = mediaPreviews[key]
       if (mediaRequests[key]) requests[key] = mediaRequests[key]
       owners[key] = owner
     }
     mediaPaths = paths
+    mediaPreviews = previews
     mediaRequests = requests
     _mediaNetworks = owners
     mediaRetry.queue = []
@@ -793,15 +812,17 @@ Item {
   function requestMedia(key, attempt) {
     if (!key || !service) return
     var tries = attempt === undefined ? 0 : attempt
-    if (tries === 0 && (mediaRequests[key] === "loading" || (mediaRequests[key] === "ready" && mediaPaths[key]))) return
+    if (tries === 0 && (mediaRequests[key] === "loading" || (mediaRequests[key] === "ready" && mediaPreviews[key]))) return
     setMediaRequest(key, "loading")
     var targetNet = root.network
     var epoch = root._networkEpochs[targetNet] || 0
-    service.call("media", { key: key }, function(ok, res) {
+    service.call("media", { key: key, previews: true }, function(ok, res) {
       if (targetNet !== root.network || epoch !== (root._networkEpochs[targetNet] || 0)) return
-      if (ok && res && res.path) _withMedia(key, res.path)
+      if (ok && res && res.path) _withMedia(key, res.path, res.preview || "")
       if (ok && res && res.path && !res.thumbnail) {
-        setMediaRequest(key, "ready")
+        // Without a preview the helper could not safely re-encode the file.
+        // It is offered to an external viewer instead of decoded here.
+        setMediaRequest(key, res.preview ? "ready" : "external")
         return
       }
       if (ok && res && (res.pending || res.thumbnail) && tries < 6) {
@@ -986,11 +1007,11 @@ Item {
       return
     }
     audioWaitingKey = key
-    service.call("media", { key: key }, function(ok, res) {
+    service.call("media", { key: key, previews: true }, function(ok, res) {
       if (audioWaitingKey !== key) return
       audioWaitingKey = ""
       if (ok && res && res.path) {
-        _withMedia(key, res.path)
+        _withMedia(key, res.path, res.preview || "")
         openImage(res.path)
         return
       }
@@ -1000,10 +1021,10 @@ Item {
 
   function _fetchAudio(key, attempt) {
     if (!service) return
-    service.call("media", { key: key }, function(ok, res) {
+    service.call("media", { key: key, previews: true }, function(ok, res) {
       if (root.audioWaitingKey !== key) return
       if (ok && res && res.path && !res.thumbnail) {
-        root._withMedia(key, res.path)
+        root._withMedia(key, res.path, res.preview || "")
         root._startAudio(key, res.path)
         return
       }
@@ -1050,7 +1071,14 @@ Item {
   function copyText(value) {
     var v = String(value || "")
     if (!v) return
-    Util.execArgv(["wl-copy", "--", v])
+    // Copied text goes through stdin, not argv: other local accounts can read
+    // argv through /proc, and wl-copy's clipboard-serving child keeps it.
+    // A fixed type also stops wl-copy from sniffing the text with a helper.
+    copyProc.running = false
+    copyProc.pendingText = v
+    copyProc.stdinEnabled = true
+    copyProc.command = ["wl-copy", "--type", "text/plain;charset=utf-8"]
+    copyProc.running = true
     flashCopied()
   }
 
@@ -1192,6 +1220,17 @@ Item {
   Process {
     id: playProc
     onExited: root.playingKey = ""
+  }
+
+  Process {
+    id: copyProc
+    objectName: "copyProcess"
+    property string pendingText: ""
+    onStarted: {
+      write(pendingText)
+      pendingText = ""
+      stdinEnabled = false
+    }
   }
 
   Timer {
@@ -1363,6 +1402,7 @@ Item {
       }
 
       Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         text: root.unreadConversations === 1 ? "Next unread (1)" : "Next unread (" + root.unreadConversations + ")"
         color: root.foreground
@@ -1440,6 +1480,7 @@ Item {
 
         Text {
           id: convTime
+          textFormat: Text.PlainText
           anchors.right: parent.right
           anchors.rightMargin: Style.space(8)
           anchors.top: parent.top
@@ -1451,6 +1492,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
           anchors.left: convAvatar.right
           anchors.leftMargin: Style.space(8)
           anchors.right: convTime.left
@@ -1466,6 +1508,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
           anchors.left: convAvatar.right
           anchors.leftMargin: Style.space(8)
           anchors.right: parent.right
@@ -1505,6 +1548,7 @@ Item {
     anchors.bottom: parent.bottom
 
     Text {
+      textFormat: Text.PlainText
       anchors.centerIn: parent
       width: Math.max(0, parent.width - Style.space(32))
       horizontalAlignment: Text.AlignHCenter
@@ -1545,6 +1589,7 @@ Item {
         spacing: 0
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           elide: Text.ElideRight
           text: root.selectedConv ? (root.selectedConv.name || "") : ""
@@ -1555,6 +1600,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           elide: Text.ElideRight
           text: root.networkLabel
@@ -1664,6 +1710,7 @@ Item {
         height: isDay ? Style.space(28) : bubbleCol.implicitHeight + (startsRun ? Style.space(8) : 0)
 
         Text {
+          textFormat: Text.PlainText
           visible: row.isDay
           anchors.horizontalCenter: parent.horizontalCenter
           anchors.verticalCenter: parent.verticalCenter
@@ -1683,6 +1730,7 @@ Item {
           spacing: Style.space(4)
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: !row.mine && row.startsRun && root.selectedConv && root.selectedConv.isGroup === true
               && String(row.msg && row.msg.senderName || "") !== ""
@@ -1727,31 +1775,35 @@ Item {
                   readonly property bool isImage: !!(modelData && (modelData.isImage || modelData.isGif) && !modelData.isAudio && !modelData.isVideo)
                   readonly property bool isVoice: !!(modelData && modelData.isAudio)
                   readonly property bool isVideo: !!(modelData && modelData.isVideo)
-                  readonly property bool isVideoGif: !!(isVideo && modelData && modelData.isGif)
-                  readonly property bool loadsInline: isImage || isVideoGif
+                  // Video, including Messenger's video-backed GIFs, opens in
+                  // an external player rather than decoding in the shell.
+                  readonly property bool loadsInline: isImage
                   readonly property string mediaKey: modelData && modelData.key ? modelData.key : ""
+                  // The original, for external applications only.
                   readonly property string mediaPath: mediaKey && root.mediaPaths[mediaKey]
                     ? root.mediaPaths[mediaKey] : (modelData && modelData.path ? modelData.path : "")
+                  // The helper's re-encoded copy, the only file decoded here.
+                  readonly property string previewPath: mediaKey && root.mediaPreviews[mediaKey] ? root.mediaPreviews[mediaKey] : ""
                   readonly property string mediaState: mediaKey && root.mediaRequests[mediaKey] ? root.mediaRequests[mediaKey] : ""
-                  readonly property bool mediaFailed: loadsInline && mediaPath === "" && mediaState === "failed"
-                  readonly property bool mediaLoading: loadsInline && !mediaFailed
-                    && !(isImage ? thumb.ready : (videoGifLoader.item && videoGifLoader.item.ready))
-                    && !(isImage ? thumb.hasError : (videoGifLoader.item && videoGifLoader.item.hasError))
+                  readonly property bool mediaFailed: loadsInline && previewPath === "" && mediaState === "failed"
+                  readonly property bool mediaExternal: loadsInline && previewPath === "" && mediaState === "external" && mediaPath !== ""
+                  readonly property bool mediaLoading: loadsInline && !mediaFailed && !mediaExternal
+                    && !thumb.ready && !thumb.hasError
                   readonly property bool playingThis: isVoice && root.playingKey === mediaKey
                   readonly property bool loadingThis: isVoice && root.audioWaitingKey === mediaKey
                   width: parent.width
                   height: {
-                    if (isVoice || (isVideo && !isVideoGif)) return Style.space(36)
+                    if (isVoice || isVideo) return Style.space(36)
                     if (loadsInline) {
-                      if (mediaPath !== "") return isImage ? (thumb.height || Style.space(96))
-                        : ((videoGifLoader.item && videoGifLoader.item.height) || Style.space(96))
+                      if (previewPath !== "") return thumb.height || Style.space(96)
+                      if (mediaExternal) return Style.space(36)
                       return Style.space(96)
                     }
                     return 0
                   }
                   visible: isImage || isVoice || isVideo
-                  onMediaKeyChanged: if (loadsInline && mediaKey && !mediaPath) root.requestMedia(mediaKey)
-                  Component.onCompleted: if (loadsInline && mediaKey && !mediaPath) root.requestMedia(mediaKey)
+                  onMediaKeyChanged: if (loadsInline && mediaKey && !previewPath) root.requestMedia(mediaKey)
+                  Component.onCompleted: if (loadsInline && mediaKey && !previewPath) root.requestMedia(mediaKey)
 
                   Rectangle {
                     visible: parent.isVoice
@@ -1769,6 +1821,7 @@ Item {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                       anchors.centerIn: parent
                       text: parent.parent.loadingThis ? "Fetching voice"
                         : (parent.parent.playingThis ? "Stop voice" : "Play voice")
@@ -1780,7 +1833,7 @@ Item {
                   }
 
                   Rectangle {
-                    visible: parent.isVideo && !parent.isVideoGif
+                    visible: parent.isVideo
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
@@ -1795,6 +1848,7 @@ Item {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                       anchors.centerIn: parent
                       text: "Open video"
                       color: row.mine ? root.mineInk : root.theirsInk
@@ -1814,11 +1868,39 @@ Item {
                     border.color: row.mine ? root.mineInk : Color.popups.border
 
                     Text {
+                      textFormat: Text.PlainText
                       anchors.centerIn: parent
                       text: "Loading media…"
                       color: row.mine ? root.mineInk : root.theirsInk
                       font.family: root.fontFamily
                       font.pixelSize: fs(Style.font.caption)
+                    }
+                  }
+
+                  Rectangle {
+                    objectName: "openImageExternally"
+                    visible: parent.mediaExternal
+                    width: Math.min(parent.width, Style.space(220))
+                    height: Style.space(34)
+                    radius: height / 2
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    border.width: 1
+                    border.color: row.mine ? root.mineInk : Color.popups.border
+
+                    MouseArea {
+                      anchors.fill: parent
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.openImage(parent.parent.mediaPath)
+                    }
+
+                    Text {
+                      textFormat: Text.PlainText
+                      anchors.centerIn: parent
+                      text: "Open image"
+                      color: row.mine ? root.mineInk : root.theirsInk
+                      font.family: root.fontFamily
+                      font.pixelSize: fs(Style.font.caption)
+                      font.bold: true
                     }
                   }
 
@@ -1838,6 +1920,7 @@ Item {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                       anchors.centerIn: parent
                       text: "Media failed. Tap to retry"
                       color: row.mine ? root.mineInk : root.theirsInk
@@ -1849,13 +1932,15 @@ Item {
 
                   MediaThumb {
                     id: thumb
-                    visible: parent.isImage && parent.mediaPath !== ""
-                    path: parent.isImage ? parent.mediaPath : ""
-                    mimeType: modelData ? (modelData.mimeType || "") : ""
-                    fileName: modelData ? (modelData.name || "") : ""
+                    visible: parent.isImage && parent.previewPath !== ""
+                    path: parent.isImage ? parent.previewPath : ""
+                    // The preview's own extension says whether it animates;
+                    // the sender's MIME type and file name are not trusted.
+                    mimeType: ""
+                    fileName: ""
                     playing: root.panelOpen
                     maxEdge: Math.min(parent.width, Style.space(280))
-                    onClicked: root.openImage(parent.mediaPath)
+                    onClicked: root.openImage(parent.mediaPath || parent.previewPath)
                     onLoadFailed: {
                       if (parent.mediaKey) {
                         root._evictMedia(parent.mediaKey)
@@ -1864,24 +1949,6 @@ Item {
                     }
                   }
 
-                  Loader {
-                    id: videoGifLoader
-                    active: parent.isVideoGif
-                    visible: active && parent.mediaPath !== ""
-                    sourceComponent: Component {
-                      LoopingVideoThumb {
-                        path: attachItem.isVideoGif ? attachItem.mediaPath : ""
-                        playing: root.panelOpen && videoGifLoader.visible
-                        maxEdge: Math.min(attachItem.width, Style.space(280))
-                        onLoadFailed: {
-                          if (attachItem.mediaKey) {
-                            root._evictMedia(attachItem.mediaKey)
-                            root.setMediaRequest(attachItem.mediaKey, "failed")
-                          }
-                        }
-                      }
-                    }
-                  }
                 }
               }
 
@@ -1936,6 +2003,7 @@ Item {
 
                     Text {
                       id: copyLabel
+                      textFormat: Text.PlainText
                       anchors.centerIn: parent
                       text: "Copy " + parent.code
                       color: row.mine ? root.mineInk : root.theirsInk
@@ -1955,12 +2023,14 @@ Item {
               Row {
                 spacing: Style.space(6)
                 Text {
+                  textFormat: Text.PlainText
                   text: row.msg ? Model.bubbleTime(row.msg.timestamp) : ""
                   color: row.mine ? root.mineMeta : root.theirsMeta
                   font.family: root.fontFamily
                   font.pixelSize: fs(Style.font.caption)
                 }
                 Text {
+                  textFormat: Text.PlainText
                   visible: row.mine && text !== ""
                   text: Model.receiptLabel(row.msg)
                   color: {
@@ -1973,6 +2043,7 @@ Item {
                 }
                 Item { width: Style.space(4); height: 1 }
                 Text {
+                  textFormat: Text.PlainText
                   visible: root.reactionsSupported && row.msg && !row.msg.deleted
                   text: (row.msg && root.reactingTo === row.msg.id) ? "Close" : "React"
                   color: row.mine ? root.mineMeta : root.theirsMeta
@@ -2009,6 +2080,7 @@ Item {
 
                 Text {
                   id: chipLabel
+                  textFormat: Text.PlainText
                   anchors.centerIn: parent
                   text: (modelData.emoji || "") + (modelData.count > 1 ? " " + modelData.count : "")
                   color: modelData.mine ? root.selectedInk : root.foreground
@@ -2088,6 +2160,7 @@ Item {
         anchors.margins: Style.space(8)
 
         Text {
+          textFormat: Text.PlainText
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
           text: "Voice  ·  " + Model.formatDuration(Math.min(root.pendingVoiceSeconds, root.maxRecordSeconds))
@@ -2446,6 +2519,7 @@ Item {
       Text {
         id: emojiNoResults
         objectName: "emojiNoResults"
+        textFormat: Text.PlainText
         anchors.centerIn: emojiGrid
         visible: root.emojiSearchQuery.length > 0 && emojiGrid.count === 0
         text: "No emoji found"
@@ -2456,6 +2530,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       anchors.horizontalCenter: parent.horizontalCenter
       anchors.bottom: composerRow.top
       anchors.bottomMargin: Style.space(8)
@@ -2468,6 +2543,7 @@ Item {
 
     Text {
       objectName: "threadErrorLabel"
+      textFormat: Text.PlainText
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.bottom: composerRow.top

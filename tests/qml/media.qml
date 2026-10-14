@@ -14,6 +14,8 @@ ShellRoot {
   property var photo: ({id:"photo",conversationID:"a",timestamp:1000000,fromMe:false,attachments:[{key:"photo-key",isImage:true,mimeType:"image/svg+xml"}]})
   property var corruptPhoto: ({id:"corrupt",conversationID:"a",timestamp:3000000,fromMe:false,attachments:[{key:"corrupt-key",isImage:true,mimeType:"image/png"}]})
   property var videoGif: ({id:"video-gif",conversationID:"a",timestamp:4000000,fromMe:false,attachments:[{key:"video-gif-key",isGif:true,isVideo:true,mimeType:"video/x-f4v",name:"clip.f4v"}]})
+  property var unpreviewable: ({id:"no-preview",conversationID:"a",timestamp:5000000,fromMe:false,attachments:[{key:"no-preview-key",isImage:true,mimeType:"image/png",name:"document.png"}]})
+  property int callsBeforeVideo: 0
   function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
   function thumb(item) {
     if (item && item.ready !== undefined && item.maxEdge !== undefined) return item
@@ -60,10 +62,11 @@ ShellRoot {
           root.check(!!root.originalThumb && !root.originalThumb.ready,"photo starts with a loading placeholder")
           root.check(root.originalThumb.parent.mediaLoading,"loading label remains until image decode")
           root.check(root.originalThumb.parent.height>=96,"loading photo reserves thumbnail space")
-          root.pending(true,{path:Quickshell.env("OMACHAT_TEST_IMAGE")})
+          root.pending(true,{path:"/nonexistent/original.png",preview:Quickshell.env("OMACHAT_TEST_IMAGE")})
         }
         if(root.step===2) {
           root.check(root.originalThumb.ready,"downloaded photo decodes")
+          root.check(root.originalThumb.path===Quickshell.env("OMACHAT_TEST_IMAGE"),"the thumbnail decodes the helper preview, not the original")
           root.check(!root.originalThumb.parent.mediaLoading,"ready photo replaces loading label")
           inbox.mergeMessage(JSON.parse(JSON.stringify(root.photo)))
         }
@@ -83,21 +86,32 @@ ShellRoot {
         }
         if(root.step===6) {
           root.check(!!root.pending,"corrupt photo requests media once")
-          root.pending(true,{path:"/dev/null"})
+          root.pending(true,{path:"/dev/null",preview:"/dev/null"})
           root.callsAfterCorruptLoad=root.mediaCalls
         }
         if(root.step===7) {
           root.check(inbox.mediaRequests["corrupt-key"]==="failed","decode failure becomes a stable failed state")
           root.check(root.mediaCalls===root.callsAfterCorruptLoad,"decode failure does not redownload in a loop")
+          root.callsBeforeVideo=root.mediaCalls
           inbox.mergeMessage(root.videoGif)
         }
         if(root.step===8) {
-          root.check(!!root.pending,"video-backed GIF requests inline media")
-          root.pending(true,{path:"/dev/null"})
+          root.check(root.mediaCalls===root.callsBeforeVideo,"video-backed GIF is not downloaded for inline playback")
+          var videoRow=list.itemAtIndex(list.count-1)
+          root.check(!root.named(videoRow,"loopingVideoThumb"),"video-backed GIF has no inline player in the shell")
+          inbox.mergeMessage(root.unpreviewable)
         }
         if(root.step===9) {
-          var inlineGif=root.named(list.itemAtIndex(list.count-1),"loopingVideoThumb")
-          root.check(!!inlineGif && inlineGif.loopsForever,"video-backed GIF uses an inline infinite-loop player")
+          root.check(root.mediaCalls===root.callsBeforeVideo+1,"image without a preview is requested once")
+          root.pending(true,{path:"/tmp/original-document.png"})
+        }
+        if(root.step===10) {
+          var row=list.itemAtIndex(list.count-1)
+          var chip=root.named(row,"openImageExternally")
+          root.check(inbox.mediaRequests["no-preview-key"]==="external","image without a preview is offered externally")
+          root.check(!!chip && chip.visible,"image without a preview shows Open image")
+          var noPreviewThumb=root.thumb(row)
+          root.check(!noPreviewThumb || noPreviewThumb.path==="","the original is never decoded in the shell")
           console.log("OMACHAT_MEDIA_PASS"); Qt.quit()
         }
         root.step++

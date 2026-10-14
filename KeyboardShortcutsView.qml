@@ -106,6 +106,7 @@ Column {
   RowLayout {
     width: parent.width
     Text {
+      textFormat: Text.PlainText
       Layout.fillWidth: true
       text: "Keyboard shortcuts"
       color: root.foreground
@@ -122,6 +123,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     wrapMode: Text.Wrap
     text: "Record a chord or type one directly. Clear a field and press Enter to unbind that action. Tab, arrows, Enter, and Escape remain available for navigation."
@@ -152,6 +154,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     visible: root.errorText !== "" || root.statusText !== ""
     wrapMode: Text.Wrap

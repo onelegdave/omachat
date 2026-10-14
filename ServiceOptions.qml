@@ -49,16 +49,19 @@ Column {
     function onEnabledServicesChanged() { if(!root.dirty && !root.saving) root.reload() }
   }
   Text {
+    textFormat: Text.PlainText
     width: parent.width; wrapMode: Text.Wrap
     text: root.service && root.service.serviceSelectionRequired ? "Choose your services" : "Enabled services"
     color: root.ink; font.family: root.fontFamily; font.pixelSize: root.fs(Style.font.heading); font.bold:true
   }
   Text {
+    textFormat: Text.PlainText
     width: parent.width; wrapMode: Text.Wrap
     text: "Turn off any service you do not want. Applying changes briefly restarts the shared helper, so other enabled services reconnect too. A disabled service does not start again and its tab is hidden. Credentials are kept; Unpair is separate. You may turn off all services. No dependencies are installed."
     color: root.ink; font.family: root.fontFamily; font.pixelSize: root.fs(Style.font.body)
   }
   Text {
+    textFormat: Text.PlainText
     width: parent.width; wrapMode: Text.Wrap
     text: "Text drafts remain while the shell is running. Leaving a service stops recording and clears pending attachments. A message already submitted may still arrive; do not resend it without checking the conversation."
     color: root.ink; font.family: root.fontFamily; font.pixelSize: root.fs(Style.font.body)
@@ -74,6 +77,7 @@ Column {
       required property var modelData
       width: root.width; spacing:Style.space(4)
       Text {
+        textFormat: Text.PlainText
         width:parent.width; wrapMode:Text.Wrap
         text:modelData.name + " · " + modelData.hint
         color:root.ink; font.family:root.fontFamily; font.pixelSize:root.fs(Style.font.body)
@@ -106,6 +110,7 @@ Column {
     }
   }
   Text {
+    textFormat: Text.PlainText
     width:parent.width; wrapMode:Text.Wrap
     text: root.resultText || (root.service && root.service.servicesError ? root.service.servicesError : (!root.ready ? "Connect to the updated helper to load service choices." : ""))
     visible:text !== ""

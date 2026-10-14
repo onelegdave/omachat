@@ -43,6 +43,7 @@ Controls.Popup {
     RowLayout {
       Layout.fillWidth: true
       Text {
+        textFormat: Text.PlainText
         text: "Keyboard actions"
         color: root.foreground
         font.family: root.fontFamily
@@ -51,6 +52,7 @@ Controls.Popup {
         Layout.fillWidth: true
       }
       Text {
+        textFormat: Text.PlainText
         text: "Esc to close"
         color: root.mutedColor
         font.family: root.fontFamily
@@ -120,6 +122,7 @@ Controls.Popup {
         contentItem: RowLayout {
           spacing: Style.space(10)
           Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: modelData.label
             color: root.foreground
@@ -128,6 +131,7 @@ Controls.Popup {
             elide: Text.ElideRight
           }
           Text {
+            textFormat: Text.PlainText
             text: modelData.shortcut
             color: root.accentColor
             font.family: root.fontFamily
@@ -156,6 +160,7 @@ Controls.Popup {
     }
 
     Text {
+      textFormat: Text.PlainText
       Layout.fillWidth: true
       visible: actionList.count === 0
       text: "No actions match your search."

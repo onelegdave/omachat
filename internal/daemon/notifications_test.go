@@ -165,14 +165,16 @@ func TestNotificationIconUsesMatchingServiceAvatar(t *testing.T) {
 	google := filepath.Join(d.paths.MediaDir(), "google.png")
 	telegram := filepath.Join(d.paths.TelegramMediaDir(), "contact #1 photo.jpg")
 	for _, path := range []string{google, telegram} {
-		if err := os.WriteFile(path, []byte("synthetic avatar"), 0600); err != nil {
-			t.Fatal(err)
-		}
+		writeTestImage(t, path, 64, 64)
 	}
 	d.convs["same-id"] = wire.Conversation{ID: "same-id", AvatarPath: google}
 	d.tg.AddTestConversation(wire.Conversation{ID: "same-id", AvatarPath: telegram})
 	for network, path := range map[string]string{"gmessages": google, "telegram": telegram} {
-		if icon := d.notificationIcon(network, "same-id"); icon != (&url.URL{Scheme: "file", Path: path}).String() {
+		// The notification server decodes the icon inside the shell, so it
+		// gets the re-encoded preview from that service's directory.
+		icon := d.notificationIcon(network, "same-id")
+		want := (&url.URL{Scheme: "file", Path: d.previews.now(path, avatarPreviewEdge)}).String()
+		if want == "file:" || icon != want || !strings.Contains(icon, filepath.Join(filepath.Dir(path), previewDirName)) {
 			t.Fatalf("wrong avatar for %s: %s", network, icon)
 		}
 	}
@@ -204,9 +206,7 @@ func TestNotificationRPCSendsAvatarAndGenericTextOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(d.paths.TelegramMediaDir(), "fixture.jpg")
-	if err := os.WriteFile(path, []byte("synthetic avatar"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeTestImage(t, path, 64, 64)
 	d.tg.AddTestConversation(wire.Conversation{ID: "tg:42", AvatarPath: path})
 	transport := &fakeNotifications{server: ":1.99"}
 	d.notifications.transport = transport
@@ -214,7 +214,7 @@ func TestNotificationRPCSendsAvatarAndGenericTextOnly(t *testing.T) {
 	// notification server, even with a preview setting left by an old release.
 	params := map[string]any{"conversationName": "Demo Contact", "message": map[string]any{"id": "fixture", "conversationID": "tg:42", "senderName": "Demo Sender", "text": "Synthetic message"}}
 	resp := d.dispatch(context.Background(), wire.Request{Network: "telegram", Method: wire.MethodNotifyMessage, Params: params})
-	if !resp.OK || transport.icon != (&url.URL{Scheme: "file", Path: path}).String() || transport.title != "OmaChat · Telegram" || transport.body != "New message" {
+	if !resp.OK || transport.icon != (&url.URL{Scheme: "file", Path: d.previews.now(path, avatarPreviewEdge)}).String() || transport.title != "OmaChat · Telegram" || transport.body != "New message" {
 		t.Fatalf("notification was not generic with the contact avatar: %q %q %q", transport.icon, transport.title, transport.body)
 	}
 	if resp := d.dispatch(context.Background(), wire.Request{Method: wire.MethodTestNotification}); !resp.OK || transport.icon != "mail-unread" {

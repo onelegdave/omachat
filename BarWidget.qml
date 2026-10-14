@@ -116,6 +116,7 @@ BarWidget {
 
       Text {
         id: badgeText
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         text: root.unread > 9 ? "9+" : String(root.unread)
         color: Model.readableInk(parent.color, Color.background)

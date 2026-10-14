@@ -13,6 +13,7 @@ Column {
   function fs(n) { return Math.max(12, Math.round(n * uiScale)) }
 
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     text: "Desktop notifications"
     color: root.foreground

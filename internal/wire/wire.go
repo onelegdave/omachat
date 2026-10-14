@@ -500,6 +500,11 @@ type MediaParams struct {
 	Key string `json:"key"`
 	// MediaID is accepted as a legacy alias for Key.
 	MediaID string `json:"mediaID,omitempty"`
+	// Previews is set by panels that decode MediaResult.Preview and only hand
+	// Path to external applications. A panel service from an earlier release
+	// keeps running after an update until the shell restarts, and it decodes
+	// Path itself, so without this flag Path is replaced by the preview.
+	Previews bool `json:"previews,omitempty"`
 }
 
 type MediaResult struct {
@@ -510,4 +515,9 @@ type MediaResult struct {
 	Pending bool `json:"pending,omitempty"`
 	// Thumbnail means Path is a low-resolution stand-in.
 	Thumbnail bool `json:"thumbnail,omitempty"`
+	// Preview is a re-encoded copy of an image attachment, the only file the
+	// panel decodes itself. It is empty for anything that is not a still or
+	// animated image the helper can decode within its limits; Path remains
+	// available to open in an external application.
+	Preview string `json:"preview,omitempty"`
 }

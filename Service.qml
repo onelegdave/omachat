@@ -647,6 +647,14 @@ Item {
     }
   }
 
+  // Live events can add conversations without end, and the panel keeps them
+  // inside the shared shell process. Keep pinned and newest within a budget;
+  // the list is already sorted that way. Matches Model.MAX_CONVERSATIONS.
+  readonly property int maxConversations: 1000
+  function _boundConversations(list) {
+    return list.length <= maxConversations ? list : list.slice(0, maxConversations)
+  }
+
   function _mergeConversation(conv) {
     if (!conv || !conv.id) return
     var list = root.conversations.slice()
@@ -663,7 +671,7 @@ Item {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
       return (b.timestamp || 0) - (a.timestamp || 0)
     })
-    root.conversations = list
+    root.conversations = root._boundConversations(list)
     root.conversationUpdated(conv, "gmessages")
   }
 
@@ -683,7 +691,7 @@ Item {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
       return (b.timestamp || 0) - (a.timestamp || 0)
     })
-    root.conversationsWA = list
+    root.conversationsWA = root._boundConversations(list)
     root.conversationUpdated(conv, "whatsapp")
   }
 
@@ -703,7 +711,7 @@ Item {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
       return (b.timestamp || 0) - (a.timestamp || 0)
     })
-    root.conversationsTG = list
+    root.conversationsTG = root._boundConversations(list)
     root.conversationUpdated(conv, "telegram")
   }
 
@@ -723,7 +731,7 @@ Item {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
       return (b.timestamp || 0) - (a.timestamp || 0)
     })
-    root.conversationsFB = list
+    root.conversationsFB = root._boundConversations(list)
     root.conversationUpdated(conv, "messenger")
   }
 }

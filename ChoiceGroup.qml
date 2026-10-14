@@ -51,6 +51,7 @@ Flow {
 
         Text {
           id: serviceBadgeText
+          textFormat: Text.PlainText
           anchors.centerIn: parent
           text: Number(choice.modelData.unread || 0) > 9 ? "9+" : String(Number(choice.modelData.unread || 0))
           color: Model.readableInk(parent.color, Color.background)

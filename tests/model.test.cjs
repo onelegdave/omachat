@@ -62,3 +62,27 @@ test('refresh preserves local sends and replaces them once server history catche
  const real={...pending,id:'server',provisional:false,pending:false};
  assert.deepEqual(plain(model.refreshMessages([pending], [real])), [real]);
 });
+
+test('copy targets are bounded however many codes a message holds', () => {
+  const codes = Array.from({length: 2000}, (_, i) => String(1000 + i)).join(', ');
+  assert.deepEqual(plain(model.extractCopyTargets(codes)), ['1000', '1001', '1002', '1003']);
+  assert.deepEqual(plain(model.extractCopyTargets('x'.repeat(5000) + ' 482913')), []);
+  assert.deepEqual(plain(model.extractCopyTargets('Your code is 482913')), ['482913']);
+});
+
+test('conversation previews are bounded before layout', () => {
+  assert.equal(model.previewText({preview: 'a'.repeat(100000)}).length, 500);
+});
+
+test('thread and conversation models keep the newest records within a budget', () => {
+  const thread = Array.from({length: model.MAX_THREAD_MESSAGES + 5}, (_, i) => ({id: String(i), timestamp: i}));
+  const bounded = model.boundThread(thread);
+  assert.equal(bounded.length, model.MAX_THREAD_MESSAGES);
+  assert.equal(bounded[0].id, '5');
+  assert.equal(bounded[bounded.length - 1].id, String(model.MAX_THREAD_MESSAGES + 4));
+  const small = [{id: 'a'}];
+  assert.equal(model.boundThread(small), small);
+  const convs = Array.from({length: model.MAX_CONVERSATIONS + 3}, (_, i) => ({id: String(i)}));
+  assert.equal(model.boundConversations(convs).length, model.MAX_CONVERSATIONS);
+  assert.equal(model.boundConversations(convs)[0].id, '0');
+});

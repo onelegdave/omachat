@@ -119,6 +119,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     width: parent.width
     wrapMode: Text.Wrap
     text: "Review source before installing if you wish. Install opens a terminal with two confirmation steps. Available checks tools, not accounts, devices, portals, or keyring access."
@@ -128,6 +129,7 @@ Column {
   }
   Text {
     objectName: "dependencyStatus"
+    textFormat: Text.PlainText
     width: parent.width
     visible: text !== ""
     wrapMode: Text.Wrap
@@ -184,6 +186,7 @@ Column {
         spacing: Style.space(4)
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: modelData.name + (modelData.installed ? " (Available)" : " (Missing)")
@@ -194,6 +197,7 @@ Column {
         }
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: modelData.purpose
@@ -204,6 +208,7 @@ Column {
         }
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: modelData.detail

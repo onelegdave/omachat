@@ -215,6 +215,7 @@ Item {
 
       Text {
         objectName: "qrErrorText"
+        textFormat: Text.PlainText
         width: parent.width
         visible: root.qrError !== "" && root.isQR
         text: root.qrError
@@ -237,6 +238,7 @@ Item {
       }
 
       Text {
+        textFormat: Text.PlainText
         anchors.horizontalCenter: parent.horizontalCenter
         visible: root.isGaia && root.emoji !== ""
         text: root.emoji
@@ -365,6 +367,7 @@ Item {
           spacing: Style.space(8)
 
           Text {
+            textFormat: Text.PlainText
             anchors.verticalCenter: parent.verticalCenter
             text: {
               for (var i = 0; i < root.profiles.length; i++) {
@@ -420,6 +423,7 @@ Item {
 
             Text {
               id: profileName
+              textFormat: Text.PlainText
               anchors.left: parent.left
               anchors.leftMargin: Style.space(10)
               anchors.right: parent.right
@@ -436,6 +440,7 @@ Item {
 
             Text {
               id: profileReason
+              textFormat: Text.PlainText
               anchors.left: parent.left
               anchors.leftMargin: Style.space(10)
               anchors.right: parent.right

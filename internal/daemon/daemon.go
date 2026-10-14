@@ -56,6 +56,7 @@ type Daemon struct {
 
 	media         *mediaCache
 	avatars       *avatarStore
+	previews      *previewCache
 	config        *store.ConfigStore
 	notifications *desktopNotifications
 
@@ -108,6 +109,7 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		subs:      make(map[chan wire.Event]struct{}),
 		media:     newMediaCache(paths.MediaDir()),
 		avatars:   newAvatarStore(paths.MediaDir()),
+		previews:  newPreviewCache(paths),
 		config:    store.NewConfigStore(paths.ConfigFile()),
 		reactions: make(map[string][]reactionRecord),
 		// PhoneOK starts true: it is only ever falsified by an explicit
@@ -117,6 +119,7 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		// happened.
 		status: wire.Status{Network: wire.NetworkGMessages, State: wire.StateUnpaired, PhoneOK: true},
 	}
+	d.previews.republish = d.republishConversation
 	d.notifications = newDesktopNotifications(d.PublishEvent)
 	d.wa = whatsapp.New(log, paths, d.PublishEvent)
 	_ = d.wa.SetHistoryCacheMB(d.config.Get().WhatsAppHistoryCacheMB)

@@ -20,6 +20,7 @@ Rectangle {
   clip: true
 
   Text {
+    textFormat: Text.PlainText
     anchors.centerIn: parent
     visible: avatarImage.status !== Image.Ready
     text: root.initials

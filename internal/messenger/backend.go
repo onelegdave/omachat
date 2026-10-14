@@ -28,6 +28,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waConsumerApplication"
+	"go.mau.fi/whatsmeow/proto/waMsgApplication"
 	waStore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waTypes "go.mau.fi/whatsmeow/types"
@@ -39,6 +40,27 @@ import (
 var ErrNotConfigured = errors.New("Messenger client not configured")
 
 const unsupportedMessageText = "Unsupported Messenger message. Open Messenger to view it."
+
+// lifetimeRestrictedText replaces a disappearing or view-once message, which
+// is neither shown nor stored here, matching the WhatsApp policy.
+const lifetimeRestrictedText = "Disappearing or view-once messages are not kept on this desktop."
+
+// tableMessageRestricted reports a message with a limited lifetime. Messenger
+// sends these fields as zero for ordinary messages.
+func tableMessageRestricted(durationSec, untilExpirationMs, expirationTs int64) bool {
+	return durationSec > 0 || untilExpirationMs > 0 || expirationTs > 0
+}
+
+func ephemeralSettingRestricted(setting *waMsgApplication.MessageApplication_EphemeralSetting) bool {
+	return setting.GetEphemeralExpiration() > 0 || setting.GetEphemeralityType() != waMsgApplication.MessageApplication_EphemeralSetting_UNKNOWN
+}
+
+// fbMessageRestricted reads the encrypted transport's lifetime settings.
+func fbMessageRestricted(evt *events.FBMessage) bool {
+	metadata := evt.FBApplication.GetMetadata()
+	return ephemeralSettingRestricted(metadata.GetChatEphemeralSetting()) ||
+		ephemeralSettingRestricted(metadata.GetEphemeralSettingList().GetEphemeralSetting())
+}
 
 const encryptedHistoryNotice = "Older messages in this end-to-end encrypted conversation are not currently supported. New messages will appear while OmaChat is connected."
 
@@ -428,7 +450,11 @@ func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 	attachments := b.tableAttachmentsLocked(tbl)
 	for _, m := range tbl.LSDeleteThenInsertMessage {
 		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
-		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		text, media := m.Text, attachments[m.MessageId]
+		if tableMessageRestricted(m.EphemeralDurationInSec, m.MsUntilExpirationTs, m.EphemeralExpirationTs) {
+			text, media = b.restrictMessageLocked(m.MessageId, attachments)
+		}
+		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, media)
 		key := msg.ConversationID + "\x00" + msg.ID
 		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
@@ -436,7 +462,11 @@ func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 	}
 	for _, m := range tbl.LSUpsertMessage {
 		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
-		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		text, media := m.Text, attachments[m.MessageId]
+		if tableMessageRestricted(m.EphemeralDurationInSec, m.MsUntilExpirationTs, m.EphemeralExpirationTs) {
+			text, media = b.restrictMessageLocked(m.MessageId, attachments)
+		}
+		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, media)
 		key := msg.ConversationID + "\x00" + msg.ID
 		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
@@ -444,7 +474,11 @@ func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 	}
 	for _, m := range tbl.LSInsertMessage {
 		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
-		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, m.Text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, attachments[m.MessageId])
+		text, media := m.Text, attachments[m.MessageId]
+		if tableMessageRestricted(m.EphemeralDurationInSec, m.MsUntilExpirationTs, m.EphemeralExpirationTs) {
+			text, media = b.restrictMessageLocked(m.MessageId, attachments)
+		}
+		msg := b.addMessageWithAttachmentsLocked(m.ThreadKey, m.MessageId, text, m.TimestampMs, m.SenderId, m.IsUnsent, m.ReplySourceId, media)
 		key := msg.ConversationID + "\x00" + msg.ID
 		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
@@ -459,7 +493,7 @@ func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 	for messageID, media := range attachments {
 		for conversationID, list := range b.messages {
 			for i := range list {
-				if list[i].ID != messageID || len(media) == 0 || len(list[i].Attachments) != 0 {
+				if list[i].ID != messageID || len(media) == 0 || len(list[i].Attachments) != 0 || list[i].Text == lifetimeRestrictedText {
 					continue
 				}
 				list[i].Attachments = media
@@ -817,6 +851,16 @@ func (b *Backend) addMessageLocked(thread int64, id, text string, ts, sender int
 	return b.addMessageWithAttachmentsLocked(thread, id, text, ts, sender, deleted, reply, nil)
 }
 
+// restrictMessageLocked withholds a limited-lifetime message's content and
+// forgets its media, so neither can be published, stored or downloaded.
+func (b *Backend) restrictMessageLocked(messageID string, attachments map[string][]wire.Attachment) (string, []wire.Attachment) {
+	for _, attachment := range attachments[messageID] {
+		delete(b.media, attachment.Key)
+	}
+	delete(attachments, messageID)
+	return lifetimeRestrictedText, nil
+}
+
 func (b *Backend) addMessageWithAttachmentsLocked(thread int64, id, text string, ts, sender int64, deleted bool, reply string, attachments []wire.Attachment) wire.Message {
 	if id == "" {
 		return wire.Message{}
@@ -899,6 +943,9 @@ func (b *Backend) handleE2EEEvent(raw any) {
 			return
 		}
 		text, media := fbContent(evt)
+		if fbMessageRestricted(evt) {
+			text, media = lifetimeRestrictedText, nil
+		}
 		if text == "" && media == nil {
 			text = unsupportedMessageText
 		}

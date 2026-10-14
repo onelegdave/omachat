@@ -78,7 +78,7 @@ ShellRoot {
    }
    if (!callback) return
    if (method === "messages") callback(true, {messages:[]})
-   else if (method === "media") callback(!failMedia, failMedia ? "temporary failure" : {path:root.testImage})
+   else if (method === "media") callback(!failMedia, failMedia ? "temporary failure" : {path:root.testImage, preview:root.testImage})
    else if (method === "config") callback(connected,connected ? {uiScale:1,alwaysPopout:false,popoutMode:"floating",telegramConfigured:false,telegramApiId:0} : "not connected")
    else if (method === "setWindowPreferences") callback(true,{uiScale:1,alwaysPopout:params.alwaysPopout,popoutMode:params.popoutMode,telegramConfigured:false,telegramApiId:0})
    else if (method === "setTelegramCredentials") {
@@ -252,6 +252,7 @@ ShellRoot {
     fake.failMedia=false
     inbox.requestMedia("image")
     root.check(inbox.mediaPaths.image === root.testImage, "failed media retries successfully")
+    root.check(inbox.mediaPreviews.image === root.testImage, "media keeps the helper preview separately from the original")
 
     inbox.selectConversation("a")
     composer.text=""

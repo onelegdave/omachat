@@ -169,6 +169,7 @@ Item {
         onClicked: root.selectNextUnreadConversation()
       }
       Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         text: parent.unreadCount === 1 ? "Next unread (1)" : "Next unread (" + parent.unreadCount + ")"
         color: root.foreground
@@ -239,6 +240,7 @@ Item {
         Text {
           id: serviceBadge
           objectName: "unifiedServiceBadge"
+          textFormat: Text.PlainText
           anchors.right: parent.right
           anchors.rightMargin: Style.space(8)
           anchors.top: parent.top
@@ -251,6 +253,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
           anchors.left: convAvatar.right
           anchors.leftMargin: Style.space(8)
           anchors.right: serviceBadge.left
@@ -266,6 +269,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
           anchors.left: convAvatar.right
           anchors.leftMargin: Style.space(8)
           anchors.right: parent.right

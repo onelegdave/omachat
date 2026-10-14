@@ -161,10 +161,13 @@ configurable at 64, 128, 256, or 512 MB (128 MB by default), with older local
 messages evicted automatically as space is needed. Telegram animated TGS/video
 stickers are unsupported, and media references need refreshing after restart.
 WhatsApp view-once/ephemeral and Telegram self-destructing media are not saved
-or reopened.
+or reopened. Messenger disappearing and view-once messages show a placeholder,
+and their text and media are not kept. A conversation keeps up to 1,000 messages
+in the panel, and each service up to 1,000 conversations; older messages remain
+in the service's own apps.
 
 WhatsApp direct-chat and group photos and Telegram user, group, and channel
-photos load in the background and are cached locally. Refresh picks up changed or removed photos; unavailable
+photos load in the background and are cached locally as small re-encoded copies. Refresh picks up changed or removed photos; unavailable
 photos fall back to initials.
 
 The services use unofficial protocol clients and can stop working when their
@@ -280,8 +283,14 @@ Pick an attachment from the composer. Google Messages sends captions separately
 after the attachment; check the conversation before retrying a caption reported
 as unconfirmed. WhatsApp, Telegram, and Messenger include captions with images;
 Messenger sends a document caption as a separate message. Failed media downloads
-can be retried. Incoming GIFs play inline;
-video opens in an external player.
+can be retried. Incoming photos, stickers, and GIFs appear as previews that the
+helper decodes and re-encodes first: at most 1280 pixels on the long side, with
+no embedded text or metadata, and animated GIFs only within frame and size
+limits. Clicking a preview opens the original in your image viewer. An image the
+helper cannot preview, such as an animated WebP sticker or a very large photo,
+shows **Open image** instead. Video, including GIF-style clips from WhatsApp and
+Messenger, opens in an external player. The panel runs inside the shared
+Omarchy shell, so it never decodes a downloaded original itself.
 
 For voice notes, choose **Rec**, record, **Play**
 to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google

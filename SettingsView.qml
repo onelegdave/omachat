@@ -285,6 +285,7 @@ Flickable {
       spacing: Style.space(4)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Settings"
@@ -295,6 +296,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Preferences, dependency guidance, service documentation, and upstream attribution. Use the service tabs above to return to your conversations."
@@ -369,6 +371,7 @@ Flickable {
       width: parent.width
       spacing: Style.space(8)
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: "Inbox"
         color: root.copyColor
@@ -395,6 +398,7 @@ Flickable {
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(2)
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: "Unified inbox"
             color: root.copyColor
@@ -402,6 +406,7 @@ Flickable {
             font.pixelSize: fs(Style.font.body)
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Show all enabled services in one conversation list. Toggle with Ctrl+Shift+A."
@@ -425,6 +430,7 @@ Flickable {
         }
       }
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         visible: root.unifiedInboxPreferenceStatusText !== ""
         wrapMode: Text.Wrap
@@ -460,6 +466,7 @@ Flickable {
       spacing: Style.space(8)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: "Emoji picker"
         color: root.copyColor
@@ -489,6 +496,7 @@ Flickable {
           spacing: Style.space(2)
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: "Keep previous emoji search text"
             color: root.copyColor
@@ -497,6 +505,7 @@ Flickable {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Keep and reapply the last emoji search when opening the picker."
@@ -522,6 +531,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         visible: root.emojiSearchPreferenceStatusText !== ""
         wrapMode: Text.Wrap
@@ -538,6 +548,7 @@ Flickable {
       spacing: Style.space(8)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: "Opening behavior"
         color: root.copyColor
@@ -567,6 +578,7 @@ Flickable {
           spacing: Style.space(2)
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             text: "Always open popped out"
             color: root.copyColor
@@ -575,6 +587,7 @@ Flickable {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Open OmaChat from the bar in its standalone window."
@@ -604,6 +617,7 @@ Flickable {
         spacing: Style.space(6)
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           text: "Pop-out layout"
           color: root.copyColor
@@ -632,6 +646,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         visible: root.windowStatusText !== ""
         wrapMode: Text.Wrap
@@ -655,6 +670,7 @@ Flickable {
       spacing: Style.space(8)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Text size"
@@ -665,6 +681,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Choose a comfortable reading size. Setup instructions wrap and scroll at every size."
@@ -710,6 +727,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         visible: root.statusText !== ""
         wrapMode: Text.Wrap
@@ -721,6 +739,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "WhatsApp history cache"
@@ -750,6 +769,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Older cached messages are removed automatically when space is needed. This does not delete messages from WhatsApp. Photos and videos use the separate media cache."
@@ -781,6 +801,7 @@ Flickable {
       spacing: Style.space(10)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Dependencies and User Choice"
@@ -791,6 +812,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "OmaChat never installs packages automatically. Check the tools below, review their source, and choose Install only for tools you want. The terminal asks for confirmation before invoking sudo; the package manager asks again before making changes. Accounts and API credentials remain your choice."
@@ -826,6 +848,7 @@ Flickable {
       spacing: Style.space(12)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Service Guides"
@@ -836,6 +859,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "OmaChat supports Google Messages, WhatsApp, Telegram, and Messenger with separate credentials, caches, and drafts in one shared helper. Choose enabled services in Settings. Previously paired, enabled services reconnect automatically. Service separation is not a security sandbox."
@@ -849,6 +873,7 @@ Flickable {
         width: parent.width
         spacing: Style.space(6)
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "Google Messages"
@@ -858,6 +883,7 @@ Flickable {
           font.bold: true
         }
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "• Setup: Open Messages for web (messages.google.com/web) in your Chromium browser and sign in. Unlock your desktop keyring, select Pair with Google in OmaChat, and confirm the matching emoji on your phone. Keep your Android phone online.\n• Features: 50-conversation inbox, older history paging, text, photos, captions, reactions, local GIF files, inline GIF playback, and voice notes (with ffmpeg/ffplay).\n• Limitations: Calling is unavailable. The QR pairing fallback only works with older Messages builds that include an in-app scanner; standard camera apps will not pair."
@@ -872,6 +898,7 @@ Flickable {
         width: parent.width
         spacing: Style.space(6)
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "WhatsApp"
@@ -881,6 +908,7 @@ Flickable {
           font.bold: true
         }
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "• Setup: Select WhatsApp in OmaChat, choose Use a QR code, open WhatsApp on your phone > Linked devices > Link a device, and scan the displayed QR code. Keep your phone online during linking and initial sync.\n• Features: Real-time conversation sync with saved contact names, text, photos, captions, reactions, M4A audio clips (with ffmpeg/ffplay), local GIF files (with ffmpeg), retryable media downloads, and incoming static WebP stickers.\n• Limitations: History reflects initial phone sync and live messages; additional history cannot be requested from the phone, but cached history can be paged. Ephemeral and view-once media are intentionally not saved or reopened. Audio uses standard clips rather than native PTT to avoid the linked-device iPhone playback failure. Calling is currently unavailable."
@@ -895,6 +923,7 @@ Flickable {
         width: parent.width
         spacing: Style.space(6)
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "Telegram"
@@ -904,6 +933,7 @@ Flickable {
           font.bold: true
         }
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "• Setup: Obtain your api_id and api_hash from my.telegram.org. These are application credentials, not your Telegram login password.\n1. Configure credentials directly in Settings > Telegram API credentials below, or in a terminal run:\npython3 ~/.config/omarchy/plugins/onelegdave.omachat/scripts/configure-telegram.py\n2. In OmaChat, select Telegram > Pair with Telegram. On your phone, open Telegram > Settings > Devices > Link Desktop Device and scan the QR code. Saving credentials alone does not pair your account.\n• Features: Dialog synchronization, older history paging, text, photos, captions, static WebP stickers, mark-as-read, standard emoji reactions (when allowed by the chat), and voice notes (with ffmpeg/ffplay).\n• Limitations: GIF sending, animated TGS and video stickers, and calling are unsupported. Self-destructing/TTL media is not saved."
@@ -918,6 +948,7 @@ Flickable {
         width: parent.width
         spacing: Style.space(6)
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "Messenger"
@@ -927,6 +958,7 @@ Flickable {
           font.bold: true
         }
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "• Setup: Sign in to facebook.com or messenger.com in Chrome, Chromium, or Brave, unlock the desktop keyring, then select Pair from browser in the Messenger tab. Pairing copies only the required session cookies into Messenger's private session store.\n• Features: Encrypted personal and group conversations, recent history, text, image and file sending, mark-as-read, reactions, and voice notes (with ffmpeg/ffplay).\n• Limitations: Older encrypted history may be unavailable even when recent chats work. Meta does not provide a personal-inbox API, so this uses an unofficial protocol client that may break or require re-pairing when Meta changes its service. Calling is unavailable."
@@ -951,6 +983,7 @@ Flickable {
       spacing: Style.space(10)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Telegram API credentials"
@@ -961,6 +994,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: root.telegramConfigured
@@ -977,6 +1011,7 @@ Flickable {
         spacing: Style.space(4)
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "1. Open my.telegram.org and sign in with your phone number."
@@ -985,6 +1020,7 @@ Flickable {
           font.pixelSize: fs(Style.font.body)
         }
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "2. Choose API development tools to create or view your application."
@@ -993,6 +1029,7 @@ Flickable {
           font.pixelSize: fs(Style.font.body)
         }
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "3. Copy your numeric api_id and 32-character api_hash, paste them below, and select Save. After saving, select Pair with Telegram on the Telegram tab."
@@ -1022,6 +1059,7 @@ Flickable {
           spacing: Style.space(4)
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Telegram api_id (numeric)"
@@ -1051,6 +1089,7 @@ Flickable {
           spacing: Style.space(4)
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Telegram api_hash (32-character hexadecimal string)"
@@ -1109,6 +1148,7 @@ Flickable {
 
         Text {
           objectName: "telegramStatusText"
+          textFormat: Text.PlainText
           width: parent.width
           visible: root.telegramStatusText !== ""
           wrapMode: Text.Wrap
@@ -1135,6 +1175,7 @@ Flickable {
       spacing: Style.space(10)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Contributors, Upstream Credits, and Licenses"
@@ -1145,6 +1186,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "OmaChat v0.4.3 and later is AGPL-3.0-or-later. Earlier releases and Marc Ford's adapted code retain their MIT grants. Included third-party code retains its own terms, including AGPL terms for libgm and mautrix-meta and the MPL-2.0 license for whatsmeow."
@@ -1159,6 +1201,7 @@ Flickable {
         spacing: Style.space(8)
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "Community Contributors"
@@ -1168,6 +1211,7 @@ Flickable {
           font.bold: true
         }
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "Andrew Birklid (@tumbleweedlabs): unread and Messenger read-state fixes, Git-independent builds, and automatic pop-out. Alex Vlissidis (@alexvlis): chat restoration, sidebar controls, notifications, and Telegram photos. Matthias MB (@Hizoul): keyboard navigation, offline emoji search, WhatsApp history/photos, and the optional unified inbox. @ozz1ee-dev: detailed build-loop reproduction. HANCORE-linux: native clipboard safety report during Marketplace review. Original authorship and upstream notices are preserved; see All credits and licenses for PR links and review status."
@@ -1181,6 +1225,7 @@ Flickable {
           width: parent.width
           spacing: Style.space(2)
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Daemon Architecture"
@@ -1190,6 +1235,7 @@ Flickable {
             font.bold: true
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Helper architecture adapted from Marc Ford's gmessages-omarchy-plugin (MIT)."
@@ -1203,6 +1249,7 @@ Flickable {
           width: parent.width
           spacing: Style.space(2)
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Google Messages"
@@ -1212,6 +1259,7 @@ Flickable {
             font.bold: true
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Google Messages uses the mautrix project's libgm client. Its AGPL license and upstream exception notices remain in vendor/go.mau.fi/mautrix-gmessages/."
@@ -1225,6 +1273,7 @@ Flickable {
           width: parent.width
           spacing: Style.space(2)
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "WhatsApp"
@@ -1234,6 +1283,7 @@ Flickable {
             font.bold: true
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "WhatsApp support vendors whatsmeow (go.mau.fi/whatsmeow) under the Mozilla Public License 2.0 (MPL-2.0). WhatsApp session database uses go-sqlite3 (MIT) via CGO."
@@ -1247,6 +1297,7 @@ Flickable {
           width: parent.width
           spacing: Style.space(2)
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Telegram"
@@ -1256,6 +1307,7 @@ Flickable {
             font.bold: true
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Telegram uses gotd/td (MIT, Aleksandr Razumov and contributors). Its dependencies retain their own license notices."
@@ -1269,6 +1321,7 @@ Flickable {
           width: parent.width
           spacing: Style.space(2)
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Messenger"
@@ -1278,6 +1331,7 @@ Flickable {
             font.bold: true
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Messenger support vendors go.mau.fi/mautrix-meta under the GNU AGPL version 3. Upstream copyright and exceptions are retained in the vendor directory."
@@ -1291,6 +1345,7 @@ Flickable {
           width: parent.width
           spacing: Style.space(2)
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Desktop Environment"
@@ -1300,6 +1355,7 @@ Flickable {
             font.bold: true
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Native Omarchy desktop plugin kit and Quickshell QtQuick components."
@@ -1399,6 +1455,7 @@ Flickable {
       spacing: Style.space(10)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "About OmaChat"
@@ -1409,6 +1466,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "OmaChat (onelegdave.omachat) is a Native Omarchy Plugin providing unified messaging across Google Messages, WhatsApp, Telegram, and Messenger. Created and maintained by OneLegDave, with AI assistance from Codex."
@@ -1490,6 +1548,7 @@ Flickable {
         spacing: Style.space(8)
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
           text: "I build OmaChat as a free, open-source project. Support is entirely optional and never required to use any feature."
@@ -1524,6 +1583,7 @@ Flickable {
       spacing: Style.space(10)
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Feedback and Bug Reports"
@@ -1534,6 +1594,7 @@ Flickable {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         wrapMode: Text.Wrap
         text: "Report issues or submit pull requests on GitHub. Please include your Omarchy version, desktop environment, and helper status."

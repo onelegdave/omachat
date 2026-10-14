@@ -984,6 +984,7 @@ Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             anchors.left: brandGlyph.right
             anchors.leftMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
@@ -1088,6 +1089,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.linkLabel
                 color: root.linkUp ? root.accentInk : root.urgentInk
@@ -1101,6 +1103,7 @@ Panel {
 
         Text {
           objectName: "chatViewErrorLabel"
+          textFormat: Text.PlainText
           width: parent.width
           visible: root.chatViewError !== "" || root.unifiedInboxError !== ""
           text: root.chatViewError || root.unifiedInboxError
@@ -1172,6 +1175,7 @@ Panel {
 
           Text {
             id: windowLayoutLabel
+            textFormat: Text.PlainText
             anchors.verticalCenter: parent.verticalCenter
             text: "Window layout"
             color: root.mutedInk
@@ -1299,6 +1303,7 @@ Panel {
         spacing:Style.space(14)
         Text {
           objectName:"servicesOffLabel"
+          textFormat: Text.PlainText
           width:parent.width; wrapMode:Text.Wrap
           text:root.service && root.service.servicesConfigLoaded === false ? "Loading service choices from the helper. If the helper needs an update, open Settings and rebuild it." : (root.service && root.service.serviceSelectionRequired ? "Choose the services you want to use. Nothing connects until you apply your choices." : "All services are turned off. Your saved accounts are kept. Choose services below or open Settings.")
           color:root.foreground; font.family:root.fontFamily; font.pixelSize:root.fs(Style.font.body)
@@ -1366,6 +1371,7 @@ Panel {
           width: Math.min(parent.width - Style.space(40), Style.space(460))
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
@@ -1377,6 +1383,7 @@ Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
@@ -1533,6 +1540,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               anchors.verticalCenter: parent.verticalCenter
               text: connecting ? "Connecting to helper..." : "Compiling helper in background..."
               color: root.mutedInk
@@ -1542,6 +1550,7 @@ Panel {
           }
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: needGo
             wrapMode: Text.Wrap

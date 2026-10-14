@@ -152,6 +152,7 @@ FocusScope {
 
     Text {
       id: placeholder
+      textFormat: Text.PlainText
       anchors.fill: parent
       text: root.placeholderText
       font: editor.font

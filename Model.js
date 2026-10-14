@@ -203,6 +203,21 @@ function mergeMessage(messages, message) {
   return out
 }
 
+// Live events and history pages both grow the shell's models, and remote
+// senders decide how fast. Keep the newest records within a fixed budget.
+var MAX_THREAD_MESSAGES = 1000
+var MAX_CONVERSATIONS = 1000
+
+function boundThread(messages) {
+  if (messages.length <= MAX_THREAD_MESSAGES) return messages
+  return messages.slice(messages.length - MAX_THREAD_MESSAGES)
+}
+
+// Expects the panel's sort: pinned first, then newest first.
+function boundConversations(list) {
+  return list.length <= MAX_CONVERSATIONS ? list : list.slice(0, MAX_CONVERSATIONS)
+}
+
 function failSend(messages, tmpID) {
   return messages.map(function(m) {
     return m.tmpID === tmpID && m.provisional
@@ -252,15 +267,21 @@ function digitCount(s) {
   return String(s || "").replace(/\D/g, "").length
 }
 
+// Each target becomes a chip of several QML objects, created eagerly for the
+// message. Remote text decides how many there are, so both the text scanned
+// and the chips offered are bounded.
+var MAX_COPY_SCAN = 4096
+var MAX_COPY_TARGETS = 4
+
 function extractCopyTargets(text) {
-  var s = String(text || "")
+  var s = String(text || "").substring(0, MAX_COPY_SCAN)
   if (!s) return []
   var out = []
   var seen = {}
   function add(value) {
     var v = String(value || "").trim()
     if (!v || v === "<#>") return
-    if (seen[v]) return
+    if (seen[v] || out.length >= MAX_COPY_TARGETS) return
     seen[v] = true
     out.push(v)
   }
@@ -311,7 +332,8 @@ function extractCopyTargets(text) {
 
 function previewText(conv) {
   if (!conv) return ""
-  var text = (conv.preview || "").replace(/\s+/g, " ").trim()
+  // The row shows one elided line; do not lay out a whole remote message.
+  var text = String(conv.preview || "").substring(0, 500).replace(/\s+/g, " ").trim()
   if (text === "") text = "No messages"
   return conv.previewMine ? "You: " + text : text
 }

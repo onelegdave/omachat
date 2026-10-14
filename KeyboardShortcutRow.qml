@@ -22,6 +22,7 @@ RowLayout {
   Accessible.name: action.label + " shortcut"
 
   Text {
+    textFormat: Text.PlainText
     Layout.fillWidth: true
     Layout.minimumWidth: Style.space(135)
     text: root.action.label
