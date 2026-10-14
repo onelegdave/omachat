@@ -90,7 +90,9 @@ func TestConnectionDrainsStoreWritersBeforeReturning(t *testing.T) {
 	done := make(chan struct{})
 	go func() { d.handleConn(ctx, conn); close(done) }()
 	reader := bufio.NewReader(client)
-	for i := 0; i < 4; i++ {
+	// The branch also serves Signal, so count the statuses the connection
+	// actually opens with rather than a hardcoded 0.5.2-era 4.
+	for range wire.KnownNetworks {
 		if _, err := reader.ReadString('\n'); err != nil {
 			t.Fatal(err)
 		}
