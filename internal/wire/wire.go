@@ -489,33 +489,8 @@ type SetEmojiSearchPreferenceParams struct {
 	KeepPreviousEmojiSearchText bool `json:"keepPreviousEmojiSearchText"`
 }
 
-type SetUnifiedInboxPreferenceParams struct {
-	Enabled bool `json:"enabled"`
-}
-
 type SetWhatsAppHistoryCacheParams struct {
 	SizeMB int `json:"sizeMB"`
-}
-
-type SetChatViewParams struct {
-	LastService      *string `json:"lastService,omitempty"`
-	SidebarCollapsed *bool   `json:"sidebarCollapsed,omitempty"`
-	ConversationID   *string `json:"conversationID,omitempty"`
-}
-
-type SetNotificationsParams struct {
-	Enabled  *bool `json:"enabled,omitempty"`
-	Previews *bool `json:"previews,omitempty"`
-}
-
-type NotifyMessageParams struct {
-	Message          Message `json:"message"`
-	ConversationName string  `json:"conversationName,omitempty"`
-}
-
-type NotificationTarget struct {
-	Network        string `json:"network"`
-	ConversationID string `json:"conversationID"`
 }
 
 // DiscardCaptureParams removes a webcam capture the user rejected.
