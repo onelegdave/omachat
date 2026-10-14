@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 
@@ -85,6 +86,12 @@ func (p *previewCache) previewDir(src string) string {
 	return filepath.Join(p.paths.Cache, previewDirName)
 }
 
+// queueKey separates work queued before an unpair from fresh requests for the
+// same file, so a stale job cannot absorb a new waiter.
+func (j previewJob) queueKey() string {
+	return strconv.FormatUint(j.generation, 10) + ":" + j.key
+}
+
 // forget removes a service's previews and the shared ones after it unpairs.
 // It waits for a conversion in progress, so none is written afterwards.
 func (p *previewCache) forget(network string) {
@@ -128,7 +135,7 @@ func (p *previewCache) job(src string, edge int) (previewJob, bool) {
 	p.mu.Lock()
 	generation := p.generation
 	p.mu.Unlock()
-	return previewJob{src: src, key: hex.EncodeToString(sum[:16]), dir: p.previewDir(src), edge: edge, generation: generation}, true
+	return previewJob{src: src, key: store.PreviewPrefix(src) + hex.EncodeToString(sum[:8]), dir: p.previewDir(src), edge: edge, generation: generation}, true
 }
 
 // cached reports a finished preview. Evicted files are treated as missing.
@@ -204,14 +211,14 @@ func (p *previewCache) lookup(src string, edge int, waiter *avatarWaiter) (path 
 	if !valid || known {
 		return path, false
 	}
-	if _, queued := p.queue[job.key]; !queued {
+	if _, queued := p.queue[job.queueKey()]; !queued {
 		if len(p.queue) >= maxPreviewQueue {
 			return "", false
 		}
-		p.queue[job.key] = job
+		p.queue[job.queueKey()] = job
 	}
 	if waiter != nil {
-		p.waiting[*waiter] = job.key
+		p.waiting[*waiter] = job.queueKey()
 	}
 	if !p.running {
 		p.running = true
@@ -244,10 +251,10 @@ func (p *previewCache) work() {
 		}
 
 		p.mu.Lock()
-		delete(p.queue, job.key)
+		delete(p.queue, job.queueKey())
 		var ready []avatarWaiter
 		for waiter, key := range p.waiting {
-			if key == job.key {
+			if key == job.queueKey() {
 				delete(p.waiting, waiter)
 				if path != "" {
 					ready = append(ready, waiter)

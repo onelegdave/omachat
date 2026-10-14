@@ -321,3 +321,32 @@ func TestJobsFromBeforeUnpairWriteNothing(t *testing.T) {
 		t.Fatal("new work after unpair is refused")
 	}
 }
+
+func TestStaleQueuedWorkDoesNotAbsorbFreshRequests(t *testing.T) {
+	d := freshSelectionDaemon(t)
+	avatar := filepath.Join(d.paths.WhatsAppMediaDir(), "avatar.png")
+	writeTestImage(t, avatar, 8, 8)
+	stale, _ := d.previews.job(avatar, avatarPreviewEdge)
+	d.previews.mu.Lock()
+	d.previews.running = true // hold the worker so the queue can be inspected
+	d.previews.queue[stale.queueKey()] = stale
+	d.previews.mu.Unlock()
+	d.previews.forget(wire.NetworkTelegram)
+
+	waiter := avatarWaiter{network: wire.NetworkWhatsApp, conversationID: "c"}
+	if _, pending := d.previews.lookup(avatar, avatarPreviewEdge, &waiter); !pending {
+		t.Fatal("fresh request was not queued")
+	}
+	d.previews.mu.Lock()
+	key := d.previews.waiting[waiter]
+	_, fresh := d.previews.queue[key]
+	d.previews.running = false
+	d.previews.mu.Unlock()
+	if key == stale.queueKey() || !fresh {
+		t.Fatalf("fresh waiter joined stale work: %q", key)
+	}
+	d.previews.work()
+	if got, _ := d.previews.lookup(avatar, avatarPreviewEdge, nil); got == "" {
+		t.Fatal("fresh work did not produce a preview")
+	}
+}

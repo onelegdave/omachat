@@ -226,21 +226,25 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 		return wire.MediaResult{}, err
 	}
 	path := filepath.Join(dir, key+mediaExtension(record.mime, record.name))
+	// Publish the file only while its record is still the one downloaded, so
+	// a withheld message's media is never placed, and a superseded request
+	// discards only its own temporary file.
+	b.mu.Lock()
+	current := b.media[key]
+	if current != stored {
+		b.mu.Unlock()
+		if current != nil && current.path != "" {
+			return wire.MediaResult{Key: key, Path: current.path}, nil
+		}
+		return wire.MediaResult{}, errors.New("Messenger media is no longer available")
+	}
 	if err = os.Rename(tmpName, path); err != nil {
+		b.mu.Unlock()
 		return wire.MediaResult{}, err
 	}
 	_ = os.Chmod(path, 0o600)
-	b.mu.Lock()
-	current := b.media[key]
-	if current == stored {
-		current.path = path
-	}
+	current.path = path
 	b.mu.Unlock()
-	if current != stored {
-		// The message was withheld or replaced while this downloaded.
-		_ = os.Remove(path)
-		return wire.MediaResult{}, errors.New("Messenger media is no longer available")
-	}
 	if err := appStore.PruneMedia(dir, path); err != nil {
 		b.log.Warn().Err(err).Msg("Could not trim Messenger media")
 	}

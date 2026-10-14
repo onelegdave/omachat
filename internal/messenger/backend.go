@@ -872,19 +872,14 @@ func (b *Backend) restrictMessageLocked(messageID string, attachments map[string
 
 // forgetMediaLocked drops media records and any downloaded copies. Only files
 // in the media cache are deleted: a sent attachment's path is the user's own
-// file. Previews derived from deleted copies go with them; the rest are
-// rebuilt on demand.
+// file. Previews derived from deleted copies go with them.
 func (b *Backend) forgetMediaLocked(attachments []wire.Attachment) {
-	removed := false
 	for _, attachment := range attachments {
 		if record := b.media[attachment.Key]; record != nil && b.ownsMediaFileLocked(record.path) {
 			_ = os.Remove(record.path)
-			removed = true
+			appStore.RemovePreviews(record.path)
 		}
 		delete(b.media, attachment.Key)
-	}
-	if removed {
-		_ = os.RemoveAll(filepath.Join(b.paths.MessengerMediaDir(), appStore.PreviewDirName))
 	}
 }
 
@@ -1039,6 +1034,10 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		var attachments []wire.Attachment
 		if media != nil {
 			media.key = messengerMediaKey(evt.Info.ID, "e2ee", 0)
+			// A replay keeps the downloaded copy, so withholding can remove it.
+			if old := b.media[media.key]; old != nil && media.path == "" {
+				media.path = old.path
+			}
 			b.media[media.key] = media
 			attachments = []wire.Attachment{media.attachment()}
 		}

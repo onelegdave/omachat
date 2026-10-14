@@ -7,11 +7,13 @@ import (
 	"testing"
 	"time"
 
+	appStore "github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/wire"
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-meta/pkg/messagix/table"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waConsumerApplication"
+	"go.mau.fi/whatsmeow/proto/waMediaTransport"
 	"go.mau.fi/whatsmeow/proto/waMsgApplication"
 	waTypes "go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -175,4 +177,56 @@ func TestRepeatedMediaRecordKeepsItsDownload(t *testing.T) {
 	if b.media[first.Key].path != "/cache/fb-a.jpg" {
 		t.Fatal("repeated record lost its downloaded path")
 	}
+}
+
+func TestWithholdingRemovesOnlyThatFilesPreviews(t *testing.T) {
+	paths := setupMessengerPaths(t)
+	b := New(zerolog.Nop(), paths, nil)
+	dir := paths.MessengerMediaDir()
+	revoked, kept := filepath.Join(dir, "fb-revoked.jpg"), filepath.Join(dir, "fb-kept.jpg")
+	previews := filepath.Join(dir, appStore.PreviewDirName)
+	if err := os.MkdirAll(previews, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{revoked, kept,
+		filepath.Join(previews, appStore.PreviewPrefix(revoked)+"a.jpg"),
+		filepath.Join(previews, appStore.PreviewPrefix(kept)+"b.jpg")} {
+		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.media["r"] = &messengerMedia{key: "r", path: revoked}
+	b.forgetMediaLocked([]wire.Attachment{{Key: "r"}})
+	entries, _ := os.ReadDir(previews)
+	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), appStore.PreviewPrefix(kept)) {
+		t.Fatalf("previews after withholding: %v", entries)
+	}
+}
+
+func TestEncryptedReplayKeepsDownloadForLaterWithholding(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	key := messengerMediaKey("e2", "e2ee", 0)
+	b.media[key] = &messengerMedia{key: key, path: "/cache/fb-e2.jpg"}
+	b.handleE2EEEvent(encryptedImage(t, "e2", 3000))
+	if b.media[key] == nil || b.media[key].path != "/cache/fb-e2.jpg" {
+		t.Fatalf("replay lost the downloaded path: %#v", b.media[key])
+	}
+}
+
+func encryptedImage(t *testing.T, id string, timestamp int64) *events.FBMessage {
+	t.Helper()
+	directPath, mimeType, length := "/mms/image", "image/jpeg", uint64(42)
+	encoded := &waConsumerApplication.ConsumerApplication_ImageMessage{}
+	if err := encoded.Set(&waMediaTransport.ImageTransport{Integral: &waMediaTransport.ImageTransport_Integral{Transport: &waMediaTransport.WAMediaTransport{
+		Integral:  &waMediaTransport.WAMediaTransport_Integral{DirectPath: &directPath, FileSHA256: []byte{1}, FileEncSHA256: []byte{2}, MediaKey: []byte{3}},
+		Ancillary: &waMediaTransport.WAMediaTransport_Ancillary{Mimetype: &mimeType, FileLength: &length},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	evt := &events.FBMessage{Message: &waConsumerApplication.ConsumerApplication{Payload: &waConsumerApplication.ConsumerApplication_Payload{Payload: &waConsumerApplication.ConsumerApplication_Payload_Content{Content: &waConsumerApplication.ConsumerApplication_Content{Content: &waConsumerApplication.ConsumerApplication_Content_ImageMessage{ImageMessage: encoded}}}}}}
+	evt.Info.Chat = waTypes.NewJID("7", waTypes.MessengerServer)
+	evt.Info.Sender = waTypes.NewJID("42", waTypes.MessengerServer)
+	evt.Info.ID = id
+	evt.Info.Timestamp = time.UnixMilli(timestamp)
+	return evt
 }

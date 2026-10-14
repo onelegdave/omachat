@@ -1,6 +1,8 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,6 +19,22 @@ var mediaPruneMu sync.Mutex
 // PreviewDirName is the subdirectory of a media cache holding the helper's
 // re-encoded previews of files in that cache.
 const PreviewDirName = "previews"
+
+// PreviewPrefix starts the name of every preview of src, so the previews of
+// one revoked file can be removed without knowing their sizes or versions.
+func PreviewPrefix(src string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(src)))
+	return hex.EncodeToString(sum[:12]) + "-"
+}
+
+// RemovePreviews deletes the previews of src kept beside it.
+func RemovePreviews(src string) {
+	dir := filepath.Join(filepath.Dir(filepath.Clean(src)), PreviewDirName)
+	matches, _ := filepath.Glob(filepath.Join(dir, PreviewPrefix(src)+"*"))
+	for _, match := range matches {
+		_ = os.Remove(match)
+	}
+}
 
 func PruneMedia(dir, keep string) error { return pruneMedia(dir, keep, MediaCacheBytes) }
 
