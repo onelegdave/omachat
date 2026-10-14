@@ -1753,6 +1753,9 @@ func (b *Backend) handleEventFor(gen uint64, evt any) {
 		go b.applyRemoteLogout(gen, e.Reason.String())
 
 	case *events.Message:
+		if isStatusUpdate(e.Info) {
+			return
+		}
 		unwrapped, _ := unwrapMessage(e.Message)
 		if reaction := unwrapped.GetReactionMessage(); reaction != nil {
 			actor := e.Info.Sender.ToNonAD().String()
@@ -2003,7 +2006,7 @@ func (b *Backend) ingestHistorySyncMode(gen uint64, data *waHistorySync.HistoryS
 	for _, c := range data.GetConversations() {
 		chatID := c.GetID()
 		jid, err := types.ParseJID(chatID)
-		if err != nil {
+		if err != nil || jid == types.StatusBroadcastJID {
 			continue
 		}
 		contactJID := historyConversationContactJID(c)
@@ -2027,10 +2030,10 @@ func (b *Backend) ingestHistorySyncMode(gen uint64, data *waHistorySync.HistoryS
 	var persistenceErr error
 	for _, c := range data.GetConversations() {
 		chatID := c.GetID()
-		if chatID == "" {
+		jid, err := types.ParseJID(chatID)
+		if chatID == "" || err != nil || jid == types.StatusBroadcastJID {
 			continue
 		}
-		jid, _ := types.ParseJID(chatID)
 		name := formatConversationName(jid, resolvedNames[chatID])
 		conv, ok := b.convs[chatID]
 		if !ok {
