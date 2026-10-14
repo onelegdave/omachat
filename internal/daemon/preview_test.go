@@ -279,3 +279,45 @@ func TestSentImagesCarryPreviews(t *testing.T) {
 		t.Fatal("message event attachment has no preview")
 	}
 }
+
+func TestEventsNeverWaitForAConversion(t *testing.T) {
+	d := freshSelectionDaemon(t)
+	img := filepath.Join(d.paths.MessengerMediaDir(), "late.png")
+	writeTestImage(t, img, 8, 8)
+	msg := wire.Message{ID: "m", Attachments: []wire.Attachment{{Key: "k", IsImage: true, Path: img}}}
+	d.previews.convertMu.Lock() // another conversion in progress
+	done := make(chan wire.Event, 1)
+	go func() {
+		done <- d.previews.outbound(wire.NetworkMessenger, wire.Event{Event: wire.EventMessage, Data: msg}).(wire.Event)
+	}()
+	select {
+	case evt := <-done:
+		if evt.Data.(wire.Message).Attachments[0].Preview != "" {
+			t.Fatal("unfinished preview sent")
+		}
+	case <-time.After(2 * time.Second):
+		d.previews.convertMu.Unlock()
+		t.Fatal("event waited for a conversion")
+	}
+	d.previews.convertMu.Unlock()
+}
+
+func TestJobsFromBeforeUnpairWriteNothing(t *testing.T) {
+	d := freshSelectionDaemon(t)
+	picked := filepath.Join(t.TempDir(), "picked.png")
+	writeTestImage(t, picked, 8, 8)
+	job, ok := d.previews.job(picked, attachmentPreviewEdge)
+	if !ok {
+		t.Fatal("no job")
+	}
+	d.previews.forget(wire.NetworkMessenger)
+	if got := d.previews.convert(job); got != "" {
+		t.Fatalf("stale job wrote %s", got)
+	}
+	if _, err := os.Stat(filepath.Join(d.paths.Cache, previewDirName)); !os.IsNotExist(err) {
+		t.Fatal("shared preview directory recreated")
+	}
+	if got := d.previews.now(picked, attachmentPreviewEdge); got == "" {
+		t.Fatal("new work after unpair is refused")
+	}
+}

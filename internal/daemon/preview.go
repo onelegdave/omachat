@@ -23,7 +23,7 @@ import (
 const (
 	attachmentPreviewEdge = 1280
 	avatarPreviewEdge     = 256
-	previewDirName        = "previews"
+	previewDirName        = store.PreviewDirName
 	// maxPreviewDirBytes caps each preview directory. Previews are derived
 	// data and are rebuilt on demand after eviction.
 	maxPreviewDirBytes int64 = 64 << 20
@@ -44,10 +44,11 @@ type previewCache struct {
 	// the per-image memory budget.
 	convertMu sync.Mutex
 
-	mu      sync.Mutex
-	done    map[string]string // key -> preview path, "" when refused
-	queue   map[string]previewJob
-	running bool
+	mu         sync.Mutex
+	generation uint64
+	done       map[string]string // key -> preview path, "" when refused
+	queue      map[string]previewJob
+	running    bool
 	// waiting holds conversations sent without an avatar because theirs was
 	// still converting, so they can be republished once it is ready.
 	waiting map[avatarWaiter]string
@@ -58,6 +59,9 @@ type previewCache struct {
 type previewJob struct {
 	src, key, dir string
 	edge          int
+	// generation is the unpair count when the job was made; a job from
+	// before an unpair writes nothing.
+	generation uint64
 }
 
 func newPreviewCache(paths *store.Paths) *previewCache {
@@ -100,6 +104,7 @@ func (p *previewCache) forget(network string) {
 	}
 	_ = os.RemoveAll(filepath.Join(p.paths.Cache, previewDirName))
 	p.mu.Lock()
+	p.generation++
 	p.done = make(map[string]string)
 	for waiter := range p.waiting {
 		if waiter.network == network {
@@ -120,7 +125,10 @@ func (p *previewCache) job(src string, edge int) (previewJob, bool) {
 		return previewJob{}, false
 	}
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%d\x00%d\x00%s", src, info.Size(), info.ModTime().UnixNano(), edge, previewVersion))
-	return previewJob{src: src, key: hex.EncodeToString(sum[:16]), dir: p.previewDir(src), edge: edge}, true
+	p.mu.Lock()
+	generation := p.generation
+	p.mu.Unlock()
+	return previewJob{src: src, key: hex.EncodeToString(sum[:16]), dir: p.previewDir(src), edge: edge, generation: generation}, true
 }
 
 // cached reports a finished preview. Evicted files are treated as missing.
@@ -259,6 +267,12 @@ func (p *previewCache) work() {
 func (p *previewCache) convert(job previewJob) (path string) {
 	p.convertMu.Lock()
 	defer p.convertMu.Unlock()
+	p.mu.Lock()
+	stale := job.generation != p.generation
+	p.mu.Unlock()
+	if stale {
+		return ""
+	}
 	if cached, known := p.cached(job); known {
 		return cached
 	}
@@ -330,11 +344,24 @@ func (p *previewCache) outbound(network string, v any) any {
 	}
 	switch value := v.(type) {
 	case wire.Event:
-		value.Data = p.outbound(value.Network, value.Data)
+		// The event pump must keep draining its bounded queue, so events
+		// carry only finished previews and never wait for a conversion.
+		value.Data = p.apply(value.Network, value.Data, false)
 		return value
 	case wire.Response:
-		value.Result = p.outbound(network, value.Result)
+		value.Result = p.apply(network, value.Result, true)
 		return value
+	}
+	return p.apply(network, v, true)
+}
+
+// apply previews one payload. wait allows converting before returning, for
+// replies the user is waiting on.
+func (p *previewCache) apply(network string, v any, wait bool) any {
+	if network == "" {
+		network = wire.NetworkGMessages
+	}
+	switch value := v.(type) {
 	case wire.Conversation:
 		return p.avatar(network, value)
 	case *wire.Conversation:
@@ -350,40 +377,40 @@ func (p *previewCache) outbound(network string, v any) any {
 		}
 		return out
 	case wire.Message:
-		return p.messagePreviews(value)
+		return p.messagePreviews(value, wait)
 	case *wire.Message:
 		if value == nil {
 			return value
 		}
-		out := p.messagePreviews(*value)
+		out := p.messagePreviews(*value, wait)
 		return &out
 	case []wire.Message:
 		out := make([]wire.Message, len(value))
 		for i, m := range value {
-			out[i] = p.messagePreviews(m)
+			out[i] = p.messagePreviews(m, wait)
 		}
 		return out
 	case wire.MessagesResult:
-		value.Messages = p.outbound(network, value.Messages).([]wire.Message)
+		value.Messages = p.apply(network, value.Messages, wait).([]wire.Message)
 		return value
 	case *wire.MessagesResult:
 		if value == nil {
 			return value
 		}
 		out := *value
-		out.Messages = p.outbound(network, out.Messages).([]wire.Message)
+		out.Messages = p.apply(network, out.Messages, wait).([]wire.Message)
 		return &out
 	case wire.SendMediaResult:
-		value.Message = p.outbound(network, value.Message).(*wire.Message)
-		value.CaptionMessage = p.outbound(network, value.CaptionMessage).(*wire.Message)
+		value.Message = p.apply(network, value.Message, wait).(*wire.Message)
+		value.CaptionMessage = p.apply(network, value.CaptionMessage, wait).(*wire.Message)
 		return value
 	case *wire.SendMediaResult:
 		if value == nil {
 			return value
 		}
 		out := *value
-		out.Message = p.outbound(network, out.Message).(*wire.Message)
-		out.CaptionMessage = p.outbound(network, out.CaptionMessage).(*wire.Message)
+		out.Message = p.apply(network, out.Message, wait).(*wire.Message)
+		out.CaptionMessage = p.apply(network, out.CaptionMessage, wait).(*wire.Message)
 		return &out
 	case wire.PickImageResult:
 		value.Preview = p.now(value.Path, attachmentPreviewEdge)
@@ -405,7 +432,7 @@ func (p *previewCache) outbound(network string, v any) any {
 // messagePreviews previews image attachments that already have a local file,
 // such as a just-sent Telegram image. The rest are fetched with the media
 // method. Most calls are cache hits: the file was previewed when it arrived.
-func (p *previewCache) messagePreviews(m wire.Message) wire.Message {
+func (p *previewCache) messagePreviews(m wire.Message, wait bool) wire.Message {
 	if len(m.Attachments) == 0 {
 		return m
 	}
@@ -413,7 +440,13 @@ func (p *previewCache) messagePreviews(m wire.Message) wire.Message {
 	for i, a := range m.Attachments {
 		a.Preview = ""
 		if a.Path != "" && (a.IsImage || a.IsGif) && !a.IsVideo && !a.IsAudio {
-			a.Preview = p.now(a.Path, attachmentPreviewEdge)
+			if wait {
+				a.Preview = p.now(a.Path, attachmentPreviewEdge)
+			} else {
+				// A miss is queued; the panel fetches it with the media
+				// method if it is still missing when shown.
+				a.Preview, _ = p.lookup(a.Path, attachmentPreviewEdge, nil)
+			}
 		}
 		attachments[i] = a
 	}

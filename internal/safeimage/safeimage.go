@@ -74,6 +74,11 @@ func Convert(data []byte, maxEdge int) ([]byte, Format, error) {
 	}
 	switch {
 	case bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")):
+		// Go's decoder skips ancillary chunks placed before IHDR, which could
+		// then pose as the header pngBytesPerPixel reads. Require it first.
+		if len(data) < 33 || !bytes.Equal(data[8:16], []byte("\x00\x00\x00\x0dIHDR")) {
+			return nil, "", ErrUnsupported
+		}
 		cfg, err := png.DecodeConfig(bytes.NewReader(data))
 		if err != nil {
 			return nil, "", err

@@ -1,12 +1,19 @@
 package messenger
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/onelegdave/omachat/internal/wire"
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-meta/pkg/messagix/table"
+	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waConsumerApplication"
 	"go.mau.fi/whatsmeow/proto/waMsgApplication"
+	waTypes "go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
@@ -103,5 +110,69 @@ func TestRestrictedMessengerMessagesStayWithheld(t *testing.T) {
 	got = b.messages["5"]
 	if len(got) != 1 || got[0].Text != lifetimeRestrictedText || len(got[0].Attachments) != 0 || len(b.media) != 0 {
 		t.Fatalf("withheld message came back: %#v, %d media", got, len(b.media))
+	}
+}
+
+func encryptedText(id, text string, timestamp int64, restricted bool) *events.FBMessage {
+	evt := &events.FBMessage{Message: &waConsumerApplication.ConsumerApplication{Payload: &waConsumerApplication.ConsumerApplication_Payload{Payload: &waConsumerApplication.ConsumerApplication_Payload_Content{Content: &waConsumerApplication.ConsumerApplication_Content{Content: &waConsumerApplication.ConsumerApplication_Content_MessageText{MessageText: &waCommon.MessageText{Text: proto.String(text)}}}}}}}
+	evt.Info.Chat = waTypes.NewJID("7", waTypes.MessengerServer)
+	evt.Info.Sender = waTypes.NewJID("42", waTypes.MessengerServer)
+	evt.Info.ID = id
+	evt.Info.Timestamp = time.UnixMilli(timestamp)
+	if restricted {
+		evt.FBApplication = &waMsgApplication.MessageApplication{Metadata: &waMsgApplication.MessageApplication_Metadata{Ephemeral: &waMsgApplication.MessageApplication_Metadata_ChatEphemeralSetting{ChatEphemeralSetting: &waMsgApplication.MessageApplication_EphemeralSetting{EphemeralExpiration: proto.Uint32(60)}}}}
+	}
+	return evt
+}
+
+func TestEncryptedReplayOfWithheldMessageStaysWithheld(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	b.handleE2EEEvent(encryptedText("e1", "secret", 2000, true))
+	b.handleE2EEEvent(encryptedText("e1", "secret", 2000, false))
+	for _, list := range b.messages {
+		for _, msg := range list {
+			if strings.Contains(msg.Text, "secret") {
+				t.Fatalf("replay restored the text: %#v", msg)
+			}
+		}
+	}
+	for _, conv := range b.Conversations(0) {
+		if strings.Contains(conv.Preview, "secret") {
+			t.Fatalf("replay restored the snippet: %q", conv.Preview)
+		}
+	}
+}
+
+func TestWithholdingNeverDeletesTheUsersOwnFiles(t *testing.T) {
+	paths := setupMessengerPaths(t)
+	b := New(zerolog.Nop(), paths, nil)
+	own := filepath.Join(t.TempDir(), "my-photo.jpg")
+	cached := filepath.Join(paths.MessengerMediaDir(), "fb-cached.jpg")
+	for _, file := range []string{own, cached} {
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.media["sent"] = &messengerMedia{key: "sent", path: own}
+	b.media["got"] = &messengerMedia{key: "got", path: cached}
+	b.forgetMediaLocked([]wire.Attachment{{Key: "sent"}, {Key: "got"}})
+	if _, err := os.Stat(own); err != nil {
+		t.Fatal("the user's own file was deleted")
+	}
+	if _, err := os.Stat(cached); !os.IsNotExist(err) {
+		t.Fatal("the downloaded copy was kept")
+	}
+}
+
+func TestRepeatedMediaRecordKeepsItsDownload(t *testing.T) {
+	b := New(zerolog.Nop(), nil, nil)
+	first := b.rememberRemoteLocked("m", "a", 0, &messengerMedia{remoteURL: "https://example.com/a.jpg", mime: "image/jpeg"}, table.AttachmentTypeImage)
+	b.media[first.Key].path = "/cache/fb-a.jpg"
+	b.rememberRemoteLocked("m", "a", 0, &messengerMedia{remoteURL: "https://example.com/a.jpg", mime: "image/jpeg"}, table.AttachmentTypeImage)
+	if b.media[first.Key].path != "/cache/fb-a.jpg" {
+		t.Fatal("repeated record lost its downloaded path")
 	}
 }

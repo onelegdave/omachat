@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -869,14 +870,26 @@ func (b *Backend) restrictMessageLocked(messageID string, attachments map[string
 	return lifetimeRestrictedText, nil
 }
 
-// forgetMediaLocked drops media records and any downloaded copies.
+// forgetMediaLocked drops media records and any downloaded copies. Only files
+// in the media cache are deleted: a sent attachment's path is the user's own
+// file. Previews derived from deleted copies go with them; the rest are
+// rebuilt on demand.
 func (b *Backend) forgetMediaLocked(attachments []wire.Attachment) {
+	removed := false
 	for _, attachment := range attachments {
-		if record := b.media[attachment.Key]; record != nil && record.path != "" {
+		if record := b.media[attachment.Key]; record != nil && b.ownsMediaFileLocked(record.path) {
 			_ = os.Remove(record.path)
+			removed = true
 		}
 		delete(b.media, attachment.Key)
 	}
+	if removed {
+		_ = os.RemoveAll(filepath.Join(b.paths.MessengerMediaDir(), appStore.PreviewDirName))
+	}
+}
+
+func (b *Backend) ownsMediaFileLocked(path string) bool {
+	return path != "" && b.paths != nil && filepath.Dir(filepath.Clean(path)) == filepath.Clean(b.paths.MessengerMediaDir())
 }
 
 // restrictedLocked reports a stored message that was withheld. The
@@ -1008,6 +1021,10 @@ func (b *Backend) handleE2EEEvent(raw any) {
 		}
 		jid := evt.Info.Chat.ToNonAD()
 		b.mu.Lock()
+		// A replay of a withheld message stays withheld, media and snippet too.
+		if b.restrictedLocked(evt.Info.ID) {
+			text, media = lifetimeRestrictedText, nil
+		}
 		thread := b.jidToThread[jid.String()]
 		if thread == 0 {
 			if parsed, err := strconv.ParseInt(jid.User, 10, 64); err == nil {

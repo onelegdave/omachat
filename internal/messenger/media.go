@@ -92,6 +92,11 @@ func firstNonEmpty(values ...string) string {
 func (b *Backend) rememberRemoteLocked(messageID, attachmentID string, index int64, m *messengerMedia, typ table.AttachmentType) wire.Attachment {
 	m.key = messengerMediaKey(messageID, attachmentID, index)
 	classifyMessengerMedia(m, typ)
+	// A repeated record keeps the downloaded copy, so it can still be found
+	// and removed if the message is later withheld.
+	if old := b.media[m.key]; old != nil && m.path == "" {
+		m.path = old.path
+	}
 	b.media[m.key] = m
 	return m.attachment()
 }
@@ -226,10 +231,16 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResu
 	}
 	_ = os.Chmod(path, 0o600)
 	b.mu.Lock()
-	if current := b.media[key]; current == stored {
+	current := b.media[key]
+	if current == stored {
 		current.path = path
 	}
 	b.mu.Unlock()
+	if current != stored {
+		// The message was withheld or replaced while this downloaded.
+		_ = os.Remove(path)
+		return wire.MediaResult{}, errors.New("Messenger media is no longer available")
+	}
 	if err := appStore.PruneMedia(dir, path); err != nil {
 		b.log.Warn().Err(err).Msg("Could not trim Messenger media")
 	}

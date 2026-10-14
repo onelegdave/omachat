@@ -347,3 +347,14 @@ func TestTallImagesScaleWithinScratchBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPNGHeaderMustComeFirst(t *testing.T) {
+	src := encodePNG(t, solid(4, 4, color.NRGBA{1, 2, 3, 255}))
+	// An ancillary chunk before IHDR that Go would skip, shaped like a
+	// paletted header for the budget estimate.
+	fake := pngChunk("aaAA", []byte{0, 0, 0, 4, 0, 0, 0, 4, 8, 3, 0, 0, 0})
+	moved := append(append(append([]byte{}, src[:8]...), fake...), src[8:]...)
+	if _, _, err := Convert(moved, 256); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("err = %v, want ErrUnsupported", err)
+	}
+}

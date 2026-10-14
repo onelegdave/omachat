@@ -14,6 +14,10 @@ const MediaCacheBytes int64 = 256 << 20
 
 var mediaPruneMu sync.Mutex
 
+// PreviewDirName is the subdirectory of a media cache holding the helper's
+// re-encoded previews of files in that cache.
+const PreviewDirName = "previews"
+
 func PruneMedia(dir, keep string) error { return pruneMedia(dir, keep, MediaCacheBytes) }
 
 func pruneMedia(dir, keep string, limit int64) error {
