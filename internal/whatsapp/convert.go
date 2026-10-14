@@ -253,6 +253,9 @@ func extractAttachments(msg *waE2E.Message, chatID, messageID string) []wire.Att
 
 // convertEventMessage maps an incoming WhatsApp event message to wire.Message.
 func convertEventMessage(evt *events.Message) (wire.Message, bool) {
+	if evt == nil || isStatusUpdate(evt.Info) {
+		return wire.Message{}, false
+	}
 	chatJID := evt.Info.Chat.String()
 	senderJID := evt.Info.Sender.String()
 	unwrapped, _ := unwrapMessage(evt.Message)
@@ -294,6 +297,10 @@ func convertEventMessage(evt *events.Message) (wire.Message, bool) {
 		out.Delivery = wire.DeliverySent
 	}
 	return out, true
+}
+
+func isStatusUpdate(info types.MessageInfo) bool {
+	return info.IsNewsletterStatus || info.Chat == types.StatusBroadcastJID
 }
 
 // formatConversationName resolves a friendly chat name from a JID and available contact/push name.
