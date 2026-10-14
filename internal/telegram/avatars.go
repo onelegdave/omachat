@@ -28,7 +28,7 @@ func addAvatarReference(keys map[int64]string, refs map[string]tg.InputFileLocat
 
 func cachedAvatar(dir, key string) string {
 	path := filepath.Join(dir, safeMediaName(key)+".jpg")
-	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= maxTelegramAvatarBytes {
+	if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= maxTelegramAvatarBytes {
 		return path
 	}
 	return ""
