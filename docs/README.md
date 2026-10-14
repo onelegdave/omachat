@@ -1,9 +1,11 @@
 # OmaChat documentation
 
-The current stable release is OmaChat v0.5.5, which keeps conversation names
-and message text out of desktop notifications and keeps alerts working while
-you update. See the [v0.5.5](history/RELEASE-0.5.5.md) and
-[v0.5.4](history/RELEASE-0.5.4.md) release notes. The
+The current stable release is OmaChat v0.5.6, which keeps remote images, names,
+and messages away from the shell's decoders and bounds what the panel holds. See
+the [v0.5.6 release notes](history/RELEASE-0.5.6.md) and
+[remote content and the shell](shell-content-safety.md). The
+[v0.5.5](history/RELEASE-0.5.5.md) and [v0.5.4](history/RELEASE-0.5.4.md)
+release notes cover desktop notification privacy. The
 [v0.5.3 release notes](history/RELEASE-0.5.3.md) and
 [download safety](media-download-safety.md) cover attachment download limits. The
 [v0.5.2](history/RELEASE-0.5.2.md) and [v0.5.1](history/RELEASE-0.5.1.md)

@@ -1,5 +1,18 @@
 # Marketplace readiness
 
+## v0.5.6 remote-content correction
+
+Review of v0.5.5 [found](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6137173525)
+that an incoming WhatsApp `image/png` document was decoded by Qt inside the
+shell, where compressed PNG text chunks are expanded with no aggregate budget.
+v0.5.6 makes the helper re-encode every image the panel displays, on every
+service, including profile photos, notification icons, and composer
+thumbnails. An independent audit of the other routes from remote content into
+the shell led to plain-text labels, external video playback, copying through
+standard input, bounded panel models and helper replies, withheld Messenger
+disappearing messages, and allowlisted Messenger cache suffixes. See
+[remote content and the shell](shell-content-safety.md).
+
 ## v0.5.5 update compatibility correction
 
 Local verification after publishing v0.5.4 found that OmaChat's `keepLoaded`
@@ -84,7 +97,7 @@ records publication on September 19, 2026 and a maintainer-reviewed baseline
 with no findings and the `package-manager`, `privilege`, `service-management`,
 and `installer` capabilities. See the [publication confirmation](https://github.com/omacom/omarchy-plugin-marketplace/issues/7193#issuecomment-5741298865)
 and [registry](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/registry.json).
-This approval covers that snapshot, not v0.5.0 through v0.5.5.
+This approval covers that snapshot, not v0.5.0 through v0.5.6.
 
 Future releases use the [newer-upstream verification and publication workflow](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md#promoting-a-plugin-update):
 provide the existing plugin ID, repository root, and full SHA of the final public
