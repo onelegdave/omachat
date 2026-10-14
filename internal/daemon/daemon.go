@@ -55,9 +55,9 @@ type Daemon struct {
 	order   []string // conversation IDs, newest first
 	selfIDs map[string]bool
 
-	media   *mediaCache
-	avatars *avatarStore
-	config  *store.ConfigStore
+	media         *mediaCache
+	avatars       *avatarStore
+	config        *store.ConfigStore
 	notifications *desktopNotifications
 
 	// Reactions carry the participant IDs that left them, which is the only
