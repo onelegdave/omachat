@@ -222,7 +222,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 				defer d.configResponseMu.Unlock()
 			}
 			resp := d.dispatch(ctx, req)
-			if err := w.send(d.previews.outbound(req.Network, limitOutbound(resp))); err != nil {
+			if err := w.send(d.previews.mediaAnimation(req, d.previews.outbound(req.Network, limitOutbound(resp)).(wire.Response))); err != nil {
 				cancel()
 				return
 			}

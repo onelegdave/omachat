@@ -134,6 +134,8 @@ Item {
   // this view decodes, since it runs inside the shared shell process.
   property var mediaPaths: ({})
   property var mediaPreviews: ({})
+  // Keys of GIF-style video clips, for which the helper makes an animation.
+  property var mediaAnimations: ({})
   property var _mediaNetworks: ({})
   property var mediaRequests: ({})
   property string pendingAttachment: ""
@@ -786,6 +788,7 @@ Item {
     mediaPaths = keep(mediaPaths)
     mediaPreviews = keep(mediaPreviews)
     mediaRequests = keep(mediaRequests)
+    mediaAnimations = keep(mediaAnimations)
     _mediaNetworks = keep(_mediaNetworks)
   }
 
@@ -836,15 +839,23 @@ Item {
     _boundMediaMaps()
   }
 
-  function requestMedia(key, attempt) {
+  function requestMedia(key, attempt, animation) {
     if (!key || !service) return
     var tries = attempt === undefined ? 0 : attempt
     if (tries === 0 && (mediaRequests[key] === "loading" || (mediaRequests[key] === "ready" && mediaPreviews[key])
         || (mediaRequests[key] === "external" && mediaPaths[key]))) return
+    if (animation) {
+      var anim = Object.assign({}, mediaAnimations)
+      anim[key] = true
+      mediaAnimations = anim
+    }
     setMediaRequest(key, "loading")
     var targetNet = root.network
     var epoch = root._networkEpochs[targetNet] || 0
-    service.call("media", { key: key }, function(ok, res) {
+    var params = { key: key }
+    // Retries keep asking for the animated preview of a GIF-style clip.
+    if (mediaAnimations[key]) params.animation = true
+    service.call("media", params, function(ok, res) {
       if (targetNet !== root.network || epoch !== (root._networkEpochs[targetNet] || 0)) return
       if (ok && res && res.path) _withMedia(key, res.path, res.preview || "")
       if (ok && res && res.path && !res.thumbnail) {
@@ -1808,9 +1819,11 @@ Item {
                   readonly property bool isImage: !!(modelData && (modelData.isImage || modelData.isGif) && !modelData.isAudio && !modelData.isVideo)
                   readonly property bool isVoice: !!(modelData && modelData.isAudio)
                   readonly property bool isVideo: !!(modelData && modelData.isVideo)
-                  // Video, including Messenger's video-backed GIFs, opens in
-                  // an external player rather than decoding in the shell.
-                  readonly property bool loadsInline: isImage
+                  // GIF-style clips play inline only as an animated GIF the
+                  // helper made with ffmpeg in its own process. Other video,
+                  // and clips without that preview, open in an external player.
+                  readonly property bool isVideoGif: !!(isVideo && modelData && modelData.isGif)
+                  readonly property bool loadsInline: isImage || isVideoGif
                   readonly property string mediaKey: modelData && modelData.key ? modelData.key : ""
                   // The original, for external applications only.
                   readonly property string mediaPath: mediaKey && root.mediaPaths[mediaKey]
@@ -1827,17 +1840,17 @@ Item {
                   readonly property bool loadingThis: isVoice && root.audioWaitingKey === mediaKey
                   width: parent.width
                   height: {
-                    if (isVoice || isVideo) return Style.space(36)
+                    if (isVoice || (isVideo && !isVideoGif)) return Style.space(36)
                     if (loadsInline) {
                       if (previewPath !== "") return thumb.height || Style.space(96)
-                      if (mediaExternal) return Style.space(36)
+                      if (mediaExternal || (isVideoGif && mediaFailed)) return Style.space(36)
                       return Style.space(96)
                     }
                     return 0
                   }
                   visible: isImage || isVoice || isVideo
-                  onMediaKeyChanged: if (loadsInline && mediaKey && !previewPath) root.requestMedia(mediaKey)
-                  Component.onCompleted: if (loadsInline && mediaKey && !previewPath) root.requestMedia(mediaKey)
+                  onMediaKeyChanged: if (loadsInline && mediaKey && !previewPath) root.requestMedia(mediaKey, 0, isVideoGif)
+                  Component.onCompleted: if (loadsInline && mediaKey && !previewPath) root.requestMedia(mediaKey, 0, isVideoGif)
 
                   Rectangle {
                     visible: parent.isVoice
@@ -1867,7 +1880,8 @@ Item {
                   }
 
                   Rectangle {
-                    visible: parent.isVideo
+                    objectName: "openVideoExternally"
+                    visible: parent.isVideo && (!parent.isVideoGif || parent.mediaExternal || parent.mediaFailed)
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
@@ -1913,7 +1927,7 @@ Item {
 
                   Rectangle {
                     objectName: "openImageExternally"
-                    visible: parent.mediaExternal
+                    visible: parent.mediaExternal && parent.isImage
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
@@ -1939,7 +1953,7 @@ Item {
                   }
 
                   Rectangle {
-                    visible: parent.mediaFailed
+                    visible: parent.mediaFailed && !parent.isVideoGif
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
@@ -1966,15 +1980,18 @@ Item {
 
                   MediaThumb {
                     id: thumb
-                    visible: parent.isImage && parent.previewPath !== ""
-                    path: parent.isImage ? parent.previewPath : ""
+                    visible: parent.loadsInline && parent.previewPath !== ""
+                    path: parent.loadsInline ? parent.previewPath : ""
                     // The preview's own extension says whether it animates;
                     // the sender's MIME type and file name are not trusted.
                     mimeType: ""
                     fileName: ""
                     playing: root.panelOpen
                     maxEdge: Math.min(parent.width, Style.space(280))
-                    onClicked: root.openImage(parent.mediaPath || parent.previewPath)
+                    onClicked: {
+                      if (parent.isVideoGif) root.openVideo(parent.mediaKey)
+                      else root.openImage(parent.mediaPath || parent.previewPath)
+                    }
                     onLoadFailed: {
                       if (parent.mediaKey) {
                         root._evictMedia(parent.mediaKey)

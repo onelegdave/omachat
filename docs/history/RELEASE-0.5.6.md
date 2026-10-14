@@ -24,8 +24,12 @@ and its limits.
   holding markup could make the shell fetch an image from the network. Every
   label now shows text exactly as sent; the HTML-escaped message body keeps its
   links.
-- **Video opens externally.** GIF-style clips from Messenger and WhatsApp no
-  longer play inline in the shell; they open in your video player.
+- **GIF-style clips are converted outside the shell.** Messenger and WhatsApp
+  send GIFs as short videos, which the panel used to decode inside the shell.
+  The helper now turns them into an animated preview with optional `ffmpeg`,
+  in its own process and within time, size, and memory limits; clicking one
+  opens the original video. Without `ffmpeg` they show **Open video**. Other
+  video already opened in your video player.
 - **Copied text no longer appears in process arguments.** Copying a message or
   code sends it to `wl-copy` on standard input.
 - **Bounded panel state.** A thread keeps its newest 1,000 messages, each
@@ -43,6 +47,7 @@ and its limits.
 - Inline previews are at most 1280 pixels on the long side. Animated GIFs keep
   moving up to 500 frames and 1024 pixels on a side; larger ones show their
   first frame.
+- GIF-style clips preview up to 8 seconds at 480 pixels, looping.
 - Loading older messages stops after 1,000 messages in a thread; older history
   remains in the service's own apps.
 - `golang.org/x/image` v0.45.0 is vendored for WebP decoding and scaling. It
@@ -61,7 +66,10 @@ retain their existing attribution and original authorship. See
 ## Verification and limits
 
 The full Go tests, Google Messages client fixtures, race checks on the changed
-packages, vet, 76 Node tests, and 51 Python tests pass. New Go tests feed the
+packages, vet, 76 Node tests, and 52 Python tests pass. Animated clip
+previews are tested against a real `ffmpeg`, including playlist and concat
+files that are refused before `ffmpeg` runs and a hung `ffmpeg` that is
+stopped. New Go tests feed the
 converter PNGs with many large compressed text chunks, dimension, GIF
 frame-area, and JPEG scan-count bombs, JPEG and GIF comments, and SVG, TIFF,
 BMP, and MP4 bytes. They check that previews carry no source text, that

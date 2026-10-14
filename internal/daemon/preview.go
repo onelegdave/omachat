@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/onelegdave/omachat/internal/safeimage"
 	"github.com/onelegdave/omachat/internal/store"
@@ -42,8 +43,14 @@ type previewCache struct {
 	paths *store.Paths
 
 	// convertMu serialises decoding so concurrent requests cannot multiply
-	// the per-image memory budget.
+	// the per-image memory budget. videoMu does the same for ffmpeg, which
+	// runs far longer and must not hold up image previews.
 	convertMu sync.Mutex
+	videoMu   sync.Mutex
+	// ffmpeg overrides the executable found on PATH; animationTimeout bounds
+	// one run. Both exist for tests.
+	ffmpeg           string
+	animationTimeout time.Duration
 
 	mu         sync.Mutex
 	generation uint64
@@ -60,6 +67,8 @@ type previewCache struct {
 type previewJob struct {
 	src, key, dir string
 	edge          int
+	// animation previews a GIF-style video clip through ffmpeg.
+	animation bool
 	// generation is the unpair count when the job was made; a job from
 	// before an unpair writes nothing.
 	generation uint64
@@ -106,6 +115,8 @@ func (p *previewCache) forget(network string) {
 	}[network]
 	p.convertMu.Lock()
 	defer p.convertMu.Unlock()
+	p.videoMu.Lock()
+	defer p.videoMu.Unlock()
 	if media != "" {
 		_ = os.RemoveAll(filepath.Join(media, previewDirName))
 	}
@@ -123,6 +134,10 @@ func (p *previewCache) forget(network string) {
 
 // job identifies one source file revision at one preview size.
 func (p *previewCache) job(src string, edge int) (previewJob, bool) {
+	return p.jobFor(src, edge, false)
+}
+
+func (p *previewCache) jobFor(src string, edge int, animation bool) (previewJob, bool) {
 	if p.paths == nil || src == "" || !filepath.IsAbs(src) {
 		return previewJob{}, false
 	}
@@ -131,11 +146,11 @@ func (p *previewCache) job(src string, edge int) (previewJob, bool) {
 	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > safeimage.MaxSourceBytes {
 		return previewJob{}, false
 	}
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%d\x00%d\x00%s", src, info.Size(), info.ModTime().UnixNano(), edge, previewVersion))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%d\x00%d\x00%t\x00%s", src, info.Size(), info.ModTime().UnixNano(), edge, animation, previewVersion))
 	p.mu.Lock()
 	generation := p.generation
 	p.mu.Unlock()
-	return previewJob{src: src, key: store.PreviewPrefix(src) + hex.EncodeToString(sum[:8]), dir: p.previewDir(src), edge: edge, generation: generation}, true
+	return previewJob{src: src, key: store.PreviewPrefix(src) + hex.EncodeToString(sum[:8]), dir: p.previewDir(src), edge: edge, animation: animation, generation: generation}, true
 }
 
 // cached reports a finished preview. Evicted files are treated as missing.
@@ -272,8 +287,13 @@ func (p *previewCache) work() {
 }
 
 func (p *previewCache) convert(job previewJob) (path string) {
-	p.convertMu.Lock()
-	defer p.convertMu.Unlock()
+	if job.animation {
+		p.videoMu.Lock()
+		defer p.videoMu.Unlock()
+	} else {
+		p.convertMu.Lock()
+		defer p.convertMu.Unlock()
+	}
 	p.mu.Lock()
 	stale := job.generation != p.generation
 	p.mu.Unlock()
@@ -290,7 +310,14 @@ func (p *previewCache) convert(job previewJob) (path string) {
 		}
 		p.remember(job.key, path)
 	}()
-	data, err := readPreviewSource(job.src)
+	var data []byte
+	var err error
+	if job.animation {
+		// ffmpeg's GIF is untrusted too: it is re-encoded like any image.
+		data, err = p.runFFmpeg(job.src)
+	} else {
+		data, err = readPreviewSource(job.src)
+	}
 	if err != nil {
 		return ""
 	}

@@ -56,7 +56,7 @@ class RemoteContentTest(unittest.TestCase):
         inbox = (REPO / "InboxView.qml").read_text()
         thumb = inbox[inbox.index("id: thumb"):]
         thumb = thumb[:thumb.index("onLoadFailed")]
-        self.assertIn("path: parent.isImage ? parent.previewPath", thumb)
+        self.assertIn("path: parent.loadsInline ? parent.previewPath", thumb)
         self.assertNotIn("mediaPath :", thumb.replace("mediaPath ||", ""))
         self.assertIn('mimeType: ""', thumb)
         # The helper sends remote content only to panels carrying this marker.
@@ -91,6 +91,19 @@ class RemoteContentTest(unittest.TestCase):
         self.assertIn('(mediaRequests[key] === "external" && mediaPaths[key])', inbox)
         older = inbox[inbox.index("function loadOlderMessages"):]
         self.assertLess(older.index("Model.MAX_THREAD_MESSAGES"), older.index('source.call("messages"'))
+
+    def test_gif_style_clips_animate_only_through_the_helper(self):
+        inbox = (REPO / "InboxView.qml").read_text()
+        self.assertIn("readonly property bool loadsInline: isImage || isVideoGif", inbox)
+        self.assertIn("if (mediaAnimations[key]) params.animation = true", inbox)
+        helper = (REPO / "internal/daemon/animation.go").read_text()
+        # ffmpeg runs in its own process with a forced demuxer and file-only
+        # input, and its output is re-encoded before the panel sees it.
+        for flag in ('"-protocol_whitelist", "file"', '"-f", format, "-i", "file:"+src', '"-max_pixels"', "unix.RLIMIT_DATA"):
+            self.assertIn(flag, helper)
+        preview = (REPO / "internal/daemon/preview.go").read_text()
+        self.assertIn("data, err = p.runFFmpeg(job.src)", preview)
+        self.assertIn("safeimage.Convert(data, job.edge)", preview)
 
 
 if __name__ == "__main__":

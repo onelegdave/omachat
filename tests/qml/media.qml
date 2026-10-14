@@ -16,6 +16,7 @@ ShellRoot {
   property var videoGif: ({id:"video-gif",conversationID:"a",timestamp:4000000,fromMe:false,attachments:[{key:"video-gif-key",isGif:true,isVideo:true,mimeType:"video/x-f4v",name:"clip.f4v"}]})
   property var unpreviewable: ({id:"no-preview",conversationID:"a",timestamp:5000000,fromMe:false,attachments:[{key:"no-preview-key",isImage:true,mimeType:"image/png",name:"document.png"}]})
   property int callsBeforeVideo: 0
+  property var lastMediaParams: null
   function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
   function thumb(item) {
     if (item && item.ready !== undefined && item.maxEdge !== undefined) return item
@@ -40,7 +41,7 @@ ShellRoot {
     signal conversationUpdated(var conversation)
     signal paired()
     function call(method, params, callback) {
-      if (method === "media") { root.mediaCalls++; root.pending=callback; return }
+      if (method === "media") { root.mediaCalls++; root.pending=callback; root.lastMediaParams=params; return }
       if (callback) callback(true, method === "messages" ? {messages:[]} : {})
     }
   }
@@ -96,16 +97,23 @@ ShellRoot {
           inbox.mergeMessage(root.videoGif)
         }
         if(root.step===8) {
-          root.check(root.mediaCalls===root.callsBeforeVideo,"video-backed GIF is not downloaded for inline playback")
-          var videoRow=list.itemAtIndex(list.count-1)
-          root.check(!root.named(videoRow,"loopingVideoThumb"),"video-backed GIF has no inline player in the shell")
-          inbox.mergeMessage(root.unpreviewable)
+          root.check(root.mediaCalls===root.callsBeforeVideo+1 && root.lastMediaParams.animation===true,"video-backed GIF asks the helper for an animated preview")
+          root.pending(true,{path:"/tmp/clip.mp4",preview:Quickshell.env("OMACHAT_TEST_IMAGE")})
         }
         if(root.step===9) {
+          var videoRow=list.itemAtIndex(list.count-1)
+          var gifThumb=root.thumb(videoRow)
+          root.check(!root.named(videoRow,"loopingVideoThumb"),"video-backed GIF has no inline player in the shell")
+          root.check(!!gifThumb && gifThumb.path===Quickshell.env("OMACHAT_TEST_IMAGE"),"video-backed GIF shows the helper's animation")
+          root.check(!root.named(videoRow,"openVideoExternally").visible,"animated clip hides Open video")
+          root.callsBeforeVideo=root.mediaCalls
+          inbox.mergeMessage(root.unpreviewable)
+        }
+        if(root.step===10) {
           root.check(root.mediaCalls===root.callsBeforeVideo+1,"image without a preview is requested once")
           root.pending(true,{path:"/tmp/original-document.png"})
         }
-        if(root.step===10) {
+        if(root.step===11) {
           var row=list.itemAtIndex(list.count-1)
           var chip=root.named(row,"openImageExternally")
           root.check(inbox.mediaRequests["no-preview-key"]==="external","image without a preview is offered externally")

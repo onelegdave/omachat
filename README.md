@@ -288,9 +288,12 @@ helper decodes and re-encodes first: at most 1280 pixels on the long side, with
 no embedded text or metadata, and animated GIFs only within frame and size
 limits. Clicking a preview opens the original in your image viewer. An image the
 helper cannot preview, such as an animated WebP sticker or a very large photo,
-shows **Open image** instead. Video, including GIF-style clips from WhatsApp and
-Messenger, opens in an external player. The panel runs inside the shared
-Omarchy shell, so it never decodes a downloaded original itself.
+shows **Open image** instead. GIF-style clips from WhatsApp and Messenger loop
+inline as an animated preview that the helper makes with optional `ffmpeg`, up
+to 8 seconds at 480 pixels; click one to open the original video. Without
+`ffmpeg`, they show **Open video**. Other video opens in an external player. The
+panel runs inside the shared Omarchy shell, so it never decodes a downloaded
+original itself.
 
 For voice notes, choose **Rec**, record, **Play**
 to preview, then send. Voice needs optional `ffmpeg` and `ffplay`. Google

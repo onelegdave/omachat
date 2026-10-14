@@ -518,6 +518,8 @@ type MediaParams struct {
 	Key string `json:"key"`
 	// MediaID is accepted as a legacy alias for Key.
 	MediaID string `json:"mediaID,omitempty"`
+	// Animation asks for an animated preview of a GIF-style video clip.
+	Animation bool `json:"animation,omitempty"`
 }
 
 type MediaResult struct {

@@ -65,10 +65,25 @@ finish updating." No messages, names, or media reach it.
 
 ## Video
 
-The panel no longer plays any video inline. Messenger and WhatsApp GIF-style
-clips were decoded by Qt Multimedia and FFmpeg in the shell; they now open in an
-external player like other video. Voice notes already played through `ffplay`
-in its own process.
+The panel no longer plays any video itself. Messenger and WhatsApp send GIFs as
+short looping videos, which Qt Multimedia used to decode with FFmpeg inside the
+shell. Now the helper runs `ffmpeg` as its own child process to turn such a
+clip into an animated GIF, and that GIF goes through the image converter above
+like any other image, so the panel still decodes only what Go wrote:
+
+- The container must be MP4/MOV or WebM/Matroska by its leading bytes, and
+  `ffmpeg` is told that format, so it never probes for playlist or concat
+  formats that could open other files. Input is limited to the file protocol.
+- It reads at most 8 seconds of the first video stream and writes at most 96
+  frames at 12 per second, no larger than 480 pixels on a side. Decoded frames
+  are limited to 4K, and it runs two threads.
+- It is stopped after 20 seconds, and the kernel limits its data memory to
+  1 GiB, its CPU time to 30 seconds, and any file it writes to 16 MiB.
+- One clip converts at a time, separately from images, and only when the panel
+  asks for a GIF-style clip. Without `ffmpeg`, or if conversion fails, the clip
+  shows **Open video**.
+
+Voice notes already played through `ffplay` in its own process.
 
 ## Text
 
