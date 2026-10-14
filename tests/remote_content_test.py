@@ -99,7 +99,7 @@ class RemoteContentTest(unittest.TestCase):
         helper = (REPO / "internal/daemon/animation.go").read_text()
         # ffmpeg runs in its own process with a forced demuxer and file-only
         # input, and its output is re-encoded before the panel sees it.
-        for flag in ('"-protocol_whitelist", "file"', '"-f", format, "-i", "file:"+src', '"-max_pixels"', "unix.RLIMIT_DATA"):
+        for flag in ('"-protocol_whitelist", "file"', '"-f", format, "-i", "file:"+src', '"-max_pixels"', '"-filter_threads", "2"', "trim=end_frame=", 'exec.CommandContext(ctx, prlimit,'):
             self.assertIn(flag, helper)
         preview = (REPO / "internal/daemon/preview.go").read_text()
         self.assertIn("data, err = p.runFFmpeg(job.src)", preview)

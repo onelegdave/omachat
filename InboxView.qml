@@ -858,7 +858,9 @@ Item {
     service.call("media", params, function(ok, res) {
       if (targetNet !== root.network || epoch !== (root._networkEpochs[targetNet] || 0)) return
       if (ok && res && res.path) _withMedia(key, res.path, res.preview || "")
-      if (ok && res && res.path && !res.thumbnail) {
+      // A pending reply means an animated preview is still being made; the
+      // retry below asks again.
+      if (ok && res && res.path && !res.thumbnail && !res.pending) {
         // Without a preview the helper could not safely re-encode the file.
         // It is offered to an external viewer instead of decoded here.
         setMediaRequest(key, res.preview ? "ready" : "external")

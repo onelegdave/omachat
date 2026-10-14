@@ -9,10 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"syscall"
 	"time"
-
-	"golang.org/x/sys/unix"
 
 	"github.com/onelegdave/omachat/internal/wire"
 )
@@ -29,6 +29,7 @@ const (
 	animationFrames   = animationFPS * animationSeconds
 	animationTimeout  = 20 * time.Second
 	animationMaxBytes = 16 << 20
+	maxAnimationQueue = 32
 	// ffmpeg's own limits: decoded frame area, address space for data, CPU
 	// seconds, and the size of any file it writes.
 	ffmpegMaxPixels = 3840 * 2160
@@ -51,19 +52,55 @@ func animationFormat(head []byte) string {
 	return ""
 }
 
-// animation returns an animated preview for a GIF-style video clip, or "".
-func (p *previewCache) animation(src string) string {
+// animation returns a finished animated preview for a GIF-style video clip.
+// Otherwise it queues the clip for ffmpeg and reports pending; the panel asks
+// again shortly. A full queue or a refused clip gets no preview.
+func (p *previewCache) animation(src string) (path string, pending bool) {
 	if p == nil {
-		return ""
+		return "", false
 	}
 	job, ok := p.jobFor(src, attachmentPreviewEdge, true)
 	if !ok {
-		return ""
+		return "", false
 	}
 	if path, known := p.cached(job); known {
-		return path
+		return path, false
 	}
-	return p.convert(job)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, queued := p.animQueue[job.queueKey()]; !queued {
+		if len(p.animQueue) >= maxAnimationQueue {
+			return "", false
+		}
+		p.animQueue[job.queueKey()] = job
+	}
+	if !p.animRunning {
+		p.animRunning = true
+		go p.animWork()
+	}
+	return "", true
+}
+
+func (p *previewCache) animWork() {
+	for {
+		p.mu.Lock()
+		var job previewJob
+		found := false
+		for _, queued := range p.animQueue {
+			job, found = queued, true
+			break
+		}
+		if !found {
+			p.animRunning = false
+			p.mu.Unlock()
+			return
+		}
+		p.mu.Unlock()
+		p.convert(job)
+		p.mu.Lock()
+		delete(p.animQueue, job.queueKey())
+		p.mu.Unlock()
+	}
 }
 
 func (p *previewCache) runFFmpeg(src string) ([]byte, error) {
@@ -97,13 +134,24 @@ func (p *previewCache) runFFmpeg(src string) ([]byte, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	filter := fmt.Sprintf("fps=%d,scale=w='min(iw,%d)':h='min(ih,%d)':force_original_aspect_ratio=decrease:flags=lanczos,"+
+	// trim ends the stream after the frame cap before scaling or palette
+	// generation, which reads to the end: -frames:v alone bounds only output,
+	// and odd timestamps can make fps emit far more frames than that.
+	filter := fmt.Sprintf("fps=%d,trim=end_frame=%d,scale=w='min(iw,%d)':h='min(ih,%d)':force_original_aspect_ratio=decrease:flags=lanczos,"+
 		"split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer",
-		animationFPS, animationEdge, animationEdge)
-	cmd := exec.CommandContext(ctx, ffmpeg,
+		animationFPS, animationFrames, animationEdge, animationEdge)
+	prlimit, err := exec.LookPath("prlimit")
+	if err != nil {
+		return nil, errNoAnimation
+	}
+	// prlimit sets the limits on itself and then executes ffmpeg, so they hold
+	// from ffmpeg's first instruction, and a failure to set them runs nothing.
+	cmd := exec.CommandContext(ctx, prlimit,
+		"--data="+strconv.Itoa(ffmpegMaxData), "--cpu="+strconv.Itoa(ffmpegMaxCPU), "--fsize="+strconv.Itoa(animationMaxBytes),
+		"--", ffmpeg,
 		"-nostdin", "-hide_banner", "-loglevel", "error",
 		"-protocol_whitelist", "file",
-		"-threads", "2",
+		"-threads", "2", "-filter_threads", "2",
 		"-max_pixels", strconv.Itoa(ffmpegMaxPixels),
 		"-probesize", "5000000", "-analyzeduration", "5000000",
 		"-t", strconv.Itoa(animationSeconds),
@@ -116,15 +164,12 @@ func (p *previewCache) runFFmpeg(src string) ([]byte, error) {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	cmd.WaitDelay = time.Second
-	if err := cmd.Start(); err != nil {
-		return nil, errNoAnimation
-	}
-	// Limits apply from just after start; ffmpeg has not read the input yet.
-	pid := cmd.Process.Pid
-	_ = unix.Prlimit(pid, unix.RLIMIT_DATA, &unix.Rlimit{Cur: ffmpegMaxData, Max: ffmpegMaxData}, nil)
-	_ = unix.Prlimit(pid, unix.RLIMIT_CPU, &unix.Rlimit{Cur: ffmpegMaxCPU, Max: ffmpegMaxCPU}, nil)
-	_ = unix.Prlimit(pid, unix.RLIMIT_FSIZE, &unix.Rlimit{Cur: animationMaxBytes, Max: animationMaxBytes}, nil)
-	if err := cmd.Wait(); err != nil {
+	// ffmpeg does not outlive the helper. The death signal follows the thread
+	// that started it, so this goroutine keeps its thread until ffmpeg exits.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if err := cmd.Run(); err != nil {
 		return nil, errNoAnimation
 	}
 	f, err := os.Open(out)
@@ -166,13 +211,13 @@ func (p *previewCache) mediaAnimation(req wire.Request, resp wire.Response) wire
 	switch result := resp.Result.(type) {
 	case wire.MediaResult:
 		if result.Preview == "" && result.Path != "" {
-			result.Preview = p.animation(result.Path)
+			result.Preview, result.Pending = p.animation(result.Path)
 		}
 		resp.Result = result
 	case *wire.MediaResult:
 		if result != nil && result.Preview == "" && result.Path != "" {
 			out := *result
-			out.Preview = p.animation(out.Path)
+			out.Preview, out.Pending = p.animation(out.Path)
 			resp.Result = &out
 		}
 	}

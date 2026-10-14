@@ -53,7 +53,7 @@ After installing Go, choose **Retry** on the helper screen to recheck it.
 | Telegram setup | Personal `api_id` and `api_hash`; Python 3 for `scripts/configure-telegram.py`; Telegram phone app and `qrencode` |
 | Voice notes on all services | `ffmpeg` to record and `ffplay` to play audio |
 | WhatsApp GIF sending | `ffmpeg` to convert GIF files to WhatsApp's MP4 playback format |
-| Inline GIF-style clips from WhatsApp and Messenger | `ffmpeg`, run by the helper to make an animated preview; without it they open in a video player |
+| Inline GIF-style clips from WhatsApp and Messenger | `ffmpeg`, run by the helper through `prlimit` (util-linux) to make an animated preview; without them the clips open in a video player |
 | File selection | Working desktop portal and its file-picker backend |
 | Copy and paste text | `wl-copy` and `wl-paste` from wl-clipboard; Python 3 for bounded paste |
 | Open links or downloaded files | `xdg-open` and an appropriate installed browser/image/video application |

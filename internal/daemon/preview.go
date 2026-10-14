@@ -57,6 +57,10 @@ type previewCache struct {
 	done       map[string]string // key -> preview path, "" when refused
 	queue      map[string]previewJob
 	running    bool
+	// animQueue holds clips for ffmpeg, converted one at a time by their own
+	// worker so a slow clip never holds up a request or an image preview.
+	animQueue   map[string]previewJob
+	animRunning bool
 	// waiting holds conversations sent without an avatar because theirs was
 	// still converting, so they can be republished once it is ready.
 	waiting map[avatarWaiter]string
@@ -76,10 +80,11 @@ type previewJob struct {
 
 func newPreviewCache(paths *store.Paths) *previewCache {
 	return &previewCache{
-		paths:   paths,
-		done:    make(map[string]string),
-		queue:   make(map[string]previewJob),
-		waiting: make(map[avatarWaiter]string),
+		paths:     paths,
+		done:      make(map[string]string),
+		queue:     make(map[string]previewJob),
+		animQueue: make(map[string]previewJob),
+		waiting:   make(map[avatarWaiter]string),
 	}
 }
 
@@ -102,7 +107,7 @@ func (j previewJob) queueKey() string {
 }
 
 // forget removes a service's previews and the shared ones after it unpairs.
-// It waits for a conversion in progress, so none is written afterwards.
+// It waits for an image conversion in progress, so none is written afterwards.
 func (p *previewCache) forget(network string) {
 	if p == nil || p.paths == nil {
 		return
@@ -115,21 +120,23 @@ func (p *previewCache) forget(network string) {
 	}[network]
 	p.convertMu.Lock()
 	defer p.convertMu.Unlock()
-	p.videoMu.Lock()
-	defer p.videoMu.Unlock()
-	if media != "" {
-		_ = os.RemoveAll(filepath.Join(media, previewDirName))
-	}
-	_ = os.RemoveAll(filepath.Join(p.paths.Cache, previewDirName))
+	// The generation moves first: a clip conversion still running in ffmpeg
+	// checks it under mu before writing, so it either writes before the
+	// removal below or not at all. Unpairing need not wait for ffmpeg.
 	p.mu.Lock()
 	p.generation++
 	p.done = make(map[string]string)
+	p.animQueue = make(map[string]previewJob)
 	for waiter := range p.waiting {
 		if waiter.network == network {
 			delete(p.waiting, waiter)
 		}
 	}
 	p.mu.Unlock()
+	if media != "" {
+		_ = os.RemoveAll(filepath.Join(media, previewDirName))
+	}
+	_ = os.RemoveAll(filepath.Join(p.paths.Cache, previewDirName))
 }
 
 // job identifies one source file revision at one preview size.
@@ -329,7 +336,18 @@ func (p *previewCache) convert(job previewJob) (path string) {
 		return ""
 	}
 	dst := filepath.Join(job.dir, job.key+"."+string(format))
-	if err := store.WritePrivateFile(dst, out); err != nil {
+	if job.animation {
+		// forget does not wait for ffmpeg; see there.
+		p.mu.Lock()
+		stale := job.generation != p.generation
+		if !stale {
+			err = store.WritePrivateFile(dst, out)
+		}
+		p.mu.Unlock()
+		if stale || err != nil {
+			return ""
+		}
+	} else if err := store.WritePrivateFile(dst, out); err != nil {
 		return ""
 	}
 	// Unpairing can delete the source while it converts. A preview written

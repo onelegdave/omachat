@@ -74,14 +74,18 @@ like any other image, so the panel still decodes only what Go wrote:
 - The container must be MP4/MOV or WebM/Matroska by its leading bytes, and
   `ffmpeg` is told that format, so it never probes for playlist or concat
   formats that could open other files. Input is limited to the file protocol.
-- It reads at most 8 seconds of the first video stream and writes at most 96
-  frames at 12 per second, no larger than 480 pixels on a side. Decoded frames
-  are limited to 4K, and it runs two threads.
-- It is stopped after 20 seconds, and the kernel limits its data memory to
-  1 GiB, its CPU time to 30 seconds, and any file it writes to 16 MiB.
-- One clip converts at a time, separately from images, and only when the panel
-  asks for a GIF-style clip. Without `ffmpeg`, or if conversion fails, the clip
-  shows **Open video**.
+- It reads at most 8 seconds of the first video stream, and the stream ends
+  after 96 frames at 12 per second before it is scaled or a palette is built,
+  no larger than 480 pixels on a side. Decoded frames are limited to 4K, and
+  decoding and filtering each use two threads.
+- It starts through `prlimit` from util-linux, so before `ffmpeg` runs the
+  kernel limits its data memory to 1 GiB, its CPU time to 30 seconds, and any
+  file it writes to 16 MiB; if the limits cannot be set, nothing runs. It is
+  stopped after 20 seconds and killed if the helper exits.
+- Clips convert one at a time in the background, separately from images, and
+  only when the panel asks for a GIF-style clip. The panel's request returns at
+  once and asks again until the preview is ready. Without `ffmpeg` or
+  `prlimit`, or if conversion fails, the clip shows **Open video**.
 
 Voice notes already played through `ffplay` in its own process.
 
