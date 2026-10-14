@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog"
-	waTypes "go.mau.fi/whatsmeow/types"
 	"go.mau.fi/mautrix-meta/pkg/messagix/table"
+	waTypes "go.mau.fi/whatsmeow/types"
 
 	"github.com/onelegdave/omachat/internal/wire"
 )
