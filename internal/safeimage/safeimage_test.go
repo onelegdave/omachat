@@ -271,19 +271,79 @@ func TestWebP(t *testing.T) {
 	}
 }
 
-func TestJPEGProgressiveDetection(t *testing.T) {
+func baselineJPEG(t *testing.T, w, h int) []byte {
+	t.Helper()
 	var b bytes.Buffer
-	if err := jpeg.Encode(&b, solid(8, 8, color.White), nil); err != nil {
+	if err := jpeg.Encode(&b, solid(w, h, color.NRGBA{90, 120, 30, 255}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if jpegProgressive(b.Bytes()) {
-		t.Fatal("baseline JPEG read as progressive")
+	return b.Bytes()
+}
+
+func TestJPEGScanWalk(t *testing.T) {
+	progressive, scans, ok := scanJPEG(baselineJPEG(t, 8, 8))
+	if !ok || progressive || scans != 1 {
+		t.Fatalf("baseline: progressive=%v scans=%d ok=%v", progressive, scans, ok)
 	}
-	sof2 := []byte{0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc2, 0, 11}
-	if !jpegProgressive(sof2) {
-		t.Fatal("SOF2 not read as progressive")
+	if _, _, ok := scanJPEG([]byte{0xff, 0xd8, 0x00}); ok {
+		t.Fatal("unreadable structure accepted")
 	}
-	if !jpegProgressive([]byte{0xff, 0xd8, 0x00}) {
-		t.Fatal("unreadable structure should assume progressive")
+	sof2 := []byte{0xff, 0xd8, 0xff, 0xc2, 0, 2, 0xff, 0xda, 0, 2, 1, 2, 0xff, 0x00, 3, 0xff, 0xd0, 4, 0xff, 0xd9}
+	if progressive, scans, ok := scanJPEG(sof2); !ok || !progressive || scans != 1 {
+		t.Fatalf("SOF2: progressive=%v scans=%d ok=%v", progressive, scans, ok)
+	}
+}
+
+// Each scan revisits every coefficient, and a repeated scan costs only bytes.
+func TestJPEGWithManyScansIsRefused(t *testing.T) {
+	src := baselineJPEG(t, 16, 16)
+	sos := bytes.Index(src, []byte{0xff, 0xda})
+	scan := src[sos : len(src)-2] // through the entropy data, before EOI
+	bomb := append([]byte{}, src[:len(src)-2]...)
+	for i := 0; i < maxJPEGScans; i++ {
+		bomb = append(bomb, scan...)
+	}
+	bomb = append(bomb, 0xff, 0xd9)
+	if _, _, err := Convert(bomb, 256); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("err = %v, want ErrTooLarge", err)
+	}
+}
+
+func TestPNGBudgetCountsTransparencyAndInterlacing(t *testing.T) {
+	ihdr := func(depth, colorType, interlace byte) []byte {
+		data := make([]byte, 33)
+		data[24], data[25], data[28] = depth, colorType, interlace
+		return data
+	}
+	for _, tc := range []struct {
+		depth, colorType, interlace byte
+		want                        int64
+	}{
+		{16, 0, 0, 8}, // gray16 + tRNS decodes to NRGBA64
+		{8, 0, 0, 4},  // gray + tRNS decodes to NRGBA
+		{8, 3, 0, 1},  // paletted stays paletted
+		{16, 6, 1, 16},
+	} {
+		if got := pngBytesPerPixel(ihdr(tc.depth, tc.colorType, tc.interlace)); got != tc.want {
+			t.Errorf("depth %d type %d interlace %d: %d bytes, want %d", tc.depth, tc.colorType, tc.interlace, got, tc.want)
+		}
+	}
+}
+
+func TestTallImagesScaleWithinScratchBudget(t *testing.T) {
+	src := image.NewGray(image.Rect(0, 0, 300, 9000))
+	out, _, err := Convert(encodePNG(t, src), 1280)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(out))
+	if err != nil || cfg.Height != 1280 || cfg.Width != 42 {
+		t.Fatalf("size %dx%d: %v", cfg.Width, cfg.Height, err)
+	}
+	// 1280 columns x 9000 rows of 32-byte cells would exceed the budget
+	// without the first pass.
+	wide := image.NewGray(image.Rect(0, 0, 4000, 3000))
+	if _, _, err := Convert(encodePNG(t, wide), 1280); err != nil {
+		t.Fatal(err)
 	}
 }

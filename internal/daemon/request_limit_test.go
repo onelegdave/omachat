@@ -105,7 +105,7 @@ func TestConnectionDrainsStoreWritersBeforeReturning(t *testing.T) {
 			d.configResponseMu.Unlock()
 		}
 	}()
-	req := wire.Request{ID: "slow-writer", Method: wire.MethodSetUiScale, Params: wire.SetUiScaleParams{Scale: 1.4}}
+	req := wire.Request{ID: "slow-writer", Client: wire.SafeClient, Method: wire.MethodSetUiScale, Params: wire.SetUiScaleParams{Scale: 1.4}}
 	if err := json.NewEncoder(client).Encode(req); err != nil {
 		t.Fatal(err)
 	}

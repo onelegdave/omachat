@@ -81,6 +81,34 @@ func (p *previewCache) previewDir(src string) string {
 	return filepath.Join(p.paths.Cache, previewDirName)
 }
 
+// forget removes a service's previews and the shared ones after it unpairs.
+// It waits for a conversion in progress, so none is written afterwards.
+func (p *previewCache) forget(network string) {
+	if p == nil || p.paths == nil {
+		return
+	}
+	media := map[string]string{
+		wire.NetworkGMessages: p.paths.MediaDir(),
+		wire.NetworkWhatsApp:  p.paths.WhatsAppMediaDir(),
+		wire.NetworkTelegram:  p.paths.TelegramMediaDir(),
+		wire.NetworkMessenger: p.paths.MessengerMediaDir(),
+	}[network]
+	p.convertMu.Lock()
+	defer p.convertMu.Unlock()
+	if media != "" {
+		_ = os.RemoveAll(filepath.Join(media, previewDirName))
+	}
+	_ = os.RemoveAll(filepath.Join(p.paths.Cache, previewDirName))
+	p.mu.Lock()
+	p.done = make(map[string]string)
+	for waiter := range p.waiting {
+		if waiter.network == network {
+			delete(p.waiting, waiter)
+		}
+	}
+	p.mu.Unlock()
+}
+
 // job identifies one source file revision at one preview size.
 func (p *previewCache) job(src string, edge int) (previewJob, bool) {
 	if p.paths == nil || src == "" || !filepath.IsAbs(src) {
@@ -256,6 +284,12 @@ func (p *previewCache) convert(job previewJob) (path string) {
 	if err := store.WritePrivateFile(dst, out); err != nil {
 		return ""
 	}
+	// Unpairing can delete the source while it converts. A preview written
+	// after that would outlive the account, so it is removed again.
+	if !regularFile(job.src) {
+		_ = os.Remove(dst)
+		return ""
+	}
 	_, _ = pruneDir(job.dir, maxPreviewDirBytes, func(name string) bool { return name != filepath.Base(dst) })
 	return dst
 }
@@ -315,6 +349,45 @@ func (p *previewCache) outbound(network string, v any) any {
 			out[i] = p.avatar(network, conversation)
 		}
 		return out
+	case wire.Message:
+		return p.messagePreviews(value)
+	case *wire.Message:
+		if value == nil {
+			return value
+		}
+		out := p.messagePreviews(*value)
+		return &out
+	case []wire.Message:
+		out := make([]wire.Message, len(value))
+		for i, m := range value {
+			out[i] = p.messagePreviews(m)
+		}
+		return out
+	case wire.MessagesResult:
+		value.Messages = p.outbound(network, value.Messages).([]wire.Message)
+		return value
+	case *wire.MessagesResult:
+		if value == nil {
+			return value
+		}
+		out := *value
+		out.Messages = p.outbound(network, out.Messages).([]wire.Message)
+		return &out
+	case wire.SendMediaResult:
+		value.Message = p.outbound(network, value.Message).(*wire.Message)
+		value.CaptionMessage = p.outbound(network, value.CaptionMessage).(*wire.Message)
+		return value
+	case *wire.SendMediaResult:
+		if value == nil {
+			return value
+		}
+		out := *value
+		out.Message = p.outbound(network, out.Message).(*wire.Message)
+		out.CaptionMessage = p.outbound(network, out.CaptionMessage).(*wire.Message)
+		return &out
+	case wire.PickImageResult:
+		value.Preview = p.now(value.Path, attachmentPreviewEdge)
+		return value
 	case wire.MediaResult:
 		value.Preview = p.now(value.Path, attachmentPreviewEdge)
 		return value
@@ -329,26 +402,21 @@ func (p *previewCache) outbound(network string, v any) any {
 	return v
 }
 
-// response applies previews to a reply. A media reply to a panel that does
-// not declare preview support carries the preview as its only path.
-func (p *previewCache) response(req wire.Request, resp wire.Response) wire.Response {
-	resp = p.outbound(req.Network, resp).(wire.Response)
-	if req.Method != wire.MethodMedia {
-		return resp
+// messagePreviews previews image attachments that already have a local file,
+// such as a just-sent Telegram image. The rest are fetched with the media
+// method. Most calls are cache hits: the file was previewed when it arrived.
+func (p *previewCache) messagePreviews(m wire.Message) wire.Message {
+	if len(m.Attachments) == 0 {
+		return m
 	}
-	if params, err := decodeParams[wire.MediaParams](req.Params); err == nil && params.Previews {
-		return resp
-	}
-	switch result := resp.Result.(type) {
-	case wire.MediaResult:
-		result.Path = result.Preview
-		resp.Result = result
-	case *wire.MediaResult:
-		if result != nil {
-			legacy := *result
-			legacy.Path = legacy.Preview
-			resp.Result = &legacy
+	attachments := make([]wire.Attachment, len(m.Attachments))
+	for i, a := range m.Attachments {
+		a.Preview = ""
+		if a.Path != "" && (a.IsImage || a.IsGif) && !a.IsVideo && !a.IsAudio {
+			a.Preview = p.now(a.Path, attachmentPreviewEdge)
 		}
+		attachments[i] = a
 	}
-	return resp
+	m.Attachments = attachments
+	return m
 }

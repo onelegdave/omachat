@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -148,6 +149,10 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 
 	events, unsubscribe := d.Subscribe()
 	defer unsubscribe()
+	// safe is set once the panel identifies as wire.SafeClient. Until then the
+	// connection may be panel code from an earlier release, which must not
+	// receive remote content; see wire.SafeClient.
+	var safe atomic.Bool
 
 	// Push current status immediately so a freshly-connected plugin renders
 	// without having to ask.
@@ -171,6 +176,9 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 				if !ok {
 					return
 				}
+				if !safe.Load() && evt.Event != wire.EventStatus {
+					continue
+				}
 				if err := w.send(d.previews.outbound(evt.Network, limitOutbound(evt))); err != nil {
 					cancel()
 					return
@@ -191,6 +199,12 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 			_ = w.send(wire.Response{OK: false, Error: "malformed request: " + err.Error()})
 			continue
 		}
+		if req.Client == wire.SafeClient {
+			safe.Store(true)
+		} else if !safe.Load() && req.Method != wire.MethodStatus && req.Method != "buildInfo" {
+			_ = w.send(wire.Response{ID: req.ID, Error: wire.RestartRequiredError})
+			continue
+		}
 		// Apply backpressure before creating a goroutine.
 		select {
 		case slots <- struct{}{}:
@@ -208,7 +222,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 				defer d.configResponseMu.Unlock()
 			}
 			resp := d.dispatch(ctx, req)
-			if err := w.send(d.previews.response(req, limitOutbound(resp).(wire.Response))); err != nil {
+			if err := w.send(d.previews.outbound(req.Network, limitOutbound(resp))); err != nil {
 				cancel()
 				return
 			}
@@ -299,6 +313,7 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		return wire.Response{ID: req.ID, OK: false, Error: "unknown network: " + req.Network}
 	}
 	if req.Method == wire.MethodUnpair && resp.OK {
+		d.previews.forget(network)
 		d.notifications.dismiss(ctx, network)
 		empty := ""
 		if err := d.config.SetChatView(network, &empty, nil, nil); err != nil {

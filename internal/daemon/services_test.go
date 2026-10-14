@@ -145,7 +145,7 @@ func TestServiceRestartOnlyAfterSocketWrite(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	req := wire.Request{ID: "choose", Method: wire.MethodSetEnabledServices, Params: wire.SetEnabledServicesParams{EnabledServices: []string{"telegram"}}}
+	req := wire.Request{ID: "choose", Client: wire.SafeClient, Method: wire.MethodSetEnabledServices, Params: wire.SetEnabledServicesParams{EnabledServices: []string{"telegram"}}}
 	if err := json.NewEncoder(client).Encode(req); err != nil {
 		t.Fatal(err)
 	}

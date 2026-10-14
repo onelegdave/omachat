@@ -244,7 +244,9 @@ Item {
     var id = String(_nextId++)
     if (callback) _pending[id] = callback
     var net = network || "gmessages"
-    var frame = { id: id, method: method, network: net }
+    // The client marker tells the helper this panel decodes only its previews
+    // and renders remote text as plain text; see wire.SafeClient.
+    var frame = { id: id, method: method, network: net, client: "safe-content-1" }
     if (params !== undefined && params !== null) frame.params = params
     s.write(JSON.stringify(frame) + "\n")
     s.flush()

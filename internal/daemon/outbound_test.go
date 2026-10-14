@@ -57,3 +57,23 @@ func TestOversizedFramesNeverReachThePanel(t *testing.T) {
 		t.Fatalf("normal reply framing changed: %q", out.String())
 	}
 }
+
+func TestOutboundReactionsAndIdentifiersAreBounded(t *testing.T) {
+	huge := strings.Repeat("x", 2<<20)
+	msg := wire.Message{ID: huge, ConversationID: huge, Reactions: []wire.Reaction{{Emoji: huge, Count: 1}, {Emoji: "👍", Count: 2}}, Attachments: []wire.Attachment{{Key: huge, MimeType: huge}}}
+	got := limitOutbound(msg).(wire.Message)
+	if len(got.Reactions) != 1 || got.Reactions[0].Emoji != "👍" {
+		t.Fatalf("reactions: %+v", got.Reactions)
+	}
+	if len(got.ID) > maxIDText || len(got.ConversationID) > maxIDText || len(got.Attachments[0].Key) > maxIDText || len(got.Attachments[0].MimeType) > maxIDText {
+		t.Fatal("identifiers not bounded")
+	}
+	frame, err := json.Marshal(got)
+	if err != nil || len(frame) > 16<<10 {
+		t.Fatalf("bounded message still marshals to %d bytes", len(frame))
+	}
+	conv := limitOutbound(wire.Conversation{ID: huge, OutgoingID: huge, Participants: []wire.Participant{{ID: huge}}}).(wire.Conversation)
+	if len(conv.ID) > maxIDText || len(conv.OutgoingID) > maxIDText || len(conv.Participants[0].ID) > maxIDText {
+		t.Fatal("conversation identifiers not bounded")
+	}
+}

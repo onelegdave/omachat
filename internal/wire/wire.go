@@ -45,7 +45,20 @@ type Request struct {
 	Network string `json:"network,omitempty"`
 	Method  string `json:"method"`
 	Params  any    `json:"params,omitempty"`
+	// Client identifies a panel that decodes only helper previews and renders
+	// remote text as plain text. See SafeClient.
+	Client string `json:"client,omitempty"`
 }
+
+// SafeClient is the Client value of panels from v0.5.6 on. The shell keeps
+// running the previous release's panel code after an update until it
+// restarts, and that code decodes downloaded originals and renders remote
+// names as rich text inside the shell. A connection that has not identified
+// itself receives status only; any other request fails with
+// RestartRequiredError.
+const SafeClient = "safe-content-1"
+
+const RestartRequiredError = "OmaChat was updated. Restart the shell to finish updating."
 
 // Response answers exactly one Request.
 type Response struct {
@@ -202,6 +215,9 @@ type Attachment struct {
 	IsAudio  bool   `json:"isAudio"`
 	IsVideo  bool   `json:"isVideo"`
 	Path     string `json:"path,omitempty"`
+	// Preview is the helper's re-encoded copy of an image at Path, the only
+	// form the panel decodes. Path is for external applications.
+	Preview string `json:"preview,omitempty"`
 }
 
 // Message is a flattened gmproto.Message.
@@ -488,6 +504,8 @@ type DiscardCaptureParams struct {
 // PickImageResult carries the chosen path, or empty when the user cancelled.
 type PickImageResult struct {
 	Path string `json:"path"`
+	// Preview is the helper's re-encoded copy for the composer to show.
+	Preview string `json:"preview,omitempty"`
 }
 
 type MarkReadParams struct {
@@ -500,11 +518,6 @@ type MediaParams struct {
 	Key string `json:"key"`
 	// MediaID is accepted as a legacy alias for Key.
 	MediaID string `json:"mediaID,omitempty"`
-	// Previews is set by panels that decode MediaResult.Preview and only hand
-	// Path to external applications. A panel service from an earlier release
-	// keeps running after an update until the shell restarts, and it decodes
-	// Path itself, so without this flag Path is replaced by the preview.
-	Previews bool `json:"previews,omitempty"`
 }
 
 type MediaResult struct {

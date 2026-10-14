@@ -448,6 +448,12 @@ func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 		b.upsertThreadLocked(t.ThreadKey, t.ThreadName, t.Snippet, t.LastActivityTimestampMs, t.LastReadWatermarkTimestampMs, unread, messengerGroupThread(t.ThreadType, 0), t.DisableComposerInput, t.ThreadPictureUrl, t.ThreadType)
 	}
 	attachments := b.tableAttachmentsLocked(tbl)
+	// Media can arrive after its message was withheld.
+	for messageID := range attachments {
+		if b.restrictedLocked(messageID) {
+			b.restrictMessageLocked(messageID, attachments)
+		}
+	}
 	for _, m := range tbl.LSDeleteThenInsertMessage {
 		_, _, exists := b.messageIndexLocked(m.ThreadKey, m.MessageId)
 		text, media := m.Text, attachments[m.MessageId]
@@ -458,6 +464,7 @@ func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 		key := msg.ConversationID + "\x00" + msg.ID
 		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
+		b.redactRestrictedPreviewLocked(msg.ConversationID)
 		queue(msg)
 	}
 	for _, m := range tbl.LSUpsertMessage {
@@ -470,6 +477,7 @@ func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 		key := msg.ConversationID + "\x00" + msg.ID
 		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
+		b.redactRestrictedPreviewLocked(msg.ConversationID)
 		queue(msg)
 	}
 	for _, m := range tbl.LSInsertMessage {
@@ -482,6 +490,7 @@ func (b *Backend) handleTableUpdates(tbl *table.LSTable, live bool) {
 		key := msg.ConversationID + "\x00" + msg.ID
 		notify[key] = notify[key] || (live && !exists && !msg.FromMe && !msg.Deleted)
 		b.applyLiveMessageUnreadLocked(msg)
+		b.redactRestrictedPreviewLocked(msg.ConversationID)
 		queue(msg)
 	}
 	for _, read := range tbl.LSMarkThreadRead {
@@ -767,6 +776,7 @@ func (b *Backend) upsertThreadLocked(id int64, name, preview string, ts, readTS 
 	}
 	name = b.conversationNameLocked(id, group)
 	b.convs[key] = wire.Conversation{ID: key, Name: name, Preview: preview, PreviewMine: previewMine, Timestamp: activity, Unread: unread, IsGroup: group, ReadOnly: readOnly, AvatarColor: "#0084ff", Initials: initials(name)}
+	b.redactRestrictedPreviewLocked(key)
 }
 
 func (b *Backend) addParticipantLocked(thread, contact int64) {
@@ -854,11 +864,48 @@ func (b *Backend) addMessageLocked(thread int64, id, text string, ts, sender int
 // restrictMessageLocked withholds a limited-lifetime message's content and
 // forgets its media, so neither can be published, stored or downloaded.
 func (b *Backend) restrictMessageLocked(messageID string, attachments map[string][]wire.Attachment) (string, []wire.Attachment) {
-	for _, attachment := range attachments[messageID] {
-		delete(b.media, attachment.Key)
-	}
+	b.forgetMediaLocked(attachments[messageID])
 	delete(attachments, messageID)
 	return lifetimeRestrictedText, nil
+}
+
+// forgetMediaLocked drops media records and any downloaded copies.
+func (b *Backend) forgetMediaLocked(attachments []wire.Attachment) {
+	for _, attachment := range attachments {
+		if record := b.media[attachment.Key]; record != nil && record.path != "" {
+			_ = os.Remove(record.path)
+		}
+		delete(b.media, attachment.Key)
+	}
+}
+
+// restrictedLocked reports a stored message that was withheld. The
+// placeholder text is the persisted marker, so it survives a restart.
+func (b *Backend) restrictedLocked(messageID string) bool {
+	for _, list := range b.messages {
+		for _, msg := range list {
+			if msg.ID == messageID {
+				return msg.Text == lifetimeRestrictedText
+			}
+		}
+	}
+	return false
+}
+
+// redactRestrictedPreviewLocked replaces a conversation preview that a thread
+// snapshot took from a withheld message at the same moment.
+func (b *Backend) redactRestrictedPreviewLocked(key string) {
+	conv, ok := b.convs[key]
+	if !ok {
+		return
+	}
+	for _, msg := range b.messages[key] {
+		if msg.Timestamp == conv.Timestamp && msg.Text == lifetimeRestrictedText {
+			conv.Preview, conv.PreviewMine = lifetimeRestrictedText, msg.FromMe
+			b.convs[key] = conv
+			return
+		}
+	}
 }
 
 func (b *Backend) addMessageWithAttachmentsLocked(thread int64, id, text string, ts, sender int64, deleted bool, reply string, attachments []wire.Attachment) wire.Message {
@@ -869,11 +916,21 @@ func (b *Backend) addMessageWithAttachmentsLocked(thread int64, id, text string,
 		text = unsupportedMessageText
 	}
 	key := strconv.FormatInt(thread, 10)
+	restricted := text == lifetimeRestrictedText
 	msg := wire.Message{ID: id, ConversationID: key, Text: text, Timestamp: messengerTimestamp(ts), FromMe: sender == b.selfID, SenderID: strconv.FormatInt(sender, 10), SenderName: b.contactNames[sender], Deleted: deleted, ReplyToID: reply, Attachments: attachments}
 	list := b.messages[key]
 	for i := range list {
 		if list[i].ID == id {
-			if len(msg.Attachments) == 0 {
+			if list[i].Text == lifetimeRestrictedText && !restricted {
+				// Once withheld, a later update without lifetime fields does
+				// not bring the content back.
+				restricted = true
+				msg.Text, msg.Attachments = lifetimeRestrictedText, nil
+			}
+			if restricted {
+				// A message that became restricted keeps none of its media.
+				b.forgetMediaLocked(list[i].Attachments)
+			} else if len(msg.Attachments) == 0 {
 				msg.Attachments = list[i].Attachments
 			}
 			if len(msg.Reactions) == 0 {

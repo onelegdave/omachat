@@ -59,8 +59,14 @@ class RemoteContentTest(unittest.TestCase):
         self.assertIn("path: parent.isImage ? parent.previewPath", thumb)
         self.assertNotIn("mediaPath :", thumb.replace("mediaPath ||", ""))
         self.assertIn('mimeType: ""', thumb)
-        for call in re.findall(r'service\.call\("media", \{[^}]*\}', inbox):
-            self.assertIn("previews: true", call)
+        # The helper sends remote content only to panels carrying this marker.
+        service = (REPO / "Service.qml").read_text()
+        self.assertIn('var frame = { id: id, method: method, network: net, client: "safe-content-1" }', service)
+        wire = (REPO / "internal/wire/wire.go").read_text()
+        self.assertIn('const SafeClient = "safe-content-1"', wire)
+        composer = inbox[inbox.index("id: attachPreview"):]
+        composer = composer[:composer.index("onClicked")]
+        self.assertIn("root.pendingPreviews[root.pendingAttachment]", composer)
 
     def test_copied_text_never_enters_argv(self):
         for path in REPO.glob("*.qml"):
@@ -79,7 +85,10 @@ class RemoteContentTest(unittest.TestCase):
         for suffix in ("", "WA", "TG", "FB"):
             self.assertIn(f"root.conversations{suffix} = root._boundConversations(list)", service)
         inbox = (REPO / "InboxView.qml").read_text()
-        self.assertIn("Model.boundThread(Model.mergeMessage(root.messages, msg))", inbox)
+        display = inbox[inbox.index("function displayMessages"):]
+        self.assertIn("messages = Model.boundThread(next)", display[:display.index("grouped =")])
+        self.assertIn("readonly property int maxMediaEntries: 300", inbox)
+        self.assertIn('(mediaRequests[key] === "external" && mediaPaths[key])', inbox)
         older = inbox[inbox.index("function loadOlderMessages"):]
         self.assertLess(older.index("Model.MAX_THREAD_MESSAGES"), older.index('source.call("messages"'))
 

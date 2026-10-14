@@ -137,6 +137,8 @@ Item {
   property var _mediaNetworks: ({})
   property var mediaRequests: ({})
   property string pendingAttachment: ""
+  // Helper previews of picked files, by path. The composer shows only these.
+  property var pendingPreviews: ({})
   property bool sendingMedia: false
   onPendingAttachmentChanged: attachCaption.text = ""
   property bool emojiPickerOpen: false
@@ -516,7 +518,9 @@ Item {
     followEnd = followEnd || (pendingLatestScroll && panelOpen)
     var anchor = followEnd ? null : captureViewport()
     pendingAnchor = anchor
-    messages = next
+    // Every route into the thread (live events, refreshes, history pages)
+    // passes here, so the bound holds for all of them.
+    messages = Model.boundThread(next)
     grouped = Model.groupMessages(messages)
     var revision = ++viewportRevision
     var generation = selectionGeneration
@@ -745,7 +749,7 @@ Item {
       root.storeLocalSends(net, msg.conversationID, Model.mergeMessage(convPending, msg))
     if (net === root.network && msg.conversationID === root.selectedConvID) {
       var follow = root.messages.length === 0 || messageList.atYEnd || (msg.fromMe && msg.provisional)
-      root.displayMessages(Model.boundThread(Model.mergeMessage(root.messages, msg)), follow)
+      root.displayMessages(Model.mergeMessage(root.messages, msg), follow)
     }
   }
 
@@ -761,6 +765,28 @@ Item {
     if (preview) previews[mediaID] = preview
     else delete previews[mediaID]
     mediaPreviews = previews
+    _boundMediaMaps()
+  }
+
+  // Media bookkeeping grows with every attachment seen. Past a budget, keep
+  // only the entries the current thread still shows.
+  readonly property int maxMediaEntries: 300
+  function _boundMediaMaps() {
+    if (Object.keys(mediaPaths).length + Object.keys(mediaRequests).length <= maxMediaEntries) return
+    var live = {}
+    for (var i = 0; i < messages.length; i++) {
+      var atts = messages[i].attachments || []
+      for (var j = 0; j < atts.length; j++) if (atts[j] && atts[j].key) live[atts[j].key] = true
+    }
+    function keep(map) {
+      var out = {}
+      for (var k in map) if (live[k]) out[k] = map[k]
+      return out
+    }
+    mediaPaths = keep(mediaPaths)
+    mediaPreviews = keep(mediaPreviews)
+    mediaRequests = keep(mediaRequests)
+    _mediaNetworks = keep(_mediaNetworks)
   }
 
   function _evictMedia(key) {
@@ -807,16 +833,18 @@ Item {
     var next = Object.assign({}, mediaRequests)
     next[key] = state
     mediaRequests = next
+    _boundMediaMaps()
   }
 
   function requestMedia(key, attempt) {
     if (!key || !service) return
     var tries = attempt === undefined ? 0 : attempt
-    if (tries === 0 && (mediaRequests[key] === "loading" || (mediaRequests[key] === "ready" && mediaPreviews[key]))) return
+    if (tries === 0 && (mediaRequests[key] === "loading" || (mediaRequests[key] === "ready" && mediaPreviews[key])
+        || (mediaRequests[key] === "external" && mediaPaths[key]))) return
     setMediaRequest(key, "loading")
     var targetNet = root.network
     var epoch = root._networkEpochs[targetNet] || 0
-    service.call("media", { key: key, previews: true }, function(ok, res) {
+    service.call("media", { key: key }, function(ok, res) {
       if (targetNet !== root.network || epoch !== (root._networkEpochs[targetNet] || 0)) return
       if (ok && res && res.path) _withMedia(key, res.path, res.preview || "")
       if (ok && res && res.path && !res.thumbnail) {
@@ -870,7 +898,12 @@ Item {
     service.call("pickImage", null, function(ok, res) {
       if (generation !== selectionGeneration) return
       if (!ok) { threadError = String(res); return }
-      if (res && res.path) pendingAttachment = res.path
+      if (res && res.path) {
+        var previews = {}
+        if (res.preview) previews[res.path] = res.preview
+        pendingPreviews = previews
+        pendingAttachment = res.path
+      }
     }, root.network)
   }
 
@@ -1007,7 +1040,7 @@ Item {
       return
     }
     audioWaitingKey = key
-    service.call("media", { key: key, previews: true }, function(ok, res) {
+    service.call("media", { key: key }, function(ok, res) {
       if (audioWaitingKey !== key) return
       audioWaitingKey = ""
       if (ok && res && res.path) {
@@ -1021,7 +1054,7 @@ Item {
 
   function _fetchAudio(key, attempt) {
     if (!service) return
-    service.call("media", { key: key, previews: true }, function(ok, res) {
+    service.call("media", { key: key }, function(ok, res) {
       if (root.audioWaitingKey !== key) return
       if (ok && res && res.path && !res.thumbnail) {
         root._withMedia(key, res.path, res.preview || "")
@@ -1783,7 +1816,8 @@ Item {
                   readonly property string mediaPath: mediaKey && root.mediaPaths[mediaKey]
                     ? root.mediaPaths[mediaKey] : (modelData && modelData.path ? modelData.path : "")
                   // The helper's re-encoded copy, the only file decoded here.
-                  readonly property string previewPath: mediaKey && root.mediaPreviews[mediaKey] ? root.mediaPreviews[mediaKey] : ""
+                  readonly property string previewPath: mediaKey && root.mediaPreviews[mediaKey] ? root.mediaPreviews[mediaKey]
+                    : (modelData && modelData.preview ? modelData.preview : "")
                   readonly property string mediaState: mediaKey && root.mediaRequests[mediaKey] ? root.mediaRequests[mediaKey] : ""
                   readonly property bool mediaFailed: loadsInline && previewPath === "" && mediaState === "failed"
                   readonly property bool mediaExternal: loadsInline && previewPath === "" && mediaState === "external" && mediaPath !== ""
@@ -2227,7 +2261,7 @@ Item {
         maxEdge: Style.space(150)
         height: parent.height - Style.space(16)
         width: visible ? (implicitWidth > 0 ? Math.min(Style.space(150), implicitWidth) : Style.space(96)) : 0
-        path: root.pendingIsVoice ? "" : root.pendingAttachment
+        path: root.pendingIsVoice ? "" : (root.pendingPreviews[root.pendingAttachment] || "")
         playing: root.panelOpen && root.pendingAttachment !== "" && !root.pendingIsVoice
         onClicked: root.openImage(root.pendingAttachment)
       }

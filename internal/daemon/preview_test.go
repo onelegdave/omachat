@@ -212,29 +212,70 @@ func TestDaemonWithoutPreviewCacheFailsClosed(t *testing.T) {
 	}
 }
 
-func TestPanelsWithoutPreviewSupportOnlyReceivePreviews(t *testing.T) {
+func TestPickedFilesGetComposerPreviews(t *testing.T) {
 	d := freshSelectionDaemon(t)
-	original := filepath.Join(d.paths.TelegramMediaDir(), "photo.png")
-	writeTestImage(t, original, 8, 8)
-	voice := filepath.Join(d.paths.TelegramMediaDir(), "voice.ogg")
-	if err := os.WriteFile(voice, []byte("OggS not an image"), 0o600); err != nil {
+	picked := filepath.Join(t.TempDir(), "picked.png")
+	writeTestImage(t, picked, 16, 16)
+	res := d.previews.outbound("", wire.Response{OK: true, Result: wire.PickImageResult{Path: picked}}).(wire.Response).Result.(wire.PickImageResult)
+	if res.Path != picked || filepath.Dir(res.Preview) != filepath.Join(d.paths.Cache, previewDirName) {
+		t.Fatalf("pick result: %+v", res)
+	}
+}
+
+func TestPreviewsAreForgottenOnUnpair(t *testing.T) {
+	d := freshSelectionDaemon(t)
+	avatar := filepath.Join(d.paths.TelegramMediaDir(), "a.png")
+	writeTestImage(t, avatar, 8, 8)
+	picked := filepath.Join(t.TempDir(), "picked.png")
+	writeTestImage(t, picked, 8, 8)
+	tg, local := d.previews.now(avatar, avatarPreviewEdge), d.previews.now(picked, attachmentPreviewEdge)
+	if tg == "" || local == "" {
+		t.Fatal("setup previews missing")
+	}
+	d.previews.forget(wire.NetworkTelegram)
+	for _, path := range []string{tg, local} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("preview survived unpair: %s", path)
+		}
+	}
+}
+
+func TestPreviewOfADeletedSourceIsNotKept(t *testing.T) {
+	d := freshSelectionDaemon(t)
+	src := filepath.Join(d.paths.WhatsAppMediaDir(), "gone.png")
+	writeTestImage(t, src, 8, 8)
+	job, ok := d.previews.job(src, attachmentPreviewEdge)
+	if !ok {
+		t.Fatal("no job")
+	}
+	// A queued conversion whose source unpairing already removed writes
+	// nothing. (The check after writing covers removal mid-conversion.)
+	if err := os.Remove(src); err != nil {
 		t.Fatal(err)
 	}
-	reply := func(params map[string]any, path string) wire.MediaResult {
-		t.Helper()
-		req := wire.Request{Network: wire.NetworkTelegram, Method: wire.MethodMedia, Params: params}
-		return *d.previews.response(req, wire.Response{OK: true, Result: &wire.MediaResult{Key: "k", Path: path}}).Result.(*wire.MediaResult)
+	if got := d.previews.convert(job); got != "" {
+		t.Fatalf("preview written for a deleted source: %s", got)
 	}
-	current := reply(map[string]any{"key": "k", "previews": true}, original)
-	if current.Path != original || current.Preview == "" {
-		t.Fatalf("current panel reply: %+v", current)
+	entries, _ := os.ReadDir(job.dir)
+	if len(entries) != 0 {
+		t.Fatalf("preview directory kept %d files", len(entries))
 	}
-	// A panel service left running from an earlier release decodes Path.
-	legacy := reply(map[string]any{"key": "k"}, original)
-	if legacy.Path != current.Preview {
-		t.Fatalf("legacy panel was given %q instead of the preview", legacy.Path)
+}
+
+func TestSentImagesCarryPreviews(t *testing.T) {
+	d := freshSelectionDaemon(t)
+	sent := filepath.Join(t.TempDir(), "sent.png")
+	writeTestImage(t, sent, 8, 8)
+	msg := &wire.Message{ID: "tmp", Attachments: []wire.Attachment{{Key: "tmp", IsImage: true, Path: sent}, {Key: "v", IsVideo: true, Path: sent}}}
+	res := d.previews.outbound(wire.NetworkTelegram, wire.Response{OK: true, Result: wire.SendMediaResult{Message: msg}}).(wire.Response).Result.(wire.SendMediaResult)
+	if got := res.Message.Attachments; got[0].Preview == "" || got[0].Path != sent || got[1].Preview != "" {
+		t.Fatalf("attachments: %+v", got)
 	}
-	if got := reply(map[string]any{"key": "k"}, voice); got.Path != "" {
-		t.Fatalf("legacy panel was given an undecodable original %q", got.Path)
+	if msg.Attachments[0].Preview != "" {
+		t.Fatal("the backend's message was modified")
+	}
+	evt := d.previews.outbound(wire.NetworkTelegram, wire.Event{Event: wire.EventMessage, Data: *msg}).(wire.Event)
+	if evt.Data.(wire.Message).Attachments[0].Preview == "" {
+		t.Fatal("message event attachment has no preview")
 	}
 }

@@ -30,8 +30,14 @@ const (
 	maxSide = 16384
 	// maxDecodeBytes bounds the pixel memory one decode may allocate, and
 	// maxPixels the work of scaling it down. 64 MP covers phone cameras.
-	maxDecodeBytes = 256 << 20
+	maxDecodeBytes = 192 << 20
 	maxPixels      = 64 << 20
+	// maxScaleScratch bounds the resampler's working buffer; see scaleInto.
+	maxScaleScratch = 64 << 20
+	// A progressive JPEG decodes every pixel's coefficients once per scan,
+	// and the scan count costs only bytes. Encoders use about ten.
+	maxJPEGScans    = 32
+	maxJPEGScanWork = 512 << 20
 	// An animated GIF keeps its animation only within these budgets.
 	// Otherwise its first frame becomes a still preview.
 	maxFrames          = 500
@@ -72,7 +78,7 @@ func Convert(data []byte, maxEdge int) ([]byte, Format, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		if err := checkBudget(cfg, bytesPerPixel(cfg.ColorModel)); err != nil {
+		if err := checkBudget(cfg, pngBytesPerPixel(data)); err != nil {
 			return nil, "", err
 		}
 		img, err := png.Decode(bytes.NewReader(data))
@@ -85,7 +91,11 @@ func Convert(data []byte, maxEdge int) ([]byte, Format, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		if err := checkBudget(cfg, jpegBytesPerPixel(data, cfg.ColorModel)); err != nil {
+		progressive, scans, ok := scanJPEG(data)
+		if !ok || scans > maxJPEGScans || int64(cfg.Width)*int64(cfg.Height)*int64(scans) > maxJPEGScanWork {
+			return nil, "", ErrTooLarge
+		}
+		if err := checkBudget(cfg, jpegBytesPerPixel(progressive, cfg.ColorModel)); err != nil {
 			return nil, "", err
 		}
 		img, err := jpeg.Decode(bytes.NewReader(data))
@@ -125,25 +135,31 @@ func checkBudget(cfg image.Config, perPixel int64) error {
 	return nil
 }
 
-func bytesPerPixel(model color.Model) int64 {
-	switch model {
-	case color.GrayModel:
-		return 1
-	case color.Gray16Model:
-		return 2
-	case color.RGBA64Model, color.NRGBA64Model:
+// pngBytesPerPixel reads IHDR rather than trusting DecodeConfig's color model:
+// a later tRNS chunk turns gray or truecolor into NRGBA or NRGBA64 while
+// decoding. An interlaced image also holds every pass beside the final image.
+func pngBytesPerPixel(data []byte) int64 {
+	if len(data) < 29 {
 		return 8
 	}
-	if _, ok := model.(color.Palette); ok {
-		return 1
+	depth, colorType, interlaced := data[24], data[25], data[28] != 0
+	perPixel := int64(4)
+	switch {
+	case colorType == 3:
+		perPixel = 1
+	case depth == 16:
+		perPixel = 8
 	}
-	return 4
+	if interlaced {
+		perPixel *= 2
+	}
+	return perPixel
 }
 
 // jpegBytesPerPixel estimates what Go's decoder allocates. A progressive
 // JPEG also holds a 4-byte coefficient per pixel per component until the last
 // scan, so it is far costlier than a baseline image of the same size.
-func jpegBytesPerPixel(data []byte, model color.Model) int64 {
+func jpegBytesPerPixel(progressive bool, model color.Model) int64 {
 	components := int64(3)
 	switch model {
 	case color.GrayModel:
@@ -151,35 +167,57 @@ func jpegBytesPerPixel(data []byte, model color.Model) int64 {
 	case color.CMYKModel:
 		components = 4
 	}
-	if jpegProgressive(data) {
+	if progressive {
 		return components * 5
 	}
 	return components + 1
 }
 
-// jpegProgressive walks marker segments up to the first frame header. When
-// the structure cannot be read it assumes the costlier progressive case.
-func jpegProgressive(data []byte) bool {
-	for i := 2; i+4 <= len(data); {
+// scanJPEG walks the marker segments and entropy-coded data, counting scans
+// without decoding them. It reports false for a structure it cannot follow.
+func scanJPEG(data []byte) (progressive bool, scans int, ok bool) {
+	i := 2
+	for i+1 < len(data) {
 		if data[i] != 0xff {
-			return true
+			return false, 0, false
 		}
 		marker := data[i+1]
-		if marker == 0xff {
+		switch {
+		case marker == 0xff: // fill byte
 			i++
 			continue
+		case marker == 0xd9: // end of image
+			return progressive, scans, scans > 0
+		case marker >= 0xd0 && marker <= 0xd7, marker == 0x01:
+			i += 2
+			continue
 		}
-		switch {
-		case marker == 0xc2 || marker == 0xc6 || marker == 0xca || marker == 0xce:
-			return true
-		case marker >= 0xc0 && marker <= 0xcf && marker != 0xc4 && marker != 0xc8 && marker != 0xcc:
-			return false
-		case marker == 0xd9 || marker == 0xda:
-			return true
+		if i+4 > len(data) {
+			return false, 0, false
 		}
-		i += 2 + int(binary.BigEndian.Uint16(data[i+2:]))
+		length := int(binary.BigEndian.Uint16(data[i+2:]))
+		if length < 2 {
+			return false, 0, false
+		}
+		if marker == 0xc2 || marker == 0xc6 || marker == 0xca || marker == 0xce {
+			progressive = true
+		}
+		next := i + 2 + length
+		if marker == 0xda {
+			scans++
+			if scans > maxJPEGScans {
+				return progressive, scans, true
+			}
+			// Entropy-coded data runs to the next marker other than a
+			// stuffed zero or a restart marker.
+			for next+1 < len(data) && !(data[next] == 0xff && data[next+1] != 0 && (data[next+1] < 0xd0 || data[next+1] > 0xd7)) {
+				next++
+			}
+		}
+		i = next
 	}
-	return true
+	// Some encoders omit the end marker.
+	return progressive, scans, scans > 0
 }
 
 // encodeStill scales img into a fresh buffer and encodes that, so nothing but
@@ -192,7 +230,7 @@ func encodeStill(img image.Image, maxEdge int) ([]byte, Format, error) {
 	if w == b.Dx() && h == b.Dy() {
 		draw.Draw(dst, dst.Bounds(), img, b.Min, draw.Src)
 	} else {
-		draw.CatmullRom.Scale(dst, dst.Bounds(), img, b, draw.Src, nil)
+		scaleInto(dst, img)
 	}
 	var out bytes.Buffer
 	if dst.Opaque() {
@@ -205,6 +243,21 @@ func encodeStill(img image.Image, maxEdge int) ([]byte, Format, error) {
 		return nil, "", err
 	}
 	return out.Bytes(), PNG, nil
+}
+
+// scaleInto resamples src into dst. Catmull-Rom allocates a 32-byte scratch
+// cell per destination column per source row, so a tall source first shrinks
+// with the scratch-free approximate bilinear filter until that buffer fits.
+func scaleInto(dst *image.NRGBA, src image.Image) {
+	b, dw, dh := src.Bounds(), dst.Bounds().Dx(), dst.Bounds().Dy()
+	if int64(dw)*int64(b.Dy())*32 > maxScaleScratch {
+		ih := max(dh, min(b.Dy(), 2*dh, int(maxScaleScratch/(32*int64(dw)))))
+		iw := max(dw, min(b.Dx(), 2*dw))
+		mid := image.NewNRGBA(image.Rect(0, 0, iw, ih))
+		draw.ApproxBiLinear.Scale(mid, mid.Bounds(), src, b, draw.Src, nil)
+		src, b = mid, mid.Bounds()
+	}
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Src, nil)
 }
 
 func fit(w, h, maxEdge int) (int, int) {

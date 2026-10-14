@@ -20,6 +20,11 @@ const (
 	maxReactions     = 64
 	maxParticipants  = 256
 	maxListItems     = 1000
+	// Identifiers and short protocol fields are not shown, but the shell
+	// still parses and stores them.
+	maxIDText       = 1 << 10
+	maxPathText     = 4 << 10
+	maxReactionText = 64
 )
 
 // connWriter serialises writes from the request path and the event pump.
@@ -50,6 +55,17 @@ func (w *connWriter) send(v any) error {
 	return err
 }
 
+// clipText cuts an identifier to at most n bytes, without a marker.
+func clipText(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
 // truncateText cuts s to at most n bytes without splitting a character.
 func truncateText(s string, n int) string {
 	if len(s) <= n {
@@ -63,6 +79,10 @@ func truncateText(s string, n int) string {
 }
 
 func limitConversation(c wire.Conversation) wire.Conversation {
+	c.ID = clipText(c.ID, maxIDText)
+	c.AvatarColor = clipText(c.AvatarColor, maxIDText)
+	c.AvatarPath = clipText(c.AvatarPath, maxPathText)
+	c.OutgoingID = clipText(c.OutgoingID, maxIDText)
 	c.Name = truncateText(c.Name, maxDisplayText)
 	c.Preview = truncateText(c.Preview, maxDisplayText)
 	c.Initials = truncateText(c.Initials, 16)
@@ -72,6 +92,8 @@ func limitConversation(c wire.Conversation) wire.Conversation {
 	if len(c.Participants) > 0 {
 		participants := make([]wire.Participant, len(c.Participants))
 		for i, p := range c.Participants {
+			p.ID = clipText(p.ID, maxIDText)
+			p.AvatarColor = clipText(p.AvatarColor, maxIDText)
 			p.Name = truncateText(p.Name, maxDisplayText)
 			p.Number = truncateText(p.Number, maxDisplayText)
 			p.Initials = truncateText(p.Initials, 16)
@@ -83,6 +105,9 @@ func limitConversation(c wire.Conversation) wire.Conversation {
 }
 
 func limitMessage(m wire.Message) wire.Message {
+	for _, field := range []*string{&m.TmpID, &m.ID, &m.ConversationID, &m.SenderID, &m.Status, &m.Delivery, &m.ReplyToID} {
+		*field = clipText(*field, maxIDText)
+	}
 	m.Text = truncateText(m.Text, maxMessageText)
 	m.SenderName = truncateText(m.SenderName, maxDisplayText)
 	if len(m.Attachments) > maxAttachments {
@@ -92,13 +117,25 @@ func limitMessage(m wire.Message) wire.Message {
 		attachments := make([]wire.Attachment, len(m.Attachments))
 		for i, a := range m.Attachments {
 			a.Name = truncateText(a.Name, maxDisplayText)
+			a.Key = clipText(a.Key, maxIDText)
+			a.MediaID = clipText(a.MediaID, maxIDText)
+			a.MimeType = clipText(a.MimeType, maxIDText)
+			a.Path = clipText(a.Path, maxPathText)
 			attachments[i] = a
 		}
 		m.Attachments = attachments
 	}
-	if len(m.Reactions) > maxReactions {
-		m.Reactions = m.Reactions[:maxReactions]
+	// A reaction is one emoji; anything longer is not one, so it is dropped.
+	var reactions []wire.Reaction
+	for _, r := range m.Reactions {
+		if len(reactions) == maxReactions {
+			break
+		}
+		if len(r.Emoji) <= maxReactionText {
+			reactions = append(reactions, r)
+		}
 	}
+	m.Reactions = reactions
 	return m
 }
 
