@@ -85,8 +85,12 @@ def install(key):
         available = result == 0 and check(entry)["installed"]
         print("Tool available." if available else "Tool not confirmed available. Review the output above; no success is assumed.")
         if available and entry["id"] == "signalcli" and shutil.which("omarchy"):
-            print("Restarting the Omarchy shell so the enabled Signal service can start.")
-            subprocess.run(["omarchy", "restart", "shell"], check=False)
+            # Restarting the shell reloads every panel and widget, so it is
+            # the user's choice, not a side effect of installing.
+            if input("Restart the Omarchy shell now so Signal can start? [y/N] ").strip().lower() == "y":
+                subprocess.run(["omarchy", "restart", "shell"], check=False)
+            else:
+                print("Signal starts after the next shell restart: omarchy restart shell")
         input("Return to OmaChat and choose Recheck. Press Enter to close. ")
         return result
     except (EOFError, KeyboardInterrupt):

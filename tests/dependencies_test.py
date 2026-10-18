@@ -38,16 +38,19 @@ class DependenciesTest(unittest.TestCase):
             self.assertEqual(deps.install("qrencode"), 2)
             run.assert_not_called()
 
-    def test_signal_cli_uses_fixed_aur_command_and_restarts_shell(self):
-        checks = iter([{"installed": False}, {"installed": True}])
-        with patch.object(deps.sys.stdin, "isatty", return_value=True), \
-             patch.object(deps, "check", side_effect=lambda entry: next(checks)), \
-             patch.object(deps.shutil, "which", return_value="/bin/tool"), \
-             patch("builtins.input", side_effect=["y", ""]), \
-             patch.object(deps.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
-            self.assertEqual(deps.install("signalcli"), 0)
-            self.assertEqual(run.call_args_list[0].args[0], ["yay", "-S", "--needed", "signal-cli"])
-            self.assertEqual(run.call_args_list[1].args[0], ["omarchy", "restart", "shell"])
+    def test_signal_cli_uses_fixed_aur_command_and_restarts_shell_only_when_asked(self):
+        for answer, restarted in (("y", True), ("", False)):
+            with self.subTest(restart=answer):
+                checks = iter([{"installed": False}, {"installed": True}])
+                with patch.object(deps.sys.stdin, "isatty", return_value=True), \
+                     patch.object(deps, "check", side_effect=lambda entry: next(checks)), \
+                     patch.object(deps.shutil, "which", return_value="/bin/tool"), \
+                     patch("builtins.input", side_effect=["y", answer, ""]), \
+                     patch.object(deps.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+                    self.assertEqual(deps.install("signalcli"), 0)
+                    self.assertEqual(run.call_args_list[0].args[0], ["yay", "-S", "--needed", "signal-cli"])
+                    commands = [call.args[0] for call in run.call_args_list[1:]]
+                    self.assertEqual(commands, [["omarchy", "restart", "shell"]] if restarted else [])
 
     def test_cancel_never_launches(self):
         with patch.object(deps.sys.stdin, "isatty", return_value=True), patch.object(deps, "check", return_value={"installed": False}), patch.object(deps.shutil, "which", return_value="/bin/tool"), patch("builtins.input", return_value=""), patch.object(deps.subprocess, "run") as run:
