@@ -84,6 +84,15 @@ ShellRoot {
           check(field.text === "one two three", "assigned line breaks and tabs flatten in single-line fields")
           message.text = "one\ntwo"
           check(message.text === "one\ntwo", "message fields keep assigned line breaks")
+          field.text = "draft "
+          check(field.activeFocus && field.cursorPosition === field.length, "assigned text puts the cursor at the end like TextInput")
+          keyboard.keyClick(Qt.Key_Question, Qt.ShiftModifier, 0)
+          check(field.text === "draft ?", "typing after an assignment appends to the assigned text")
+          field.cursorPosition = 0
+          keyboard.keyClick(Qt.Key_Delete, Qt.NoModifier, 0)
+          check(field.text === "raft ?" && field.cursorPosition === 0, "deleting at the start keeps the cursor there")
+          field.undo()
+          check(field.text === "draft ?" && field.cursorPosition < field.length, "undo keeps its own cursor placement")
           field.text = "x".repeat(200); field.cursorPosition = field.length
           break
         case 1:

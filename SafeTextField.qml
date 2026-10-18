@@ -181,7 +181,13 @@ FocusScope {
       font.family: Style.font.family
       font.pixelSize: Style.font.body
       Accessible.name: root.Accessible.name || root.placeholderText
-      onTextChanged: root.sanitize()
+      onTextChanged: {
+        // Assigning text leaves TextEdit's cursor at the start, where the next
+        // keystroke would land; TextInput moves it to the end. Only assignment
+        // clears both undo stacks, so typing, editing and undo are unaffected.
+        if (cursorPosition === 0 && !canUndo && !canRedo) cursorPosition = length
+        root.sanitize()
+      }
       onCursorRectangleChanged: root.ensureCursorVisible()
       onContentWidthChanged: root.ensureCursorVisible()
       onEditingFinished: root.editingFinished()

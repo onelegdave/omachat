@@ -26,7 +26,8 @@ Item {
   property bool sidebarCollapsed: false
   property var lastConversations: ({})
   readonly property bool sidebarVisible: !sidebarCollapsed || selectedConvID === ""
-  readonly property Item focusTarget: selectedConvID !== "" && composer.enabled ? composer : (sidebarVisible ? searchField : root)
+  // Omarchy's KeyboardPanel focuses this after mapping; it must agree with focusComposer().
+  readonly property Item focusTarget: selectedConvID !== "" && composer.enabled ? composer : (sidebarVisible ? (convList.count > 0 ? convList : searchField) : root)
   signal conversationSelected(string network, string id)
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
@@ -291,7 +292,11 @@ Item {
       if (root.selectedConvID !== "" && composer.enabled) {
         composer.forceActiveFocus()
         composer.cursorPosition = composer.text.length
-      } else if (root.sidebarVisible) searchField.forceActiveFocus()
+      } else if (root.sidebarVisible && !searchField.activeFocus) {
+        // Without a writable chat, start at the list; search only when it is empty.
+        if (root.detailOnly || convList.count > 0) root.focusConversationList()
+        else searchField.forceActiveFocus()
+      }
     })
   }
 

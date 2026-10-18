@@ -7,7 +7,16 @@ import "Chat" as Chat
 ShellRoot {
   id: root
   property int step: 0
+  property int activationWaits: 0
   function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
+  // The compositor activates a newly shown surface asynchronously; focus is
+  // already assigned, so wait a bounded few ticks for keyboard activation.
+  function awaitingActivation(item) {
+    var window = item ? item.Window.window : null
+    if (!window || window.active || activationWaits >= 10) return false
+    activationWaits++
+    return true
+  }
 
   QtObject {
     id: fake
@@ -101,6 +110,7 @@ ShellRoot {
         } else if (root.step === 5) {
           panel.open()
         } else if (root.step === 6) {
+          if (root.awaitingActivation(composer)) { restart(); return }
           check(inbox.selectedConvID === "demo-b" && composer.activeFocus && composer.text === "r1", "reopening keeps the chat and draft and restores typing focus")
           check(composer.cursorPosition === composer.text.length, "typing resumes at the end of the draft")
           check(messageList.atYEnd,"reopening the panel resets the chat to the newest message")
@@ -112,6 +122,7 @@ ShellRoot {
           messageList.positionViewAtIndex(10,ListView.Beginning)
           panel.returnToPanel()
         } else if (root.step === 8) {
+          if (root.awaitingActivation(composer)) { restart(); return }
           check(panel.opened && composer.activeFocus, "returning to the panel keeps typing focus")
           check(messageList.atYEnd,"returning to the panel resets the chat to the newest message")
           inbox.selectConversation("demo-a")
@@ -164,6 +175,7 @@ ShellRoot {
           return
         }
         root.step++
+        root.activationWaits = 0
         restart()
       } catch (error) {
         console.error("OMACHAT_CHAT_VIEW_FAIL", error)
