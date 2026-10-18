@@ -20,6 +20,8 @@ const (
 	maxReactions     = 64
 	maxParticipants  = 256
 	maxListItems     = 1000
+	// maxContactTargets bounds the new-conversation picker's contact list.
+	maxContactTargets = 5000
 	// Identifiers and short protocol fields are not shown, but the shell
 	// still parses and stores them.
 	maxIDText       = 1 << 10
@@ -193,6 +195,13 @@ func limitOutbound(v any) any {
 		out := *value
 		out.Messages = limitOutbound(out.Messages).([]wire.Message)
 		return &out
+	case []wire.ConversationTarget:
+		value = value[:min(len(value), maxContactTargets)]
+		out := make([]wire.ConversationTarget, len(value))
+		for i, t := range value {
+			out[i] = wire.ConversationTarget{ID: clipText(t.ID, maxIDText), Name: truncateText(t.Name, maxDisplayText), Detail: truncateText(t.Detail, maxDisplayText)}
+		}
+		return out
 	case wire.SendMediaResult:
 		value.Message, value.CaptionMessage = limitMessagePtr(value.Message), limitMessagePtr(value.CaptionMessage)
 		return value

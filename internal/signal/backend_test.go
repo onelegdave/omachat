@@ -194,12 +194,18 @@ func TestCreateConversationUsesContactsAndNativeGroupCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	targets, err := b.ConversationTargets(context.Background())
-	if err != nil || len(targets) != 1 || targets[0].ID != "+15550002222" {
+	if err != nil || len(targets) != 1 || targets[0].ID != "contact-uuid" {
 		t.Fatalf("targets = %#v, err = %v", targets, err)
 	}
 	direct, err := b.CreateConversation(context.Background(), wire.CreateConversationParams{TargetIDs: []string{targets[0].ID}})
 	if err != nil || direct.ID != directPrefix+targets[0].ID || direct.IsGroup {
 		t.Fatalf("direct = %#v, err = %v", direct, err)
+	}
+	// A reply from that contact arrives addressed by UUID and must land in
+	// the chat that was just started.
+	fake.notify(json.RawMessage(`{"envelope":{"sourceUuid":"contact-uuid","sourceNumber":"+15550002222","sourceName":"Taylor","dataMessage":{"timestamp":1700000000000,"message":"invented reply"}}}`))
+	if list := b.Conversations(0); len(list) != 1 || list[0].ID != direct.ID || list[0].Preview != "invented reply" {
+		t.Fatalf("reply did not reach the started chat: %#v", list)
 	}
 	group, err := b.CreateConversation(context.Background(), wire.CreateConversationParams{TargetIDs: []string{"+15550002222", "+15550003333"}, Name: "Friends"})
 	if err != nil || group.ID != groupPrefix+"group-id" || !group.IsGroup {

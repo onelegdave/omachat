@@ -1355,6 +1355,7 @@ Flickable {
             font.bold: true
           }
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Experimental Signal support invokes the separately installed signal-cli project (GPL-3.0) over JSON-RPC. It is not bundled with OmaChat and is not an official Signal client."
@@ -1368,6 +1369,7 @@ Flickable {
           width: parent.width
           spacing: Style.space(2)
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             wrapMode: Text.Wrap
             text: "Desktop Environment"

@@ -2759,6 +2759,7 @@ Item {
         spacing: Style.space(10)
 
         Text {
+          textFormat: Text.PlainText
           text: root.newChatGroup ? "New group" : "New conversation"
           color: root.foreground
           font.family: root.fontFamily
@@ -2772,11 +2773,14 @@ Item {
           Button { id: newChatGroupButton; KeyNavigation.tab: newChatName; KeyNavigation.backtab: newChatDirectButton; text: "Group"; enabled: !root.newChatLoading && !root.newChatGroup; onClicked: { root.newChatGroup = true; root.newChatSelected = ({}) } }
         }
 
-        TextField {
+        SafeTextField {
           id: newChatName
           KeyNavigation.tab: newChatSearch
           KeyNavigation.backtab: newChatGroupButton
           objectName: "newChatName"
+          maximumLength: 256
+          pasteAllowed: root.panelOpen && root.newChatOpen
+          pasteContext: root.network
           enabled: !root.newChatLoading
           width: parent.width
           visible: root.newChatGroup
@@ -2785,11 +2789,14 @@ Item {
           font.pixelSize: fs(Style.font.body)
         }
 
-        TextField {
+        SafeTextField {
           id: newChatSearch
           KeyNavigation.tab: newChatTargetList
           KeyNavigation.backtab: newChatName
           objectName: "newChatSearch"
+          maximumLength: 256
+          pasteAllowed: root.panelOpen && root.newChatOpen
+          pasteContext: root.network
           width: parent.width
           placeholderText: "Search contacts"
           foreground: root.foreground
@@ -2829,6 +2836,7 @@ Item {
             radius: Style.space(5)
             color: root.newChatSelected[String(modelData.id)] ? root.selectedFill : "transparent"
             Text {
+              textFormat: Text.PlainText
               anchors.left: parent.left
               anchors.leftMargin: Style.space(10)
               anchors.right: check.left
@@ -2841,6 +2849,7 @@ Item {
             }
             Text {
               id: check
+              textFormat: Text.PlainText
               anchors.right: parent.right
               anchors.rightMargin: Style.space(10)
               anchors.verticalCenter: parent.verticalCenter
@@ -2853,6 +2862,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
           width: parent.width
           visible: root.newChatLoading || root.newChatError !== "" || (!root.newChatLoading && root.newChatTargets.length === 0)
           text: root.newChatLoading ? "Loading contacts…" : (root.newChatError || "No contacts available.")

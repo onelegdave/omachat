@@ -77,3 +77,19 @@ func TestOutboundReactionsAndIdentifiersAreBounded(t *testing.T) {
 		t.Fatal("conversation identifiers not bounded")
 	}
 }
+
+func TestOutboundContactTargetsAreBounded(t *testing.T) {
+	long := strings.Repeat("é", maxMessageText)
+	targets := make([]wire.ConversationTarget, maxContactTargets+10)
+	targets[0] = wire.ConversationTarget{ID: long, Name: long, Detail: long}
+	got := limitOutbound(wire.Response{OK: true, Result: targets}).(wire.Response).Result.([]wire.ConversationTarget)
+	if len(got) != maxContactTargets {
+		t.Fatalf("contact list has %d entries", len(got))
+	}
+	if len(got[0].ID) > maxIDText || len(got[0].Name) > maxDisplayText+len("…") || len(got[0].Detail) > maxDisplayText+len("…") {
+		t.Fatalf("contact fields not bounded: %d %d %d", len(got[0].ID), len(got[0].Name), len(got[0].Detail))
+	}
+	if targets[0].Name != long || len(targets) != maxContactTargets+10 {
+		t.Fatal("the backend's value was modified")
+	}
+}

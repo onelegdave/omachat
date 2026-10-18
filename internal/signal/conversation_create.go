@@ -41,7 +41,10 @@ func signalConversationTargets(ctx context.Context, client Caller, account strin
 		if contact.Unregistered || contact.Number == account {
 			continue
 		}
-		id := first(contact.Number, contact.UUID, contact.Username)
+		// Received messages and contact refreshes address a contact by UUID
+		// first; a chat started here must use the same key, or replies would
+		// open a second conversation.
+		id := first(contact.UUID, contact.Number, contact.Username)
 		if id == "" || seen[id] {
 			continue
 		}

@@ -57,17 +57,9 @@ func (d *Daemon) CreateConversation(ctx context.Context, p wire.CreateConversati
 	if len(numbers) == 0 {
 		return wire.Conversation{}, errors.New("select at least one contact")
 	}
-	request := &gmproto.GetOrCreateConversationRequest{Numbers: numbers}
-	if len(numbers) > 1 {
-		name, create := strings.TrimSpace(p.Name), true
-		request.RCSGroupName, request.CreateRCSGroup = &name, &create
-	}
-	resp, err := client.GetOrCreateConversation(ctx, request)
+	created, err := getOrCreateGoogleConversation(ctx, numbers, strings.TrimSpace(p.Name), client.GetOrCreateConversation)
 	if err != nil {
 		return wire.Conversation{}, err
-	}
-	if resp.GetConversation() == nil || resp.GetConversation().GetConversationID() == "" {
-		return wire.Conversation{}, errors.New("Google Messages did not return the conversation")
 	}
 	d.sessionMu.Lock()
 	defer d.sessionMu.Unlock()
@@ -78,7 +70,35 @@ func (d *Daemon) CreateConversation(ctx context.Context, p wire.CreateConversati
 	if currentErr != nil || current != client {
 		return wire.Conversation{}, errNotConnected
 	}
-	return d.commitCreatedConversation(resp.GetConversation()), nil
+	return d.commitCreatedConversation(created), nil
+}
+
+type getOrCreateFunc func(context.Context, *gmproto.GetOrCreateConversationRequest) (*gmproto.GetOrCreateConversationResponse, error)
+
+// getOrCreateGoogleConversation first asks for the recipients' existing or
+// new SMS/MMS conversation. When the phone answers that they need a new RCS
+// group instead, it asks again to create one with the chosen name, as the
+// upstream bridge does. Only a returned conversation counts as success.
+func getOrCreateGoogleConversation(ctx context.Context, numbers []*gmproto.ContactNumber, name string, call getOrCreateFunc) (*gmproto.Conversation, error) {
+	request := &gmproto.GetOrCreateConversationRequest{Numbers: numbers}
+	resp, err := call(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if resp.GetStatus() == gmproto.GetOrCreateConversationResponse_CREATE_RCS {
+		if len(numbers) < 2 || name == "" {
+			return nil, errors.New("Google Messages needs a group name to create this RCS group")
+		}
+		create := true
+		request.RCSGroupName, request.CreateRCSGroup = &name, &create
+		if resp, err = call(ctx, request); err != nil {
+			return nil, err
+		}
+	}
+	if resp.GetConversation() == nil || resp.GetConversation().GetConversationID() == "" {
+		return nil, errors.New("Google Messages did not return the conversation")
+	}
+	return resp.GetConversation(), nil
 }
 
 func (d *Daemon) commitCreatedConversation(c *gmproto.Conversation) wire.Conversation {
