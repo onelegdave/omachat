@@ -63,6 +63,16 @@ panel identifies itself on every request; one that does not receives status
 only, and any other request answers "OmaChat was updated. Restart the shell to
 finish updating." No messages, names, or media reach it.
 
+The reverse also happens: the previous release's helper keeps running after an
+update until it is rebuilt, and it sends original downloaded profile photos and
+uses them as notification icons. A current helper says in its build
+information that it sends only its own previews. Until the helper on the
+current connection says so, the panel requests no conversations, messages,
+media, pairing, or alerts, ignores conversation and message events, and asks
+for a rebuild. Status and settings still work. The check repeats after every
+reconnect, and a reply from an earlier connection does not count. It does not
+depend on identifying the installed source, which can fail.
+
 ## Video
 
 The panel no longer plays any video itself. Messenger and WhatsApp send GIFs as

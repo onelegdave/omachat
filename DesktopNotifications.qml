@@ -5,6 +5,9 @@ Item {
   id: root
   property var service: null
   property bool connected: false
+  // Alerts go only to a helper that confirmed it makes notification icons
+  // from its own previews; see Service.contentAllowed.
+  property bool contentAllowed: false
   property bool loaded: false
   property bool enabled: false
   // A helper built before 0.5.4 may still have message previews on; alerts wait
@@ -37,6 +40,7 @@ Item {
     if (connected) connectedAt = Date.now() * 1000 - 1000000
   }
   onConnectedChanged: retireConnection()
+  onContentAllowedChanged: flush()
   onServiceChanged: { retireConnection(); seen = [] }
 
   function applyConfig(config, revision) {
@@ -67,7 +71,7 @@ Item {
   }
 
   function test() {
-    if (!service || !connected || !enabled) return
+    if (!service || !connected || !contentAllowed || !enabled) return
     var source = service
     var lifetime = generation
     errorText = ""
@@ -106,7 +110,7 @@ Item {
   }
 
   function flush() {
-    if (sending || legacyPreviews || !queue.length || !enabled || !connected || !service) return
+    if (sending || legacyPreviews || !queue.length || !enabled || !connected || !contentAllowed || !service) return
     var next = queue[0]
     queue = queue.slice(1)
     if (views.some(function(view) { return view && view.isReadingConversation(next.network, next.params.message.conversationID) })) {

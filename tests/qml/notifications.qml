@@ -8,7 +8,7 @@ ShellRoot {
   property int step: 0
   function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:",label) }
   function incoming(id, chat) { return {id:id,conversationID:chat || "demo-a",text:"Synthetic notification",timestamp:Date.now()*1000} }
-  Chat.DesktopNotifications { id: notifications; service:fake; connected:true }
+  Chat.DesktopNotifications { id: notifications; service:fake; connected:true; contentAllowed:true }
   QtObject {
     id: fake
     property alias notifications: notifications
@@ -110,6 +110,14 @@ ShellRoot {
           check(fake.calls.some(function(call) { return call.method === "testNotification" }),"Settings exposes an explicit test notification")
           panel.close()
           check(notifications.views.length === 1,"notification view registration is deduplicated")
+          notifications.contentAllowed = false
+          var held = fake.alertCount()
+          var testsSent = fake.calls.filter(function(call) { return call.method === "testNotification" }).length
+          notifications.handleMessage(incoming("unconfirmed-helper","demo-b"),"telegram",true)
+          notifications.test()
+          check(fake.alertCount() === held && fake.calls.filter(function(call) { return call.method === "testNotification" }).length === testsSent,"a helper that has not confirmed previews is asked for no alert")
+          notifications.contentAllowed = true
+          check(fake.alertCount() === held + 1,"the held alert is sent once the helper confirms previews")
           console.log("OMACHAT_NOTIFICATIONS_PASS")
           Qt.quit()
           return

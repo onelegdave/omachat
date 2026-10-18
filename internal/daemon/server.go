@@ -255,7 +255,9 @@ func decodeParams[T any](raw any) (T, error) {
 
 func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 	if req.Method == "buildInfo" {
-		return wire.Response{ID: req.ID, OK: true, Result: map[string]string{"sourceID": buildinfo.SourceID}}
+		// contentProtocol tells a panel this helper sends only its own previews
+		// as images. Panels request no remote content from a helper without it.
+		return wire.Response{ID: req.ID, OK: true, Result: map[string]string{"sourceID": buildinfo.SourceID, "contentProtocol": wire.SafeClient}}
 	}
 	if req.Network != "" && !wire.IsKnownNetwork(req.Network) {
 		return wire.Response{ID: req.ID, Error: "unknown network: " + req.Network}

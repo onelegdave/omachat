@@ -14,4 +14,8 @@ func TestBuildInfoAvailableWithoutEnabledServices(t *testing.T) {
 	if !response.OK || response.ID != "build" || response.Result.(map[string]string)["sourceID"] != buildinfo.SourceID {
 		t.Fatalf("build identity unavailable: %+v", response)
 	}
+	// Panels show remote content only from a helper that reports this.
+	if got := response.Result.(map[string]string)["contentProtocol"]; got != wire.SafeClient {
+		t.Fatalf("buildInfo contentProtocol = %q, want %q", got, wire.SafeClient)
+	}
 }

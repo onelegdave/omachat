@@ -31,17 +31,31 @@ Item {
 
   property alias updates: updateManager
   property alias notifications: notificationManager
-  DesktopNotifications { id: notificationManager; service:root; connected:root.connected }
+  DesktopNotifications { id: notificationManager; service:root; connected:root.connected; contentAllowed:root.contentAllowed }
   UpdateManager { id:updateManager; pluginDir:root.pluginDir }
   property string runningSourceID: ""
   property bool helperBuildChecked: false
   property bool restartingBuild: false
-  readonly property bool helperNeedsRebuild: helperBuildChecked && updateManager.expectedSourceID !== "" && runningSourceID !== updateManager.expectedSourceID
+  // A helper from before 0.6.0 sends original downloaded avatars and turns
+  // them into notification icons, and the shell would decode them. After an
+  // update that helper keeps running until it is rebuilt, so remote content is
+  // requested, accepted and announced only once the helper on this connection
+  // confirms it serves helper-made previews. Version checks alone are not
+  // enough: the installed source cannot always be identified.
+  property int contentGeneration: 0
+  readonly property bool contentAllowed: connected && contentGeneration > 0 && contentGeneration === connectionGeneration
+  readonly property bool helperNeedsRebuild: helperBuildChecked && ((connected && !contentAllowed) || (updateManager.expectedSourceID !== "" && runningSourceID !== updateManager.expectedSourceID))
+  // Requests whose replies hold no remote content and that never show a notification.
+  readonly property var contentFreeMethods: ["buildInfo", "status", "config", "setEnabledServices", "setNotifications", "setUiScale", "setChatView", "setWindowPreferences", "setKeyboardShortcuts", "setEmojiSearchPreference", "setUnifiedInboxPreference", "setWhatsAppHistoryCache", "setTelegramCredentials", "discardCapture", "unpair"]
+  onContentAllowedChanged: if (contentAllowed && servicesConfigLoaded) enabledServices.forEach(function(net) { root.loadConversations(net) })
+  // Each connection asks again, so a reconnect is not mistaken for an old helper.
+  onConnectionGenerationChanged: helperBuildChecked = false
   function checkRunningBuild() {
     var generation=connectionGeneration
     call("buildInfo", null, function(ok,res) {
       if (!root.connected || generation !== root.connectionGeneration) return
       root.runningSourceID=ok && res ? (res.sourceID || "") : ""
+      if (ok && res && res.contentProtocol === "safe-content-1") root.contentGeneration=generation
       root.helperBuildChecked=true
     }, "gmessages")
   }
@@ -241,9 +255,10 @@ Item {
   property bool _startingHelper: false
 
   function call(method, params, callback, network) {
-    var s = sockLoader.item
-    if (!s || !s.connected) {
-      if (callback) callback(false, "not connected to omachatd")
+    if (!contentAllowed && contentFreeMethods.indexOf(method) < 0) {
+      if (callback) callback(false, !connected ? "not connected to omachatd"
+        : helperBuildChecked ? "The running helper is from an earlier OmaChat release. Rebuild the helper in Settings > Updates."
+        : "Checking the running helper. Try again in a moment.")
       return
     }
     var id = String(_nextId++)
@@ -253,16 +268,27 @@ Item {
     // and renders remote text as plain text; see wire.SafeClient.
     var frame = { id: id, method: method, network: net, client: "safe-content-1" }
     if (params !== undefined && params !== null) frame.params = params
+    if (!_write(frame)) {
+      delete _pending[id]
+      if (callback) callback(false, "not connected to omachatd")
+    }
+  }
+
+  function _write(frame) {
+    var s = sockLoader.item
+    if (!s || !s.connected) return false
     s.write(JSON.stringify(frame) + "\n")
     s.flush()
+    return true
   }
 
   function loadConversations(network) {
     var net = network || "gmessages"
-    if (!isServiceEnabled(net)) return
+    if (!isServiceEnabled(net) || !contentAllowed) return
     var generation = servicesGeneration
+    var connection = connectionGeneration
     call("conversations", { count: 50 }, function(ok, res) {
-      if (ok && res && generation === servicesGeneration && root.isServiceEnabled(net)) {
+      if (ok && res && generation === servicesGeneration && connection === root.connectionGeneration && root.contentAllowed && root.isServiceEnabled(net)) {
         if (net === "whatsapp") root.conversationsWA = res
         else if (net === "telegram") root.conversationsTG = res
         else if (net === "messenger") root.conversationsFB = res
@@ -305,6 +331,7 @@ Item {
   // Quickshell Socket is single-use, and toggling a Loader's active flag in
   // the same frame is a no-op. Tear down, then build a new Socket next tick.
   function rebuildSocket() {
+    contentGeneration = 0
     sockLoader.active = false
     Qt.callLater(function() { sockLoader.active = true })
   }
@@ -520,13 +547,13 @@ Item {
           // Socket can connect during Loader construction, before item exists.
           Qt.callLater(function() {
             if (!root.connected || generation !== root.connectionGeneration) return
+            root.checkRunningBuild()
             root.call("status", null, function(ok, res) { if (ok && res) root.status = res }, "gmessages")
             root.call("status", null, function(ok, res) { if (ok && res) root.statusWA = res }, "whatsapp")
             root.call("status", null, function(ok, res) { if (ok && res) root.statusTG = res }, "telegram")
             root.call("status", null, function(ok, res) { if (ok && res) root.statusFB = res }, "messenger")
             root.call("status", null, function(ok, res) { if (ok && res) root.statusSG = res }, "signal")
             root.loadServiceConfig()
-            root.checkRunningBuild()
           })
         } else {
           root.failPending(root.restartingServices ? "Helper restarting after service changes. A submitted message may still arrive; check before retrying." : "Disconnected from omachatd")
@@ -601,6 +628,8 @@ Item {
   }
 
   function _handleEvent(frame) {
+    // Until the helper confirms previews, only status and settings are accepted.
+    if (!contentAllowed && frame.event !== "status" && frame.event !== "config") return
     if (frame.event === "notificationOpen") {
       notificationManager.openConversation(frame.data)
       return
@@ -758,7 +787,7 @@ Item {
     }
     if (!found) list.push(conv)
     list.sort(function(a, b) { return (b.timestamp || 0) - (a.timestamp || 0) })
-    root.conversationsSG = list
+    root.conversationsSG = root._boundConversations(list)
     root.conversationUpdated(conv, "signal")
   }
 }

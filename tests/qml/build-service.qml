@@ -22,7 +22,11 @@ ShellRoot {
         console.error("OMACHAT_BUILD_SERVICE_FAIL",service.helperError)
         stop(); service.stopHelper(); Qt.callLater(function() { Qt.quit() }); return
       }
-      if (!root.requested || !service.connected || !service.servicesConfigLoaded) return
+      if (!root.requested || !service.connected || !service.servicesConfigLoaded || !service.helperBuildChecked) return
+      if (!service.contentAllowed || service.runningSourceID === "") {
+        console.error("OMACHAT_BUILD_SERVICE_FAIL the compiled helper did not confirm helper previews")
+        stop(); service.stopHelper(); Qt.callLater(function() { Qt.quit() }); return
+      }
       if (!service.helperPresent || !service.serviceSelectionRequired || service.enabledServices.length !== 0) {
         console.error("OMACHAT_BUILD_SERVICE_FAIL fresh install must require explicit service selection")
         stop(); service.stopHelper(); Qt.callLater(function() { Qt.quit() }); return

@@ -11,7 +11,7 @@ import tempfile
 
 repo = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description="Run isolated native QML fixtures")
-parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox", "clipboard", "clipboard-unavailable", "clipboard-watchdog", "safe-fields", "pairing-qr", "notifications", "notification-lifetimes", "unread", "conversation-create"])
+parser.add_argument("--fixture", choices=["shell", "pagination", "readability", "media", "avatar", "popout", "review", "panel-keyboard", "panel-emoji-search", "updates", "whatsapp-history-settings", "unified-inbox", "emoji-inbox", "clipboard", "clipboard-unavailable", "clipboard-watchdog", "safe-fields", "pairing-qr", "notifications", "notification-lifetimes", "unread", "conversation-create", "stale-helper"])
 args = parser.parse_args()
 go_cache = subprocess.check_output(["go", "env", "GOCACHE"], text=True,
                                  env=dict(os.environ, GOTOOLCHAIN="local", GOPROXY="off")).strip()
@@ -100,7 +100,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
                                 ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"),
                                 ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"), ("avatar", "OMACHAT_AVATAR"),
                                 ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("clipboard", "OMACHAT_CLIPBOARD"), ("clipboard-unavailable", "OMACHAT_CLIPBOARD_UNAVAILABLE"), ("clipboard-watchdog", "OMACHAT_CLIPBOARD_WATCHDOG"), ("safe-fields", "OMACHAT_SAFE_FIELDS"),
-                                ("pairing-qr", "OMACHAT_PAIRING_QR"), ("conversation-create", "OMACHAT_CONVERSATION_CREATE")):
+                                ("pairing-qr", "OMACHAT_PAIRING_QR"), ("conversation-create", "OMACHAT_CONVERSATION_CREATE"), ("stale-helper", "OMACHAT_STALE_HELPER")):
             (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
             result = subprocess.run([qs_executable, "-p", str(config)], env=fixture_envs.get(fixture, env), text=True,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
@@ -159,7 +159,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
 
     for fixture, marker in (("auto-popout", "OMACHAT_AUTO_POPOUT"), ("review", "OMACHAT_REVIEW"), ("panel-keyboard", "OMACHAT_PANEL_KEYBOARD"), ("chat-view", "OMACHAT_CHAT_VIEW"), ("notifications", "OMACHAT_NOTIFICATIONS"), ("unpair", "OMACHAT_UNPAIR"), ("updates", "OMACHAT_UPDATES"), ("unread", "OMACHAT_UNREAD"), ("panel-emoji-search", "OMACHAT_PANEL_EMOJI_SEARCH"), ("whatsapp-history-settings", "OMACHAT_WHATSAPP_HISTORY_SETTINGS"),
                                 ("notification-lifetimes", "OMACHAT_NOTIFICATION_LIFETIMES"), ("avatar", "OMACHAT_AVATAR"), ("unified-inbox", "OMACHAT_UNIFIED_INBOX"), ("emoji-inbox", "OMACHAT_EMOJI_INBOX"),
-                                ("conversation-create", "OMACHAT_CONVERSATION_CREATE")):
+                                ("conversation-create", "OMACHAT_CONVERSATION_CREATE"), ("stale-helper", "OMACHAT_STALE_HELPER")):
         (config / "shell.qml").write_text((repo / ("tests/qml/" + fixture + ".qml")).read_text())
         result = subprocess.run(["qs", "-p", str(config)], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
         print(result.stdout)

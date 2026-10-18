@@ -58,6 +58,10 @@ type Request struct {
 // names as rich text inside the shell. A connection that has not identified
 // itself receives status only; any other request fails with
 // RestartRequiredError.
+//
+// The helper also reports SafeClient as contentProtocol in buildInfo. The
+// previous release's helper keeps running until it is rebuilt and sends
+// original avatars, so a panel shows no remote content until a helper reports it.
 const SafeClient = "safe-content-1"
 
 const RestartRequiredError = "OmaChat was updated. Restart the shell to finish updating."

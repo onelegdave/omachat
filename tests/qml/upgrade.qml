@@ -27,6 +27,7 @@ ShellRoot {
       if(root.requested && service.helperError) { console.error("OMACHAT_UPGRADE_FAIL",service.helperError);Qt.quit();return }
       if(root.requested && !service.building && service.connected && service.connectionGeneration > root.beforeGeneration && service.helperBuildChecked) {
         if(service.helperNeedsRebuild || !service.runningSourceID || service.runningSourceID !== service.updates.expectedSourceID) { console.error("OMACHAT_UPGRADE_FAIL running helper still outdated");Qt.quit();return }
+        if(!service.contentAllowed) { console.error("OMACHAT_UPGRADE_FAIL rebuilt helper did not confirm helper previews");Qt.quit();return }
         if(!service.servicesConfigLoaded) return
         if(service.serviceSelectionRequired || service.enabledServices.length !== 0) { console.error("OMACHAT_UPGRADE_FAIL saved service choices lost");Qt.quit();return }
         service.stopHelper()

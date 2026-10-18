@@ -79,6 +79,7 @@ Column {
     width:parent.width; wrapMode:Text.Wrap; textFormat:Text.PlainText
     text: !root.service ? "Helper status unavailable."
       : root.service.building ? "Building helper. This may take several minutes with no output. The helper restarts automatically on success."
+      : root.service.helperNeedsRebuild && root.service.connected && root.service.contentAllowed === false ? "Rebuild helper to finish updating. The running helper is from an earlier release, so conversations and alerts stay off until it is rebuilt."
       : root.service.helperNeedsRebuild ? "Update downloaded. Rebuild helper to finish. The running helper does not match the installed source."
       : !root.service.connected ? "Waiting for the helper to connect. Build it if it is missing."
       : root.service.helperBuildChecked && root.updates && root.updates.expectedSourceID ? "The running helper matches the installed source."

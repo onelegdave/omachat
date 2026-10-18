@@ -80,6 +80,21 @@ func TestPanelsThatDoNotIdentifyReceiveStatusOnly(t *testing.T) {
 	if resp := legacy.read(); resp["id"] != "3" || resp["ok"] != true {
 		t.Fatalf("legacy status reply: %v", resp)
 	}
+	// Asking for build identity, as any panel does, reports the capability but
+	// does not open remote content to a panel that never identified itself.
+	legacy.send(wire.Request{ID: "3b", Method: "buildInfo"})
+	if resp := legacy.read(); resp["id"] != "3b" || resp["ok"] != true || resp["result"].(map[string]any)["contentProtocol"] != wire.SafeClient {
+		t.Fatalf("legacy buildInfo reply: %v", resp)
+	}
+	legacy.send(wire.Request{ID: "3c", Method: wire.MethodConversations})
+	if resp := legacy.read(); resp["id"] != "3c" || resp["error"] != wire.RestartRequiredError {
+		t.Fatalf("legacy conversations after buildInfo: %v", resp)
+	}
+	d.publish(wire.EventConversation, d.convs["c"])
+	d.publish(wire.EventStatus, d.Status())
+	if evt := legacy.read(); evt["event"] != wire.EventStatus {
+		t.Fatalf("legacy panel received %v after buildInfo", evt)
+	}
 
 	current := openGateConn(t, d)
 	current.send(wire.Request{ID: "4", Method: wire.MethodConversations, Client: wire.SafeClient})

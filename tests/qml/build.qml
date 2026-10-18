@@ -12,6 +12,8 @@ ShellRoot {
  property bool selectionRequested: false
  property bool selectionConfirmed: false
  property bool disableRequested: false
+ property bool disabledSaved: false
+ property bool disabledRefreshRequested: false
  property bool buildGuidanceChecked: false
  Build.Service { id: service }
  Chat.Panel { id: panel; service: service }
@@ -48,6 +50,23 @@ ShellRoot {
     }
     root.buildGuidanceChecked=true
    }
+   if (root.disabledSaved) {
+    // Saving restarts the helper; ask once the new connection confirms previews,
+    // so the helper's own disabled-service guard answers, not the panel's.
+    if (!root.disabledRefreshRequested && service.connected && service.contentAllowed) {
+     root.disabledRefreshRequested=true
+     service.call("refresh",null,function(ok,res) {
+      if(ok || String(res).indexOf("disabled") < 0) {
+       console.error("OMACHAT_BUILD_FAIL disabled service accepted refresh",res);Qt.quit();return
+      }
+      if (!root.buildGuidanceChecked) { console.error("OMACHAT_BUILD_FAIL build guidance was not checked");Qt.quit();return }
+      service.stopHelper()
+      console.log("OMACHAT_BUILD_PASS compiled helper, fresh chooser, opt-in, opt-out, and disabled RPC guard")
+      Qt.quit()
+     },"gmessages")
+    }
+    running=true;return
+   }
    if (root.requested && service.connected && service.servicesConfigLoaded && !root.selectionRequested) {
     if (!service.serviceSelectionRequired || service.enabledServices.length !== 0) {
      console.error("OMACHAT_BUILD_FAIL fresh install must start with no services");Qt.quit();return
@@ -61,7 +80,8 @@ ShellRoot {
      })
     },"gmessages")
    }
-   if (root.selectionConfirmed && service.connected && service.state === "unpaired") {
+   // Content requests wait until the compiled helper confirms its previews.
+   if (root.selectionConfirmed && service.connected && service.contentAllowed && service.state === "unpaired") {
     if (!root.refreshRequested) {
      root.refreshRequested=true
      service.refreshConversations()
@@ -77,15 +97,7 @@ ShellRoot {
       if(!saved || service.enabledServices.length !== 0 || service.serviceSelectionRequired) {
        console.error("OMACHAT_BUILD_FAIL explicit all-disabled choice failed");Qt.quit();return
       }
-      service.call("refresh",null,function(ok,res) {
-       if(ok || String(res).indexOf("disabled") < 0) {
-        console.error("OMACHAT_BUILD_FAIL disabled service accepted refresh",res);Qt.quit();return
-       }
-       if (!root.buildGuidanceChecked) { console.error("OMACHAT_BUILD_FAIL build guidance was not checked");Qt.quit();return }
-       service.stopHelper()
-       console.log("OMACHAT_BUILD_PASS compiled helper, fresh chooser, opt-in, opt-out, and disabled RPC guard")
-       Qt.quit()
-      },"gmessages")
+      root.disabledSaved=true
      })
     }
     running=true;return

@@ -68,6 +68,23 @@ class RemoteContentTest(unittest.TestCase):
         composer = composer[:composer.index("onClicked")]
         self.assertIn("root.pendingPreviews[root.pendingAttachment]", composer)
 
+    def test_unconfirmed_helpers_get_no_content_requests(self):
+        # A helper from before 0.6.0 sends original avatars. Until buildInfo
+        # confirms helper previews, the panel sends only these requests.
+        service = (REPO / "Service.qml").read_text()
+        allowed = re.search(r"readonly property var contentFreeMethods: \[([^\]]*)\]", service).group(1)
+        allowed = set(re.findall(r'"([A-Za-z]+)"', allowed))
+        self.assertEqual(allowed, {"buildInfo", "status", "config", "setEnabledServices", "setNotifications", "setUiScale",
+                                   "setChatView", "setWindowPreferences", "setKeyboardShortcuts", "setEmojiSearchPreference",
+                                   "setUnifiedInboxPreference", "setWhatsAppHistoryCache", "setTelegramCredentials",
+                                   "discardCapture", "unpair"})
+        call = service[service.index("  function call(method"):]
+        self.assertLess(call.index("contentFreeMethods.indexOf(method) < 0"), call.index("_write(frame)"))
+        self.assertIn('res.contentProtocol === "safe-content-1"', service)
+        self.assertIn('if (!contentAllowed && frame.event !== "status" && frame.event !== "config") return', service)
+        server = (REPO / "internal/daemon/server.go").read_text()
+        self.assertIn('"contentProtocol": wire.SafeClient', server)
+
     def test_copied_text_never_enters_argv(self):
         for path in REPO.glob("*.qml"):
             self.assertIsNone(re.search(r'"wl-copy"\s*,\s*"--"\s*,', path.read_text()), path.name)
@@ -82,7 +99,7 @@ class RemoteContentTest(unittest.TestCase):
         self.assertIn("readonly property int maxConversations: 1000", service)
         model = (REPO / "Model.js").read_text()
         self.assertIn("var MAX_CONVERSATIONS = 1000", model)
-        for suffix in ("", "WA", "TG", "FB"):
+        for suffix in ("", "WA", "TG", "FB", "SG"):
             self.assertIn(f"root.conversations{suffix} = root._boundConversations(list)", service)
         inbox = (REPO / "InboxView.qml").read_text()
         display = inbox[inbox.index("function displayMessages"):]

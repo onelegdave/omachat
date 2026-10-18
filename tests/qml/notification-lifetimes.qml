@@ -6,7 +6,7 @@ import "Chat" as Chat
 ShellRoot {
   id: root
   function check(ok, label) { if (!ok) throw new Error(label); console.log("PASS:", label) }
-  Chat.DesktopNotifications { id: alerts; service: fake; connected: fake.connected }
+  Chat.DesktopNotifications { id: alerts; service: fake; connected: fake.connected; contentAllowed: fake.connected }
   Chat.NotificationSettings { id: controls; service: fake; width: 600 }
   Chat.SettingsView { id: settings; service: fake; width: 600; height: 700 }
   QtObject {

@@ -6,7 +6,7 @@ function service() {
 }
 function manager(s) {
   return load('DesktopNotifications.qml',['retireConnection','applyConfig','savePreferences','test','forgetNetwork','flush'],
-    {service:s,connected:true,loaded:true,enabled:true,legacyPreviews:false,saving:false,sending:false,errorText:'',generation:0,configRevision:0,sendRequest:0,networkEpochs:{},seen:[],views:[],queue:[],Qt:{callLater(fn){fn();}}});
+    {service:s,connected:true,contentAllowed:true,loaded:true,enabled:true,legacyPreviews:false,saving:false,sending:false,errorText:'',generation:0,configRevision:0,sendRequest:0,networkEpochs:{},seen:[],views:[],queue:[],Qt:{callLater(fn){fn();}}});
 }
 test('reconnect retires notification save, send and test callbacks',()=>{
   for (const method of ['save','send','test']) {
@@ -37,6 +37,13 @@ test('an outdated helper with previews on gets no alerts until it confirms they 
   n.applyConfig({notificationsEnabled:true,notificationPreviews:true});retire=s.requests.pop();
   retire.callback(true,{notificationsEnabled:true,notificationPreviews:false});
   assert.equal(n.legacyPreviews,false);assert.equal(s.requests.length,1);assert.equal(s.requests[0].method,'notifyMessage');
+});
+test('a helper that has not confirmed previews gets no alerts until it does',()=>{
+  const s=service(),n=manager(s);n.contentAllowed=false;n.queue=[{network:'telegram',params:{message:{conversationID:'demo'}}}];
+  n.flush();n.test();
+  assert.equal(s.requests.length,0);assert.equal(n.queue.length,1);
+  n.contentAllowed=true;n.flush();
+  assert.equal(s.requests.length,1);assert.equal(s.requests[0].method,'notifyMessage');assert.equal(n.queue.length,0);
 });
 test('forgotten account send reply cannot introduce a new-account error',()=>{
   const s=service(),n=manager(s);n.queue=[{network:'telegram',params:{message:{conversationID:'demo'}}}];n.flush();
