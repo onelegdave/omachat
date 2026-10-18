@@ -82,8 +82,28 @@ content safety design and its limits.
   text now leaves the cursor at the end, as it did before 0.5.2.
 - **Opening the panel without a chat selected starts at the conversation
   list,** as documented, and moves to search only when the list is empty.
+- **The panel waits for an up-to-date helper before showing content.** After
+  an update, the previous release's helper keeps running until it is rebuilt,
+  and it sends original profile photos and uses them as notification icons.
+  The panel now shows conversations, messages, media, and alerts only from a
+  helper that confirms it sends its own previews, and asks for a rebuild
+  otherwise. Status and settings keep working.
+- **Theme colors work on Qt 6.12.** Qt 6.12 added its own `Color` type, which
+  took the place of the Omarchy theme's `Color` in OmaChat's files, so the
+  panel's theme colors were missing. OmaChat now names the theme's `Color`
+  explicitly, as Omarchy's own shell code does.
 
 ## Changed behavior
+
+- Building the helper requires Go 1.27.2 or newer. Go 1.27.2 fixes
+  [GO-2026-6611](https://pkg.go.dev/vuln/GO-2026-6611), excessive CPU use when
+  a malicious HTTP/2 server sends many small flow-control changes; the helper
+  talks HTTP/2 to Google, WhatsApp, and Meta servers. The panel's
+  **Build helper** action and the Makefile set `GOTOOLCHAIN=local`, so there an
+  older Go stops with an error instead of downloading a newer toolchain. A
+  direct `go` command without that setting may fetch one under Go's defaults.
+  Arch Linux ships Go 1.27.2; run your normal Omarchy update before rebuilding
+  if your Go is older.
 
 - Inline previews are at most 1280 pixels on the long side. Animated GIFs keep
   moving up to 500 frames and 1024 pixels on a side; larger ones show their
@@ -114,28 +134,36 @@ existing attribution. See [full credits](../../CREDITS.md).
 
 ## Verification and limits
 
-Checked October 17, 2026 on Arch Linux with Go 1.27.0, Quickshell 0.3.1, Qt
-6.11.2, and Omarchy 4.0.4, from an isolated copy of the release with invented
-data. No real account, message, pairing, or package installation was used.
+Checked October 18, 2026 on Arch Linux with Go 1.27.2, Quickshell 0.3.2,
+Qt 6.12.0, and the Omarchy 4.0.5 package, from an isolated copy of the release
+with its own `go.mod` and invented data. No real account, message, pairing, or
+package installation was used. Before the machine's Go was updated, Go 1.27.0
+stopped with "go.mod requires go >= 1.27.2" in the in-panel build, `make`, and
+a direct build, and wrote no helper. With Go 1.27.2, a test copy requiring an
+unreleased 1.27.3 stops the same way in `make helper` and `make test`.
 
-- `gofmt`, `go vet`, and an offline `-mod=vendor` build are clean.
+- `gofmt`, `go vet`, `make lint`, `make helper` (the stamped in-panel build),
+  and an offline `-mod=vendor` build are clean.
 - The full Go suite passes (549 top-level tests, 625 including subtests), as do
   the Google Messages client fixtures, and the whole suite passes again under
   `-race`. Two Signal tests skip by design: one needs an installed
   `signal-cli`, and one only runs as a child process of another test.
-- 61 Python tests and the emoji data checksum check pass, including a real
-  two-filesystem helper build watched with inotify. The 76 Node model tests
+- 63 Python tests pass on the release's own tree, including a real
+  two-filesystem helper build watched with inotify. The 77 Node model tests
   pass on Windows with Node 24.22; one of them calls the Python checksum
   generator, which needed a temporary `python3` alias there.
-- The headless QML subset passes: 19 isolated fixtures and 199 checks, including
-  new-conversation picker lifetimes, pagination, media previews, safe fields,
-  and an isolated helper build. `omarchy plugin validate` passes.
-- The full native Wayland QML suite passes on Hyprland: 24 fixtures and 432
-  checks, including keyboard routing, pop-out placement, unpair, a real
-  isolated helper build, a missing build launcher, an upgrade from an older
-  helper, and delayed helper startup. Each fixture used a mock service, its own
-  data and runtime folders, and a private D-Bus session. Only `hyprctl` reached
-  the running compositor, to place the test's own pop-out window.
+- The headless QML subset passes: 18 isolated fixtures plus an isolated helper
+  build and a missing build launcher, 263 checks, including a panel next to a
+  helper from an earlier release, new-conversation picker lifetimes,
+  pagination, media previews, readable theme colors, the bounded clipboard
+  reader with fake clipboard tools, and safe fields. `omarchy plugin validate`
+  and the emoji data check pass.
+- The full native Wayland QML suite passes on Hyprland: 25 fixtures and 491
+  checks, including keyboard routing, pop-out placement, unpair, a
+  real isolated helper build, a missing build launcher, an upgrade from an
+  older helper, and delayed helper startup. Each fixture used a mock service,
+  its own data and runtime folders, and a private D-Bus session. Only `hyprctl`
+  reached the running compositor, to place the test's own pop-out window.
 
 New tests cover the WhatsApp status filter on both routes and in a stored
 cache, Signal media removal on deletion, expiry, view-once, and trimming
@@ -144,8 +172,10 @@ cap and RPC line bound, safe Signal suffixes, a UUID-keyed reply landing in a
 started chat, Google Messages RCS group requests, bounded contact lists,
 helper builds watched the way the Omarchy shell watches plugins (across two
 real filesystems, and with layouts that are refused before any plugin write,
-including a cache folder reached through a symlink), and the cursor after
-assigned text.
+including a cache folder reached through a symlink), the cursor after
+assigned text, and a panel next to an earlier release's helper (no content,
+alerts, or original profile photos until the helper confirms its previews,
+including after reconnects and for replies from an earlier connection).
 
 Earlier work in this release is also tested: Go tests feed the image converter
 PNGs with many large compressed text chunks, dimension, GIF frame-area, and
@@ -153,7 +183,9 @@ JPEG scan-count bombs, JPEG and GIF comments, and SVG, TIFF, BMP, and MP4
 bytes, and clip previews run against a real `ffmpeg`, including refused
 playlist and concat files and a hung `ffmpeg` that is stopped.
 
-Not run: an update of a real installed copy, and any live service. Signal was tested against a simulated `signal-cli`, and
+Not run: an update of a real installed copy, any live service, and a probe of
+Qt 6.12's clipboard-change handler with a real clipboard, which would replace
+the user's clipboard. Signal was tested against a simulated `signal-cli`, and
 conversation creation against synthetic contacts; neither establishes live
 compatibility.
 
@@ -163,8 +195,10 @@ compatibility.
 omarchy plugin update onelegdave.omachat
 ```
 
-This release changes the Go helper. Rebuild it with the panel's **Build helper**
-action when prompted, then restart the shell. Until the shell restarts, the
+This release changes the Go helper and needs Go 1.27.2 or newer to build it.
+Rebuild it with the panel's **Build helper** action when prompted, then restart
+the shell. If the shell restarts before the rebuild, the panel shows no
+conversations or alerts from the old helper until it is rebuilt. Until the shell restarts, the
 previous release's panel code keeps running, and the rebuilt helper sends it no
 messages, names, or media: it shows "OmaChat was updated. Restart the shell to
 finish updating." Existing paired accounts and settings are retained; no

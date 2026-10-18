@@ -3,7 +3,7 @@
 This records the 0.6.0 changes, verification, live acceptance limits, and
 publication procedure. The public release and Marketplace request linked
 below are the sources for current publication status. Last updated October
-17, 2026.
+18, 2026.
 
 ## Release record
 
@@ -64,6 +64,34 @@ Follow-up fixes made during integration:
   from the TextEdit change in 0.5.2. The keyboard fixture caught it.
 - Opening the panel with no chat selected focuses the conversation list, as
   documented, and search only when the list is empty.
+- Second review (October 18): a 0.6.0 panel trusted whatever helper was
+  running. After an update and a shell restart before rebuilding, a v0.5.x
+  helper sent original profile photos, which the panel decoded, and turned
+  them into notification icons. The helper now reports `contentProtocol` in
+  `buildInfo`, and the panel requests and accepts remote content and sends
+  alerts only once the helper on the current connection reports it. A
+  disconnect or reconnect asks again without showing a rebuild notice in the
+  meantime. (The third review round found that an ordinary disconnect still
+  showed the notice until the socket reconnected; the stale-helper fixture now
+  checks that moment, and it failed before the fix.)
+- Third review round, on Qt 6.12.0 and Quickshell 0.3.2: Qt 6.12 exports its
+  own `QtQuick` `Color` singleton, which took precedence over Omarchy's
+  `qs.Commons` `Color` wherever OmaChat used it unqualified, so every theme
+  color read as undefined. The headless readability fixture caught it. Files
+  that use the theme's colors now also import `qs.Commons as Commons` and
+  write `Commons.Color`, as Omarchy 4.0.5's own shell code does. `Style`,
+  `Border`, and `Util` do not collide and are unchanged. The published v0.5.5
+  uses the same unqualified `Color`, so by its source it is affected on Qt
+  6.12 too (not run).
+- Second review: Go 1.27.2 is now the minimum, for
+  [GO-2026-6611](https://pkg.go.dev/vuln/GO-2026-6611). `go.mod`, the Tools
+  checklist, and the Makefile agree, all with `GOTOOLCHAIN=local`. See
+  [Marketplace readiness](marketplace-readiness.md#review-corrections-october-18-2026)
+  for the reachability assessment and the dependency scan.
+- Signal's live conversation list is bounded at 1,000 like the other services.
+- The Signal pairing test assumed pairing could not finish before it read the
+  status; under `-race` it failed about 1 in 75 runs. It now checks the
+  published sequence: the link, then connected.
 - The vendored license inventory in `CREDITS.md` is complete again.
 - The two Secret Scanning alerts are classified in
   [vendored API-key alerts](vendored-key-alerts.md). No vendored file changed.
@@ -72,16 +100,43 @@ Follow-up fixes made during integration:
 
 All checks use invented data in isolated temporary folders: no real account,
 message, pairing, package installation, paid service, or network call to a
-provider. They ran on an Arch Linux machine with Go 1.27.0, Quickshell 0.3.1,
-Qt 6.11.2, and Omarchy 4.0.4, from a copy of the candidate outside any
-installed plugin. See the [release notes](history/RELEASE-0.6.0.md#verification-and-limits)
-for the commands and counts.
+provider. They ran on an Arch Linux machine with Go 1.27.2, Quickshell 0.3.2,
+Qt 6.12.0, and the Omarchy 4.0.5 package, from a copy of the candidate, with
+its own `go.mod`, outside any installed plugin. See the
+[release notes](history/RELEASE-0.6.0.md#verification-and-limits) for the
+commands and counts.
 
-Last checked October 17, 2026, after the review round: 61 Python tests, 76
-Node tests, the headless QML subset (19 fixtures, 199 checks), and the full
-native Wayland QML suite (24 fixtures, 432 checks, nothing excluded) pass, and
-`omarchy plugin validate` passes. No Go, module, or vendored file changed in
-that round, so the earlier Go, race, vet, and build results still apply.
+Last checked October 18, 2026, after the third review round: the full Go
+suite and `-race` (625 tests each, two intended Signal skips), `make test`,
+`make lint`, `make helper`, vet, the libgm fixture, and an offline build;
+63 Python tests; 77 Node tests; the headless QML subset (20 runs, 263
+checks); and the full native Wayland QML suite (25 fixtures, 491 checks,
+nothing excluded) pass, as do `omarchy plugin validate` and the emoji data
+check. The earlier helper's route was reproduced first: the reviewer's probe,
+run on 662763c, decoded an original profile photo and requested an alert,
+and does neither on the candidate.
+
+Earlier rounds ran on Go 1.27.0, Quickshell 0.3.1, and Qt 6.11.2, with
+`go.mod` lowered to 1.27.0 in a test copy only; those runs do not qualify the
+required compiler or Qt 6.12, and the counts above replace them. The headless
+count rose from 255 to 263 with seven cursor-editing checks in the safe-fields
+fixture and one disconnect check in the stale-helper fixture.
+
+For a later candidate, repeat on the exact final commit: `make test`,
+`GOTOOLCHAIN=local GOPROXY=off go test -race -mod=vendor -count=1 ./...`,
+`make lint`, `make helper`, `make test-ui` on Hyprland, and
+`omarchy plugin validate .`. Then update these counts if they change.
+
+The first native run caught a problem in the new helper check: after the
+helper restarted for a service change, the panel briefly treated it as
+outdated. That was fixed before the final runs. Two other runs (one headless,
+one native) stopped at the helper build with "disk quota exceeded" from the
+test machine's `/tmp`, filled by the test's own Go build cache; after clearing
+it, the same builds passed. In the third round, the first two Go runs failed
+one test, `TestStaleSocketDoesNotOwnDataAndIsRecovered`, with "bind: invalid
+argument". The test's Unix socket path ran past the 108-byte limit because the
+test environment pointed `TMPDIR`, then `GOTMPDIR` (which `go test` passes to
+tests), at a long cache folder. With the default `/tmp`, it passes.
 
 Notes from the native runs:
 
@@ -103,7 +158,8 @@ Notes from the native runs:
 - Qt logs "Binding loop detected" for the text field editor's height, and once
   for the Telegram API ID field's two-way draft binding. The height warning
   also appears on v0.5.5. Both settle on the next pass and change no focus,
-  layout, or test result.
+  layout, or test result. Qt 6.12.0 logs the height warning the same number
+  of times as Qt 6.11.2 in the headless run.
 
 ## Not yet verified (needs live acceptance)
 
@@ -111,7 +167,8 @@ Notes from the native runs:
    confirm one rebuild prompt, a successful build with no plugin reload loop,
    and the "Restart the shell" message until the shell restarts.
 2. After the restart, check existing Google Messages, WhatsApp, Telegram, and
-   Messenger accounts still connect, previews show, and notifications fire.
+   Messenger accounts still connect, previews show, notifications fire, and
+   the panel uses your theme's colors on Qt 6.12.
 3. Confirm WhatsApp no longer lists a status conversation.
 4. With a real current `signal-cli`, check that `--ignore-stories` is accepted,
    then link, send and receive text and an image, react, see a remote delete,
@@ -119,7 +176,10 @@ Notes from the native runs:
    folder no longer holds deleted or view-once media.
 5. Start a direct chat on each service, and a group only where you are
    willing to invite real people. Group creation is real and notifies them.
-6. Optionally, on an unusual mount layout (plugin folder or `bin` on its own
+6. Update with the shell restarted before rebuilding: the panel should show no
+   conversations or alerts and ask to rebuild the helper; after the rebuild
+   everything returns without re-pairing or lost settings.
+7. Optionally, on an unusual mount layout (plugin folder or `bin` on its own
    filesystem), confirm the build either succeeds or shows the "cannot install
    its helper safely" message, and the shell does not reload during it.
 

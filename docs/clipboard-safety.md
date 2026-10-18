@@ -127,10 +127,12 @@ plus Return, Tab, length limits, line-break rules, scrolling, and the password
 field's editing and paste routes. The source check also requires the plain-text
 `TextEdit` and the read-only password field.
 
-The local UI checks use Qt 6.11.2's offscreen backend and a fake `wl-paste`.
-On Qt 6.11.2 under Hyprland, the probe measured about 8,000,000 bytes read by a
-native `TextField` (the control), 200 by `SafeTextField`, and 24 by
-`SafePasswordField`. That probe offers a large finished transfer, not an
-endless stream, and it was not run on Qt 6.12.0, whose handler code is the same. The user's clipboard, paired profiles, and installed release are not
+The local UI checks use the offscreen backend and a fake `wl-paste`; on
+October 18, 2026 they passed on Qt 6.12.0 with Quickshell 0.3.2, as they had
+on Qt 6.11.2. On Qt 6.11.2 under Hyprland, the probe measured about 8,000,000
+bytes read by a native `TextField` (the control), 200 by `SafeTextField`, and
+24 by `SafePasswordField`. That probe offers a large finished transfer, not an
+endless stream, and it was not run on Qt 6.12.0, whose handler code is the same,
+because it replaces the real clipboard. The user's clipboard, paired profiles, and installed release are not
 used by these tests. Fresh exact-commit Marketplace validation and maintainer
 review remain required when this fix is published.

@@ -44,12 +44,47 @@ If no folder outside the plugin shares the helper's filesystem, the in-panel
 build now refuses before writing anything in the plugin rather than copying
 the helper in.
 
-Local evidence for v0.6.0 (October 17, 2026) includes the full native Wayland
+### Review corrections, October 18, 2026
+
+- **Previous helper after an update.** Until it is rebuilt, a v0.5.x helper
+  sends original downloaded profile photos and uses them as notification
+  icons, so the same PNG text-chunk route existed through avatars. A current
+  helper now reports `contentProtocol` in its build information, and the panel
+  requests and accepts conversations, messages, media, pairing, and alerts
+  only after the helper on the current connection confirms it. Missing,
+  malformed, failed, unanswered, and earlier-connection replies keep content
+  closed, and the check does not rely on identifying the installed source.
+  See [remote content and the shell](shell-content-safety.md).
+- **Go 1.27.2 minimum.** [GO-2026-6611](https://pkg.go.dev/vuln/GO-2026-6611)
+  (CVE-2026-78669, fixed in [Go 1.27.2](https://go.dev/doc/devel/release#go1.27.2))
+  lets a malicious HTTP/2 peer drive up CPU in a client or server. The helper's
+  standard HTTP clients speak HTTP/2 to Google, WhatsApp, and Meta servers, so
+  the advisory applies, although exploiting it requires one of those servers or
+  a certificate the system trusts. Fetches of sender-chosen URLs (group avatars,
+  Messenger media) use custom dialers, which keep Go on HTTP/1.1. `go.mod`, the
+  dependency checklist, and the build all require Go 1.27.2 with
+  `GOTOOLCHAIN=local`, so an older Go fails instead of downloading a toolchain.
+  Go 1.27.2 also fixes every other standard-library advisory in the scan below.
+- **Dependency scan.** An OSV query of the 71 vendored module versions and Go
+  1.27.0 returned 15 advisories. Thirteen are standard library, all fixed in
+  Go 1.27.2. GO-2026-5676 (quic-go HTTP/3) and GO-2026-5932 (`x/crypto/openpgp`)
+  name packages the helper does not import. The vendored `golang.org/x/net`
+  0.58.0 `http2` package matches four HTTP/2 advisories fixed in 0.60.0, but
+  the helper uses it only to recognize `http2.StreamError`; its transports are
+  the standard library's, and the helper runs no HTTP server. This is a version
+  and import review, not a `govulncheck` call-graph result.
+
+Local evidence for v0.6.0 (October 18, 2026) includes the full native Wayland
 QML suite with mock services and isolated data, alongside the Go, Python, Node,
 and headless QML checks listed in the
-[release notes](history/RELEASE-0.6.0.md#verification-and-limits). It does not
-cover real provider accounts, a real `signal-cli`, an update of an installed
-copy, or the official baseline and maintainer review of the final SHA.
+[release notes](history/RELEASE-0.6.0.md#verification-and-limits). They ran
+with Go 1.27.2, Qt 6.12.0, and Quickshell 0.3.2 on the release's own `go.mod`.
+That run also found that Qt 6.12's new `QtQuick` `Color` singleton hid the
+Omarchy theme's `Color` from OmaChat's unqualified uses; OmaChat now qualifies
+it as Omarchy's own shell does. The evidence does not cover real provider
+accounts, a real `signal-cli`, an update of an installed copy, Qt 6.12's
+clipboard-change handler with a real clipboard, or the official baseline and
+maintainer review of the final SHA.
 
 ## v0.5.5 update compatibility correction
 
