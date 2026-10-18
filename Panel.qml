@@ -1452,9 +1452,9 @@ Panel {
               if (connecting)
                 return "OmaChat's messaging helper is starting and connecting. This normally takes only a moment. No action is needed while the activity indicator is moving."
               if (needGo)
-                return "OmaChat needs a small background program, the messaging helper (omachatd), to connect your chosen services. It is built on your computer from the included source. Building requires Go 1.27+, Python 3, and a C compiler (gcc or clang). Open Settings > Tools to check what is missing, review its source, and choose whether to install it. Then return here, choose Retry to recheck Go, and select Build helper."
+                return "OmaChat needs a small background program, the messaging helper (omachatd), to connect your chosen services. It is built on your computer from the included source. Building requires Go 1.27.2+, Python 3, and a C compiler (gcc or clang). Open Settings > Tools to check what is missing, review its source, and choose whether to install it. Then return here, choose Retry to recheck Go, and select Build helper."
               if (canBuild)
-                return "Go was found. Check Settings > Tools to confirm Go 1.27+, Python 3, and a C compiler (gcc or clang) are available. Choose Build helper to compile the included source for your selected services. The first build can take several minutes and may show no output. The helper starts automatically on success. Rebuild after updates that change the helper. No dependencies are installed automatically."
+                return "Go was found. Check Settings > Tools to confirm Go 1.27.2+, Python 3, and a C compiler (gcc or clang) are available. Choose Build helper to compile the included source for your selected services. The first build can take several minutes and may show no output. The helper starts automatically on success. Rebuild after updates that change the helper. No dependencies are installed automatically."
               return "The protocol helper runs as a background process owned by the Omarchy shell."
             }
             foreground: root.foreground

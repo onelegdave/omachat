@@ -1,6 +1,6 @@
 module github.com/onelegdave/omachat
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/godbus/dbus/v5 v5.2.2

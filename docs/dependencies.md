@@ -27,7 +27,7 @@ All five services share a locally compiled helper:
 
 | Requirement | Purpose | Your choice |
 | --- | --- | --- |
-| Go 1.27.0 or newer (see `go.mod`) | Compile the helper from `vendor/` | Install Go yourself if you want to build and use OmaChat |
+| Go 1.27.2 or newer (see `go.mod`; 1.27.2 fixes HTTP/2 advisory GO-2026-6611) | Compile the helper from `vendor/` | Install Go yourself if you want to build and use OmaChat |
 | Python 3 | Offline helper builds, source checks, release checks, setup tools, and safe paste | Required for the in-app build, update, and paste workflows |
 | C compiler (`gcc` or `clang`) | CGO SQLite in the shared helper | Required at build time for every service |
 | `qrencode` | Render pairing QR codes | Needed for WhatsApp/Telegram QR pairing and Google's QR fallback |

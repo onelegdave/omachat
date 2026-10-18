@@ -5,7 +5,7 @@ Created and maintained by OneLegDave. Report issues with your Omarchy version, w
 ## Verify a change
 
 ```bash
-go test -mod=vendor ./...
+GOTOOLCHAIN=local GOPROXY=off go test -mod=vendor ./...
 make helper
 omarchy plugin validate .
 ```
@@ -29,7 +29,11 @@ or a C toolchain automatically.
 
 Edit the checkout under `~/Projects/omachat` or `~/.config/omarchy/plugins/onelegdave.omachat`. Never edit packaged files under `/usr/share/omarchy/`. After QML or helper changes, `omarchy restart shell`.
 
-Build with `go build -mod=vendor`. Do not add an ELF to git. Never automatically
+Build with `make helper` and Go 1.27.2 or newer. The Makefile and the in-app
+build set `GOTOOLCHAIN=local GOPROXY=off`, so an older Go stops with an error
+instead of downloading a toolchain. Run a direct `go` command with those
+variables set, as in the commands above; without them Go may fetch a newer
+toolchain automatically. Do not add an ELF to git. Never automatically
 install, update, or download dependencies. The explicit Settings install action
 uses allowlisted packages and preserves terminal and package-manager confirmation.
 Do not exercise real installs in tests. Document requirements
@@ -85,7 +89,8 @@ acceptance. Never count a pass marker followed by a crash as a successful test.
 ## Regression checks
 
 Run `make test`, `make lint`, and `make validate` for the helper and manifest.
-Use `go test -race -mod=vendor -count=1 ./...` to check the concurrency tests.
+Use `GOTOOLCHAIN=local GOPROXY=off go test -race -mod=vendor -count=1 ./...` to
+check the concurrency tests.
 
 `make test-ui` runs JavaScript regression tests and the actual QML components
 with synthetic contacts in a short-lived demo window on the active Wayland

@@ -15,8 +15,12 @@ def tool(key, name, purpose, commands, package):
                 sourceUrl="https://gitlab.archlinux.org/archlinux/packaging/packages/" + package)
 
 
+# Go 1.27.2 fixes GO-2026-6611, CPU exhaustion from a malicious HTTP/2 peer in
+# the HTTP client the helper uses. go.mod requires the same version.
+GO_MINIMUM = (1, 27, 2)
+
 TOOLS = [
-    tool("go", "Go 1.27+", "Build the shared helper for all services.", ["go"], "go"),
+    tool("go", "Go 1.27.2+", "Build the shared helper for all services.", ["go"], "go"),
     tool("compiler", "C compiler", "Build shared SQLite support. Either gcc or clang is sufficient.", ["gcc", "clang"], "gcc"),
     tool("qrencode", "QR encoder", "Pair WhatsApp, Telegram, or use Google's legacy QR fallback.", ["qrencode"], "qrencode"),
     tool("ffmpeg", "FFmpeg and FFplay", "Voice recording and playback for all services, WhatsApp GIF conversion, and inline previews of GIF-style clips.", ["ffmpeg", "ffplay"], "ffmpeg"),
@@ -41,8 +45,8 @@ def check(entry):
             proc = subprocess.run(["go", "version"], capture_output=True, text=True, timeout=5,
                                   env={**os.environ, "GOTOOLCHAIN": "local"})
             match = re.search(r"\bgo(\d+)\.(\d+)(?:\.(\d+))?\b", proc.stdout)
-            installed = proc.returncode == 0 and match is not None and tuple(map(int, match.groups(default="0"))) >= (1, 27, 0)
-            detail = proc.stdout.strip() if installed else "Go 1.27+ required; installed version is older or could not be verified."
+            installed = proc.returncode == 0 and match is not None and tuple(map(int, match.groups(default="0"))) >= GO_MINIMUM
+            detail = proc.stdout.strip() if installed else "Go 1.27.2 or newer is required for a security fix; the installed version is older or could not be verified. Update Go with your normal Omarchy update workflow."
         except (OSError, subprocess.TimeoutExpired):
             installed, detail = False, "Could not verify Go version."
     result.update(installed=bool(installed), detail=detail)

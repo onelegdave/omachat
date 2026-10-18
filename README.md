@@ -47,8 +47,8 @@ omarchy plugin add https://github.com/onelegdave/omachat --enable
 ```
 
 Open OmaChat from the bar. All services use one helper, `omachatd`, built
-locally from vendored source. Building requires **Go, Python 3, and a C compiler
-(gcc or clang)**, even if you only use Google Messages or Telegram.
+locally from vendored source. Building requires **Go 1.27.2 or newer, Python 3,
+and a C compiler (gcc or clang)**, even if you only use Google Messages or Telegram.
 No helper binary is shipped in Git or downloaded by OmaChat.
 
 OmaChat remains an anchored bar panel by default. Select **Pop out**

@@ -1,5 +1,11 @@
 PLUGIN_ID := onelegdave.omachat
 
+# Build offline from vendor/ with the installed Go. go.mod sets the minimum
+# version; an older Go fails instead of downloading a newer toolchain.
+export GOTOOLCHAIN := local
+export GOPROXY := off
+export GOSUMDB := off
+
 .PHONY: helper test test-ui test-ui-headless lint validate clean
 
 # WhatsApp session storage uses github.com/mattn/go-sqlite3, which requires

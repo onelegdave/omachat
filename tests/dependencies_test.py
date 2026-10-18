@@ -27,10 +27,19 @@ class DependenciesTest(unittest.TestCase):
             self.assertFalse(deps.check(entry)["installed"])
 
     def test_go_minimum_and_no_toolchain_download(self):
-        for version, expected in [("go1.26.4", False), ("go1.27.0", True), ("go1.28rc1", False), ("unknown", False)]:
+        for version, expected in [("go1.26.4", False), ("go1.27.0", False), ("go1.27.0-X:nodwarf5", False), ("go1.27.1", False),
+                                  ("go1.27rc1", False), ("go1.27.2", True), ("go1.27.2-X:nodwarf5", True), ("go1.27.10", True),
+                                  ("go1.28.0", True), ("go1.28rc1", False), ("unknown", False)]:
             with self.subTest(version=version), patch.object(deps.shutil, "which", return_value="/bin/go"), patch.object(deps.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "go version " + version)) as run:
                 self.assertEqual(deps.check(deps.TOOLS[0])["installed"], expected)
                 self.assertEqual(run.call_args.kwargs["env"]["GOTOOLCHAIN"], "local")
+
+    def test_go_minimum_matches_go_mod(self):
+        # The checklist and the compiler must refuse the same old toolchains.
+        go_mod = (Path(__file__).resolve().parents[1] / "go.mod").read_text()
+        directive = next(line for line in go_mod.splitlines() if line.startswith("go "))
+        self.assertEqual(tuple(map(int, directive.split()[1].split("."))), deps.GO_MINIMUM)
+        self.assertEqual(deps.GO_MINIMUM, (1, 27, 2))
 
     def test_unknown_and_noninteractive_refused(self):
         with patch.object(deps.subprocess, "run") as run, patch.object(deps.sys.stdin, "isatty", return_value=False):
