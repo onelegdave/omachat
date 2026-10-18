@@ -305,6 +305,18 @@ Item {
     positioningMessages = false
   }
 
+  property bool followLatestQueued: false
+  function queueFollowLatest() {
+    if (followLatestQueued) return
+    followLatestQueued = true
+    var generation = selectionGeneration
+    Qt.callLater(function() {
+      root.followLatestQueued = false
+      if (generation === root.selectionGeneration && root.panelOpen && root.followingLatest
+          && !root.positioningMessages && !root.pendingLatestScroll) root.scrollToLatest()
+    })
+  }
+
   function scrollToLatest() {
     if (!panelOpen || selectedConvID === "") return
     pendingLatestScroll = true
@@ -1823,7 +1835,9 @@ Item {
       }
       onWidthChanged: if (root.panelOpen && root.followingLatest && !root.positioningMessages && !root.pendingLatestScroll) root.scrollToLatest()
       onHeightChanged: if (root.panelOpen && root.followingLatest && !root.positioningMessages && !root.pendingLatestScroll) root.scrollToLatest()
-      onContentHeightChanged: if (root.panelOpen && root.followingLatest && !root.positioningMessages && !root.pendingLatestScroll) root.scrollToLatest()
+      // Jumping elsewhere in the thread changes the content height before
+      // contentY. Deciding a tick later lets that jump end following first.
+      onContentHeightChanged: if (root.panelOpen && root.followingLatest && !root.positioningMessages && !root.pendingLatestScroll) root.queueFollowLatest()
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: historyControls.bottom
