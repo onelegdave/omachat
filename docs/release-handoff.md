@@ -28,7 +28,7 @@ candidate changes. Last updated October 17, 2026.
 | Review branch `fix/signal-review` `405b5cc` | Signal lifecycle and cache hardening | Cherry-picked (`cabd299`) |
 | PR #6, Andrew Birklid `5e0b65f` | Direct and group conversation creation | Cherry-picked with authorship (`be9d442`) |
 | Review branch `fix/new-conversations-review` `13ed7ad` | Request and picker lifetime hardening | Cherry-picked (`050f1c4`) |
-| Issue #1 | In-panel build | Existing staging verified; remaining gaps fixed (`d15ed75`) |
+| Issue #1 | In-panel build | Existing staging verified; remaining gaps fixed (`d15ed75`); the unsafe cross-filesystem copy it added was replaced by staging on the helper's filesystem or refusing first (review round) |
 
 The rest of PR #9 is not included: its author confirmed only `d09fe48` needed
 attention, and its avatar symlink fix is already in `main`. PRs #4 and #6 were
@@ -48,6 +48,18 @@ Follow-up fixes made during integration:
 - The signal-cli installer asks before restarting the shell.
 - A long-standing scroll bug: a jump into older history could snap back to the
   newest message. The pagination fixture caught it; it also failed on v0.5.5.
+- Independent review found that the cross-filesystem fallback in `d15ed75`
+  copied the helper into `bin` (and created an empty `bin` on a first install)
+  before it was complete, so a shell reload could still interrupt the build.
+  The fallback is gone. Staging now matches the filesystem of the helper's own
+  folder, a cache folder inside the plugin is skipped before it is created
+  (symlinks included), and a layout with no suitable folder is refused before
+  any plugin write, leaving the old helper in place.
+- Text fields: assigned text (restored drafts, returned captions, emoji
+  search) left the cursor at the start, so typing went before it. This dated
+  from the TextEdit change in 0.5.2. The keyboard fixture caught it.
+- Opening the panel with no chat selected focuses the conversation list, as
+  documented, and search only when the list is empty.
 - The vendored license inventory in `CREDITS.md` is complete again.
 - The two Secret Scanning alerts are classified in
   [vendored API-key alerts](vendored-key-alerts.md). No vendored file changed.
@@ -60,6 +72,34 @@ provider. They ran on an Arch Linux machine with Go 1.27.0, Quickshell 0.3.1,
 Qt 6.11.2, and Omarchy 4.0.4, from a copy of the candidate outside any
 installed plugin. See the [release notes](history/RELEASE-0.6.0.md#verification-and-limits)
 for the commands and counts.
+
+Last checked October 17, 2026, after the review round: 61 Python tests, 76
+Node tests, the headless QML subset (19 fixtures, 199 checks), and the full
+native Wayland QML suite (24 fixtures, 432 checks, nothing excluded) pass, and
+`omarchy plugin validate` passes. No Go, module, or vendored file changed in
+that round, so the earlier Go, race, vet, and build results still apply.
+
+Notes from the native runs:
+
+- The native driver needs the compositor's `hyprctl` socket to place the
+  test's own pop-out window. A runtime folder isolated for the fixtures hides
+  it, so the review used a small wrapper that gives only `hyprctl` the
+  session's runtime folder and instance signature. Everything else stays
+  isolated.
+- The keyboard fixture also failed on v0.5.5. Two causes were product
+  bugs, both fixed (list focus with no chat selected, and the cursor after
+  assigned text). One was an assertion that skipped a documented step:
+  returning from Settings restores the writable chat's composer, so Escape
+  leaves it before closing the panel. The fixture now checks every step.
+- The chat-view check after returning from the pop-out failed intermittently,
+  also without this round's changes. Focus was already on the composer; the
+  compositor activates the panel window about 20 ms after the fixture's tick.
+  The fixture now waits, with a bound, for activation, then makes the same
+  focus check.
+- Qt logs "Binding loop detected" for the text field editor's height, and once
+  for the Telegram API ID field's two-way draft binding. The height warning
+  also appears on v0.5.5. Both settle on the next pass and change no focus,
+  layout, or test result.
 
 ## Not yet verified (needs live acceptance)
 
@@ -75,8 +115,9 @@ for the commands and counts.
    folder no longer holds deleted or view-once media.
 5. Start a direct chat on each service, and a group only where you are
    willing to invite real people. Group creation is real and notifies them.
-6. Run the native Wayland QML suite (`make test-ui`); only the headless subset
-   ran here.
+6. Optionally, on an unusual mount layout (plugin folder or `bin` on its own
+   filesystem), confirm the build either succeeds or shows the "cannot install
+   its helper safely" message, and the shell does not reload during it.
 
 ## Publication steps (maintainer)
 

@@ -68,9 +68,20 @@ content safety design and its limits.
 - **The in-panel helper build is safe on any plugin filesystem.** The build
   already staged outside the watched plugin folder
   ([#1](https://github.com/onelegdave/omachat/issues/1)). It now syncs the
-  helper to disk before the final rename, stays atomic when the staging folder
-  is on another filesystem, and removes partial helpers that releases before
-  0.5.0 left in `bin`.
+  helper to disk before the final rename, stages on the filesystem of the
+  helper's own folder (which may differ from the plugin's), and removes partial
+  helpers that releases before 0.5.0 left in `bin`. If neither the hidden
+  folder beside the plugin nor the cache folder shares that filesystem, the
+  build stops with an explanation before writing anything in the plugin,
+  instead of copying the helper in where a shell reload could interrupt it. A
+  cache folder inside the plugin, including through a symlink, is never used
+  or created.
+- **Typing after a restored draft lands at its end.** When the panel filled in
+  a draft, a returned attachment caption, or an emoji search, the cursor
+  stayed at the start, so the next keystroke went before the text. Assigned
+  text now leaves the cursor at the end, as it did before 0.5.2.
+- **Opening the panel without a chat selected starts at the conversation
+  list,** as documented, and moves to search only when the list is empty.
 
 ## Changed behavior
 
@@ -112,19 +123,29 @@ data. No real account, message, pairing, or package installation was used.
   the Google Messages client fixtures, and the whole suite passes again under
   `-race`. Two Signal tests skip by design: one needs an installed
   `signal-cli`, and one only runs as a child process of another test.
-- 57 Python tests and the emoji data checksum check pass. The 76 Node model
-  tests ran on Windows, where 75 pass; the other only runs the Python checksum
-  generator, which passed directly on Linux.
-- The headless QML subset passes: 19 isolated fixtures and 195 checks, including
+- 61 Python tests and the emoji data checksum check pass, including a real
+  two-filesystem helper build watched with inotify. The 76 Node model tests
+  pass on Windows with Node 24.22; one of them calls the Python checksum
+  generator, which needed a temporary `python3` alias there.
+- The headless QML subset passes: 19 isolated fixtures and 199 checks, including
   new-conversation picker lifetimes, pagination, media previews, safe fields,
   and an isolated helper build. `omarchy plugin validate` passes.
+- The full native Wayland QML suite passes on Hyprland: 24 fixtures and 432
+  checks, including keyboard routing, pop-out placement, unpair, a real
+  isolated helper build, a missing build launcher, an upgrade from an older
+  helper, and delayed helper startup. Each fixture used a mock service, its own
+  data and runtime folders, and a private D-Bus session. Only `hyprctl` reached
+  the running compositor, to place the test's own pop-out window.
 
 New tests cover the WhatsApp status filter on both routes and in a stored
 cache, Signal media removal on deletion, expiry, view-once, and trimming
 (including signal-cli's copy and the helper's previews), the Signal download
 cap and RPC line bound, safe Signal suffixes, a UUID-keyed reply landing in a
-started chat, Google Messages RCS group requests, bounded contact lists, and
-helper builds watched the way the Omarchy shell watches plugins.
+started chat, Google Messages RCS group requests, bounded contact lists,
+helper builds watched the way the Omarchy shell watches plugins (across two
+real filesystems, and with layouts that are refused before any plugin write,
+including a cache folder reached through a symlink), and the cursor after
+assigned text.
 
 Earlier work in this release is also tested: Go tests feed the image converter
 PNGs with many large compressed text chunks, dimension, GIF frame-area, and
@@ -132,8 +153,7 @@ JPEG scan-count bombs, JPEG and GIF comments, and SVG, TIFF, BMP, and MP4
 bytes, and clip previews run against a real `ffmpeg`, including refused
 playlist and concat files and a hung `ffmpeg` that is stopped.
 
-Not run: the native Wayland QML suite, an update of a real installed copy, and
-any live service. Signal was tested against a simulated `signal-cli`, and
+Not run: an update of a real installed copy, and any live service. Signal was tested against a simulated `signal-cli`, and
 conversation creation against synthetic contacts; neither establishes live
 compatibility.
 

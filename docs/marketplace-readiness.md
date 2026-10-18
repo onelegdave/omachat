@@ -40,6 +40,16 @@ disappearing messages, and allowlisted cache suffixes. See
 
 No installer hook, systemd unit, downloaded executable, or automatic package
 installation is added. The helper is still built locally from vendored source.
+If no folder outside the plugin shares the helper's filesystem, the in-panel
+build now refuses before writing anything in the plugin rather than copying
+the helper in.
+
+Local evidence for v0.6.0 (October 17, 2026) includes the full native Wayland
+QML suite with mock services and isolated data, alongside the Go, Python, Node,
+and headless QML checks listed in the
+[release notes](history/RELEASE-0.6.0.md#verification-and-limits). It does not
+cover real provider accounts, a real `signal-cli`, an update of an installed
+copy, or the official baseline and maintainer review of the final SHA.
 
 ## v0.5.5 update compatibility correction
 
