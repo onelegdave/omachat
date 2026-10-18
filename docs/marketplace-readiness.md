@@ -1,17 +1,45 @@
 # Marketplace readiness
 
-## v0.5.6 remote-content correction
+## v0.6.0 update
+
+v0.6.0 is one update covering the remote-content correction below and new
+features. The correction was prepared as v0.5.6, which was never published.
+
+### Remote-content correction
 
 Review of v0.5.5 [found](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6137173525)
 that an incoming WhatsApp `image/png` document was decoded by Qt inside the
 shell, where compressed PNG text chunks are expanded with no aggregate budget.
-v0.5.6 makes the helper re-encode every image the panel displays, on every
+v0.6.0 makes the helper re-encode every image the panel displays, on every
 service, including profile photos, notification icons, and composer
 thumbnails. An independent audit of the other routes from remote content into
 the shell led to plain-text labels, external video playback, copying through
 standard input, bounded panel models and helper replies, withheld Messenger
-disappearing messages, and allowlisted Messenger cache suffixes. See
+disappearing messages, and allowlisted cache suffixes. See
 [remote content and the shell](shell-content-safety.md).
+
+### New capabilities to review
+
+- **Optional Signal service.** Off by default. When enabled it runs the
+  separately installed, GPL-3.0 `signal-cli` as a child of the shell-owned
+  helper, over JSON-RPC on standard input and output. Nothing is bundled.
+  `signal-cli` stores linked-device keys under OmaChat's private data folder.
+  Signal media follows the same preview, download-cap, and suffix rules as the
+  other services, and OmaChat deletes signal-cli's saved copies of deleted,
+  expired, view-once, and trimmed media.
+- **AUR install action.** If `signal-cli` is missing, an explicit user action
+  opens a terminal that shows the fixed `yay -S --needed signal-cli` command
+  and asks before running it; yay then shows its own transaction prompt. A
+  shell restart afterwards is also asked, not automatic. This extends the
+  declared `package-manager` and `privilege` capabilities to the AUR.
+- **Conversation creation.** Group creation sends a request through each
+  service's own protocol client and can invite or notify the chosen contacts.
+  It runs only when the user submits the picker.
+- **WhatsApp status filter.** Status and story broadcasts are no longer stored
+  as chats; this reduces stored remote content.
+
+No installer hook, systemd unit, downloaded executable, or automatic package
+installation is added. The helper is still built locally from vendored source.
 
 ## v0.5.5 update compatibility correction
 
@@ -86,7 +114,7 @@ recovery scenario. See the [release notes](history/RELEASE-0.5.0.md) and
 [credits](../CREDITS.md).
 
 Publication of this release requires a new exact-commit Marketplace update review.
-Signal and conversation creation are excluded. No installer hook, new systemd unit,
+Signal and conversation creation were excluded from v0.5.0; v0.6.0 includes them. No installer hook, new systemd unit,
 automatic package installation, or executable binary is shipped.
 
 ## Current listing and update requirements, checked October 9, 2026
@@ -97,7 +125,7 @@ records publication on September 19, 2026 and a maintainer-reviewed baseline
 with no findings and the `package-manager`, `privilege`, `service-management`,
 and `installer` capabilities. See the [publication confirmation](https://github.com/omacom/omarchy-plugin-marketplace/issues/7193#issuecomment-5741298865)
 and [registry](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/registry.json).
-This approval covers that snapshot, not v0.5.0 through v0.5.6.
+This approval covers that snapshot, not v0.5.0 through v0.6.0.
 
 Future releases use the [newer-upstream verification and publication workflow](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/VERIFICATION.md#promoting-a-plugin-update):
 provide the existing plugin ID, repository root, and full SHA of the final public

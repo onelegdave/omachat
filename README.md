@@ -5,7 +5,7 @@ and an experimental Signal integration.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.5.5**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.5.5).
+Current stable release: **0.6.0**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.6.0).
 
 ![OmaChat inbox with invented demo contacts](preview.png)
 
@@ -165,8 +165,9 @@ activity and unread state until the normal read acknowledgement succeeds.
 Group creation contacts the provider and can notify or invite participants.
 Closing the picker does not undo a submitted request. If a request times out
 or reports an uncertain result, refresh and check the service before retrying
-so you do not create a second group. Google Messages requests an RCS group;
-recipient and phone support may be required. New encrypted Messenger chats
+so you do not create a second group. Google Messages first asks the phone for
+the recipients' conversation and creates a named RCS group only when the phone
+says one is needed; recipient and phone support may be required. New encrypted Messenger chats
 must be started in Messenger and then refreshed in OmaChat. Existing encrypted
 direct chats can be reopened from the picker. Automated checks use synthetic
 contacts and do not establish live direct or group creation compatibility for
@@ -181,7 +182,10 @@ messages evicted automatically as space is needed. Telegram animated TGS/video
 stickers are unsupported, and media references need refreshing after restart.
 WhatsApp view-once/ephemeral and Telegram self-destructing media are not saved
 or reopened. Messenger disappearing and view-once messages show a placeholder,
-and their text and media are not kept. A conversation keeps up to 1,000 messages
+and their text and media are not kept. Signal keeps a disappearing message
+until its timer runs out, then removes it and every local copy of its media;
+Signal view-once media is not kept. WhatsApp status updates and stories are
+not shown as chats. A conversation keeps up to 1,000 messages
 in the panel, and each service up to 1,000 conversations; older messages remain
 in the service's own apps.
 
@@ -403,21 +407,32 @@ Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
 Community contributors include [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs),
 [Alex Vlissidis (@alexvlis)](https://github.com/alexvlis),
 [Matthias MB (@Hizoul)](https://github.com/Hizoul), [@ozz1ee-dev](https://github.com/ozz1ee-dev),
-and [HANCORE-linux](https://github.com/HANCORE-linux), who reported clipboard, attachment-download, and notification privacy issues.
+and [HANCORE-linux](https://github.com/HANCORE-linux), who reported clipboard, attachment-download, notification privacy, and image-decoding issues.
 See [community contributions and their review status](CREDITS.md#community-contributors).
-Codex and Claude have provided AI assistance with code and reviews.
+See [AI assistance](#ai-assistance) for how AI tools contribute.
 
 The helper is adapted from [Marc Ford's gmessages-omarchy-plugin](https://github.com/MarcFord/gmessages-omarchy-plugin).
 Google Messages uses [mautrix libgm](https://github.com/mautrix/gmessages),
 WhatsApp uses [whatsmeow](https://github.com/tulir/whatsmeow), Telegram uses
-[gotd/td](https://github.com/gotd/td), and Messenger uses
-[mautrix-meta](https://github.com/mautrix/meta).
+[gotd/td](https://github.com/gotd/td), Messenger uses
+[mautrix-meta](https://github.com/mautrix/meta), and the optional Signal
+service runs the separately installed [signal-cli](https://github.com/AsamK/signal-cli).
 
 OmaChat v0.4.3 and later is licensed under AGPL-3.0-or-later. Earlier OmaChat
 releases retain their original MIT grant. Vendored dependencies retain their
 own terms, including the AGPL terms for libgm and mautrix-meta and the MPL-2.0
 license for whatsmeow. See
 [Credits and third-party notices](CREDITS.md), [LICENSE](LICENSE), and [NOTICE](NOTICE).
+
+## AI assistance
+
+OneLegDave directs, reviews, and publishes OmaChat with help from AI coding
+tools. Claude (Anthropic) writes much of the code, including the 0.6.0
+integration of the Signal, new-conversation, and WhatsApp status contributions
+and its fixes and tests. Codex (OpenAI) reviews changes, audits
+security-sensitive routes such as remote content reaching the shell, and has
+also written code. Earlier releases had code and reviews from both. Community
+contributors wrote their own patches and keep their commit authorship.
 
 Other plugins: [OmaDroid](https://github.com/onelegdave/omadroid) and
 [System QuikView](https://github.com/onelegdave/system-quikview).

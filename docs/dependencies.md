@@ -3,8 +3,8 @@
 [OmaChat](../README.md) never installs dependencies automatically. Settings
 includes read-only availability checks with **Review source**, **Install**, and **Recheck**
 actions. Install is offered for missing tools and opens a terminal, showing the
-exact command before asking for confirmation. Pacman—or Yay for the optional
-Signal AUR package—then shows its transaction and asks for confirmation too.
+exact command before asking for confirmation. Pacman, or Yay for the optional
+Signal AUR package, then shows its transaction and asks for confirmation too.
 Cancelling either prompt installs nothing.
 
 Only fixed, known Arch package names can be passed to this action. It does not
@@ -77,8 +77,10 @@ review and confirm the fixed `yay -S --needed signal-cli` command there. The
 package manager still asks before changing the system. You may instead install
 a current release using the upstream instructions, confirm
 `signal-cli --version` works, then enable Signal
-under Settings > Services. OmaChat starts `signal-cli` as its own child process;
-disabling Signal stops that process while retaining the linked-device keys.
+under Settings > Services. After a successful install, the terminal asks
+whether to restart the Omarchy shell so Signal can start now; restarting is
+your choice. OmaChat starts `signal-cli` as its own child process; disabling
+Signal stops that process while retaining the linked-device keys.
 
 Select **Link Signal**, then scan the QR code from Signal on your phone under
 Settings > Linked devices > Link a new device. OmaChat stores chat history

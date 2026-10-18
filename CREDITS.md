@@ -31,7 +31,7 @@ remain alongside their code in [vendor/](vendor/). The inventory below links
 the retained notices directly.
 
 Created and maintained by [OneLegDave](https://www.onelegdave.dev/)
-([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Codex and Claude.
+([GitHub](https://github.com/onelegdave) · [X](https://x.com/OneLegDavePDX)), with AI assistance from Claude and Codex.
 
 ## Community contributors
 
@@ -41,16 +41,17 @@ they complete verification and release review.
 
 | Contributor | Contribution | Current status |
 | --- | --- | --- |
-| [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs) | Original [empty-thread unread fix](https://github.com/onelegdave/omachat/pull/2), [Git-independent build fix](https://github.com/onelegdave/omachat/pull/3), and [Messenger read-state fix](https://github.com/onelegdave/omachat/pull/5); [automatic pop-out](https://github.com/onelegdave/omachat/pull/7); proposed [Signal support](https://github.com/onelegdave/omachat/pull/4), [conversation creation](https://github.com/onelegdave/omachat/pull/6) | Build, unread/read-state, and pop-out changes included in v0.5.0 with original commit authorship; Signal and conversation creation under review |
+| [Andrew Birklid (@tumbleweedlabs)](https://github.com/tumbleweedlabs) | Original [empty-thread unread fix](https://github.com/onelegdave/omachat/pull/2), [Git-independent build fix](https://github.com/onelegdave/omachat/pull/3), and [Messenger read-state fix](https://github.com/onelegdave/omachat/pull/5); [automatic pop-out](https://github.com/onelegdave/omachat/pull/7); [Signal support](https://github.com/onelegdave/omachat/pull/4) and [direct and group conversation creation](https://github.com/onelegdave/omachat/pull/6) | Build, unread/read-state, and pop-out changes included in v0.5.0; Signal and conversation creation included in v0.6.0; all with original commit authorship |
 | [Alex Vlissidis (@alexvlis)](https://github.com/alexvlis) | [Chat restoration, sidebar controls, desktop notifications, and Telegram photos](https://github.com/onelegdave/omachat/pull/8), including reopening at the latest messages | Included in v0.5.0 with original commit authorship |
-| [Matthias MB (@Hizoul)](https://github.com/Hizoul) | [Combined contribution branch and additional keyboard, emoji, history, photo, and unified-inbox work](https://github.com/onelegdave/omachat/pull/9); [Signal testing feedback](https://github.com/onelegdave/omachat/pull/4#issuecomment-5893757340) | Keyboard, offline emoji, bounded WhatsApp history/photos, and optional unified inbox included in v0.5.0 with original authorship; shared work remains credited to its original contributors |
-| [@ozz1ee-dev](https://github.com/ozz1ee-dev) | [Detailed build-loop reproduction and proposed staging approach](https://github.com/onelegdave/omachat/issues/1) | Report informed the build fix included in v0.5.0 |
-| [HANCORE-linux](https://github.com/HANCORE-linux) | [Native Wayland clipboard resource-exhaustion finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6104289546), follow-up editor guidance, [attachment-download limit bypass](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6122021629), [notification text exposure](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6128565247), and [PNG text-chunk memory exhaustion](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6137173525) during Marketplace review | Clipboard corrections included in v0.5.1/v0.5.2; attachment correction included in v0.5.3; notification correction included in v0.5.4/v0.5.5; image correction included in v0.5.6 |
+| [Matthias MB (@Hizoul)](https://github.com/Hizoul) | [Combined contribution branch and additional keyboard, emoji, history, photo, and unified-inbox work](https://github.com/onelegdave/omachat/pull/9), including the WhatsApp status and story filter; [Signal testing feedback](https://github.com/onelegdave/omachat/pull/4#issuecomment-5893757340) | Keyboard, offline emoji, bounded WhatsApp history/photos, and optional unified inbox included in v0.5.0; status filter and formatting fixes included in v0.6.0; all with original authorship; shared work remains credited to its original contributors |
+| [@ozz1ee-dev](https://github.com/ozz1ee-dev) | [Detailed build-loop reproduction and proposed staging approach](https://github.com/onelegdave/omachat/issues/1) | Report informed the build fix included in v0.5.0 and its follow-up in v0.6.0 |
+| [HANCORE-linux](https://github.com/HANCORE-linux) | [Native Wayland clipboard resource-exhaustion finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6104289546), follow-up editor guidance, [attachment-download limit bypass](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6122021629), [notification text exposure](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6128565247), and [PNG text-chunk memory exhaustion](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6137173525) during Marketplace review | Clipboard corrections included in v0.5.1/v0.5.2; attachment correction included in v0.5.3; notification correction included in v0.5.4/v0.5.5; image correction included in v0.6.0 |
 
 Original contributor commits are retained in the integration history. Release
 notes name contributors whose work is included in each release. OneLegDave
-remains the maintainer. Codex assists with review, integration, and verification;
-historical Claude assistance and upstream copyright notices remain credited.
+remains the maintainer. Claude writes much of the code and Codex reviews and
+audits it; see [AI assistance](README.md#ai-assistance). Earlier assistance and
+upstream copyright notices remain credited.
 
 The maintainer reports successful fresh-install use with Google Messages disabled.
 Google Messages was not tested in this acceptance pass. The unified-inbox status
@@ -66,6 +67,8 @@ This feedback does not establish every provider or recovery scenario.
 - [github.com/cenkalti/backoff/v4/LICENSE](vendor/github.com/cenkalti/backoff/v4/LICENSE)
 - [github.com/cespare/xxhash/v2/LICENSE.txt](vendor/github.com/cespare/xxhash/v2/LICENSE.txt)
 - [github.com/coder/websocket/LICENSE.txt](vendor/github.com/coder/websocket/LICENSE.txt)
+- [github.com/coreos/go-systemd/v22/LICENSE](vendor/github.com/coreos/go-systemd/v22/LICENSE)
+- [github.com/coreos/go-systemd/v22/NOTICE](vendor/github.com/coreos/go-systemd/v22/NOTICE)
 - [github.com/dlclark/regexp2/LICENSE](vendor/github.com/dlclark/regexp2/LICENSE)
 - [github.com/elliotchance/orderedmap/v3/LICENSE](vendor/github.com/elliotchance/orderedmap/v3/LICENSE)
 - [github.com/fatih/color/LICENSE.md](vendor/github.com/fatih/color/LICENSE.md)
@@ -77,11 +80,14 @@ This feedback does not establish every provider or recovery scenario.
 - [github.com/go-faster/yaml/LICENSE-MIT](vendor/github.com/go-faster/yaml/LICENSE-MIT)
 - [github.com/go-faster/yaml/NOTICE](vendor/github.com/go-faster/yaml/NOTICE)
 - [github.com/godbus/dbus/v5/LICENSE](vendor/github.com/godbus/dbus/v5/LICENSE)
+- [github.com/google/go-querystring/LICENSE](vendor/github.com/google/go-querystring/LICENSE)
 - [github.com/google/uuid/LICENSE](vendor/github.com/google/uuid/LICENSE)
 - [github.com/gotd/ige/LICENSE](vendor/github.com/gotd/ige/LICENSE)
 - [github.com/gotd/log/LICENSE](vendor/github.com/gotd/log/LICENSE)
 - [github.com/gotd/neo/LICENSE](vendor/github.com/gotd/neo/LICENSE)
 - [github.com/gotd/td/LICENSE](vendor/github.com/gotd/td/LICENSE)
+- [github.com/icholy/digest/LICENSE](vendor/github.com/icholy/digest/LICENSE)
+- [github.com/imroc/req/v3/LICENSE](vendor/github.com/imroc/req/v3/LICENSE)
 - [github.com/klauspost/compress/LICENSE](vendor/github.com/klauspost/compress/LICENSE)
 - [github.com/klauspost/compress/internal/snapref/LICENSE](vendor/github.com/klauspost/compress/internal/snapref/LICENSE)
 - [github.com/klauspost/compress/zstd/internal/xxhash/LICENSE.txt](vendor/github.com/klauspost/compress/zstd/internal/xxhash/LICENSE.txt)
@@ -90,11 +96,19 @@ This feedback does not establish every provider or recovery scenario.
 - [github.com/mattn/go-sqlite3/LICENSE](vendor/github.com/mattn/go-sqlite3/LICENSE)
 - [github.com/ogen-go/ogen/LICENSE](vendor/github.com/ogen-go/ogen/LICENSE)
 - [github.com/petermattis/goid/LICENSE](vendor/github.com/petermattis/goid/LICENSE)
+- [github.com/quic-go/qpack/LICENSE.md](vendor/github.com/quic-go/qpack/LICENSE.md)
+- [github.com/quic-go/quic-go/LICENSE](vendor/github.com/quic-go/quic-go/LICENSE)
 - [github.com/refraction-networking/utls/LICENSE](vendor/github.com/refraction-networking/utls/LICENSE)
 - [github.com/refraction-networking/utls/dicttls/LICENSE](vendor/github.com/refraction-networking/utls/dicttls/LICENSE)
+- [github.com/rs/xid/LICENSE](vendor/github.com/rs/xid/LICENSE)
 - [github.com/rs/zerolog/LICENSE](vendor/github.com/rs/zerolog/LICENSE)
+- [github.com/rs/zerolog/hlog/internal/mutil/LICENSE](vendor/github.com/rs/zerolog/hlog/internal/mutil/LICENSE)
 - [github.com/segmentio/asm/LICENSE](vendor/github.com/segmentio/asm/LICENSE)
 - [github.com/shopspring/decimal/LICENSE](vendor/github.com/shopspring/decimal/LICENSE)
+- [github.com/tidwall/gjson/LICENSE](vendor/github.com/tidwall/gjson/LICENSE)
+- [github.com/tidwall/match/LICENSE](vendor/github.com/tidwall/match/LICENSE)
+- [github.com/tidwall/pretty/LICENSE](vendor/github.com/tidwall/pretty/LICENSE)
+- [github.com/tidwall/sjson/LICENSE](vendor/github.com/tidwall/sjson/LICENSE)
 - [github.com/vektah/gqlparser/v2/LICENSE](vendor/github.com/vektah/gqlparser/v2/LICENSE)
 - [github.com/yuin/goldmark/LICENSE](vendor/github.com/yuin/goldmark/LICENSE)
 - [go.mau.fi/libsignal/LICENSE](vendor/go.mau.fi/libsignal/LICENSE)
@@ -104,6 +118,7 @@ This feedback does not establish every provider or recovery scenario.
 - [go.mau.fi/mautrix-meta/LICENSE.exceptions](vendor/go.mau.fi/mautrix-meta/LICENSE.exceptions)
 - [go.mau.fi/util/LICENSE](vendor/go.mau.fi/util/LICENSE)
 - [go.mau.fi/whatsmeow/LICENSE](vendor/go.mau.fi/whatsmeow/LICENSE)
+- [go.mau.fi/zeroconfig/LICENSE](vendor/go.mau.fi/zeroconfig/LICENSE)
 - [go.opentelemetry.io/otel/LICENSE](vendor/go.opentelemetry.io/otel/LICENSE)
 - [go.opentelemetry.io/otel/metric/LICENSE](vendor/go.opentelemetry.io/otel/metric/LICENSE)
 - [go.opentelemetry.io/otel/trace/LICENSE](vendor/go.opentelemetry.io/otel/trace/LICENSE)
@@ -112,6 +127,7 @@ This feedback does not establish every provider or recovery scenario.
 - [go.uber.org/zap/LICENSE](vendor/go.uber.org/zap/LICENSE)
 - [golang.org/x/crypto/LICENSE](vendor/golang.org/x/crypto/LICENSE)
 - [golang.org/x/exp/LICENSE](vendor/golang.org/x/exp/LICENSE)
+- [golang.org/x/image/LICENSE](vendor/golang.org/x/image/LICENSE)
 - [golang.org/x/mod/LICENSE](vendor/golang.org/x/mod/LICENSE)
 - [golang.org/x/net/LICENSE](vendor/golang.org/x/net/LICENSE)
 - [golang.org/x/sync/LICENSE](vendor/golang.org/x/sync/LICENSE)
@@ -119,7 +135,11 @@ This feedback does not establish every provider or recovery scenario.
 - [golang.org/x/text/LICENSE](vendor/golang.org/x/text/LICENSE)
 - [golang.org/x/tools/LICENSE](vendor/golang.org/x/tools/LICENSE)
 - [google.golang.org/protobuf/LICENSE](vendor/google.golang.org/protobuf/LICENSE)
+- [gopkg.in/natefinch/lumberjack.v2/LICENSE](vendor/gopkg.in/natefinch/lumberjack.v2/LICENSE)
 - [gopkg.in/yaml.v2/LICENSE](vendor/gopkg.in/yaml.v2/LICENSE)
 - [gopkg.in/yaml.v2/LICENSE.libyaml](vendor/gopkg.in/yaml.v2/LICENSE.libyaml)
 - [gopkg.in/yaml.v2/NOTICE](vendor/gopkg.in/yaml.v2/NOTICE)
+- [gopkg.in/yaml.v3/LICENSE](vendor/gopkg.in/yaml.v3/LICENSE)
+- [gopkg.in/yaml.v3/NOTICE](vendor/gopkg.in/yaml.v3/NOTICE)
+- [maunium.net/go/mautrix/LICENSE](vendor/maunium.net/go/mautrix/LICENSE)
 - [rsc.io/qr/LICENSE](vendor/rsc.io/qr/LICENSE)

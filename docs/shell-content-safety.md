@@ -3,7 +3,7 @@
 OmaChat's panel runs inside the shared Omarchy shell process, together with the
 bar, notifications, and every other plugin. Anything that exhausts memory or
 hangs there takes the whole desktop shell down. Messages, names, photos, and
-attachments come from other people, so OmaChat v0.5.6 keeps all of it away from
+attachments come from other people, so OmaChat v0.6.0 keeps all of it away from
 the shell's decoders and rich-text loader, and bounds what the shell holds.
 
 [HANCORE-linux](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6137173525)
@@ -121,9 +121,14 @@ an error and an oversized event is dropped.
   and media are neither shown nor stored, matching WhatsApp. That includes the
   conversation preview, media arriving later, and later updates to the same
   message.
-- Messenger cache files get a suffix from a fixed list of image, audio, and
-  video types. A sender-chosen name such as `clip.desktop` no longer decides
-  what `xdg-open` launches.
+- Messenger and Signal cache files get a suffix from a fixed list of image,
+  audio, and video types. A sender-chosen name or MIME type such as
+  `clip.desktop` no longer decides what `xdg-open` launches.
+- Signal media reaches the panel only as helper previews, like every other
+  service. `signal-cli` runs as its own process; a download is capped at 32 MiB
+  and each line it sends the helper is bounded.
+- The new-conversation picker shows contact names as plain text, from a list
+  the helper limits to 5,000 contacts with bounded names.
 
 ## Verification
 

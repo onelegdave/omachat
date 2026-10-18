@@ -52,7 +52,7 @@ type Request struct {
 	Client string `json:"client,omitempty"`
 }
 
-// SafeClient is the Client value of panels from v0.5.6 on. The shell keeps
+// SafeClient is the Client value of panels from v0.6.0 on. The shell keeps
 // running the previous release's panel code after an update until it
 // restarts, and that code decodes downloaded originals and renders remote
 // names as rich text inside the shell. A connection that has not identified

@@ -1,8 +1,9 @@
 # OmaChat documentation
 
-The current stable release is OmaChat v0.5.6, which keeps remote images, names,
-and messages away from the shell's decoders and bounds what the panel holds. See
-the [v0.5.6 release notes](history/RELEASE-0.5.6.md) and
+The current stable release is OmaChat v0.6.0, which adds optional Signal support
+and starting new direct and group chats, and keeps remote images, names, and
+messages away from the shell's decoders. See the
+[v0.6.0 release notes](history/RELEASE-0.6.0.md) and
 [remote content and the shell](shell-content-safety.md). The
 [v0.5.5](history/RELEASE-0.5.5.md) and [v0.5.4](history/RELEASE-0.5.4.md)
 release notes cover desktop notification privacy. The
@@ -15,6 +16,7 @@ and verification limits.
 
 - [Theme screenshots with fictional chats](screenshots/README.md)
 - [Marketplace readiness and review limits](marketplace-readiness.md)
+- [0.6.0 release candidate handoff](release-handoff.md)
 - [Oldsmaru acceptance record](oldsmaru-checklist.md)
 
 - [Overview, installation, features, and removal](../README.md)
@@ -26,6 +28,7 @@ and verification limits.
 - [Signal setup and experimental scope](services/signal.md)
 - [Development and release workflow](../CONTRIBUTING.md)
 - [Security and local data](../SECURITY.md)
+- [Vendored API-key alerts](vendored-key-alerts.md)
 - [Credits and third-party notices](../CREDITS.md)
 - [Optional service selection proposal](service-selection-plan.md) (historical design; service selection is implemented)
 - [Release notes](https://github.com/onelegdave/omachat/releases)

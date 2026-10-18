@@ -19,8 +19,9 @@ does not start a process until Signal is enabled in Settings > Services.
    device and scan OmaChat's QR code.
 
 OmaChat launches `signal-cli --data-dir ~/.local/share/omachat/signal-cli
---output=json jsonRpc --receive-mode=manual` as a child of the shared helper.
-It subscribes to messages after selecting the linked account. Disabling Signal stops
+--output=json jsonRpc --receive-mode=manual --ignore-stories` as a child of the
+shared helper. It subscribes to messages after selecting the linked account.
+Stories are not shown, so signal-cli does not fetch or save them. Disabling Signal stops
 the child and hides the tab without deleting keys or local messages.
 
 ## Current features
@@ -30,7 +31,9 @@ creation and text send/receive, contact discovery, a locally accumulated convers
 incoming and outgoing attachments with captions, voice notes, and emoji
 reactions including add, replace, remove, and phone-synced updates. Attachments
 download lazily into `~/.cache/omachat/media_signal/` and are subject to the
-shared 256 MiB cache budget.
+shared 256 MiB cache budget. A received attachment over 32 MiB is not
+downloaded into OmaChat; open it on the phone. Photos appear as previews the
+helper re-encodes first, like every other service.
 
 The local inbox keeps up to 500 messages per conversation. Threads open with
 the newest 60; **Load older messages** pages through the retained local history.
@@ -44,8 +47,12 @@ contact or create a group. Signal discovery does not fill the inbox with empty
 contact or group rows until you explicitly choose one there.
 
 OmaChat honors remote deletions and removes the content of expired disappearing
-messages from its local store and media cache. View-once attachments are not
-listed or cached by OmaChat.
+messages. Their timer counts from when the message was sent, so OmaChat removes
+it no later than the phone does. Removal covers OmaChat's message store, its
+media cache, the helper's previews, and signal-cli's own saved copy of each
+attachment. View-once attachments are not listed or cached by OmaChat, and
+signal-cli's saved copy is deleted as the message arrives. Messages trimmed past
+the 500-message limit lose their media the same way.
 
 Not implemented yet: phone-history import, upstream read receipts, typing
 indicators, calls, safety-number UI, complete group administration, static
@@ -67,7 +74,9 @@ this integration for bulk or automated messaging.
 ## Starting conversations
 
 The inbox **+** picker lists contacts from the connected Signal account. A
-direct selection opens a local chat without sending a message. A group request
+direct selection opens a local chat without sending a message. The chat is
+keyed by the contact's Signal account ID, as received messages are, so their
+replies arrive in it. A group request
 uses signal-cli to create a named group and may invite the selected contacts.
 Explicitly opened chats are saved locally and survive helper restarts. Reopening
 an active chat preserves its messages and unread state until it is acknowledged.

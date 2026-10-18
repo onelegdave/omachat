@@ -1,7 +1,7 @@
 # Security
 
 This Native Omarchy Plugin talks to Google Messages, WhatsApp, Telegram,
-Messenger, and—when explicitly enabled—the external `signal-cli` process. It
+Messenger, and, when explicitly enabled, the external `signal-cli` process. It
 reads browser cookies while checking pairing profiles, pairing, changing the
 selected profile, and recovering from authentication failures. WhatsApp and
 Telegram use their QR flows. Message content and credentials are cached locally.
@@ -100,7 +100,11 @@ programs it starts. The pairing link reaches `qrencode` on standard input.
   client as an OmaChat child process. It decrypts messages and stores linked-
   device keys locally. Keep it current, revoke OmaChat from Signal's phone-side
   Linked devices screen before deleting local keys, and do not treat the local
-  text cache as an encrypted archive.
+  text cache as an encrypted archive. signal-cli saves received attachments in
+  its own data folder; OmaChat deletes that copy along with its own and the
+  helper's previews when a message is deleted, expires, is view-once, or is
+  trimmed from the local store. Downloads are capped at 32 MiB, and stories are
+  not fetched.
 - Links in messages open only after a confirm dialog, and only `http`/`https`
   URLs. Images open locally with `xdg-open` after they are already in the cache.
 - Pairing copies the browser cookie database to a 0600 tempfile so it can
@@ -121,4 +125,6 @@ available. User credentials remain local under `~/.local/share/omachat/` and are
 never committed.
 
 Upstream tracking: [mautrix/gmessages#94](https://github.com/mautrix/gmessages/issues/94)
-and [whatsmeow#1266](https://github.com/tulir/whatsmeow/issues/1266).
+and [whatsmeow#1266](https://github.com/tulir/whatsmeow/issues/1266). The exact
+locations, upstream versions, and how each string is used are recorded in
+[vendored API-key alerts](docs/vendored-key-alerts.md).
