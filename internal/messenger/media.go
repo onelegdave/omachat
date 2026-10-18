@@ -141,36 +141,8 @@ func mediaFromFB(t *waMediaTransport.WAMediaTransport, mt whatsmeow.MediaType, i
 	return m
 }
 
-// safeMediaExtensions are the only suffixes a cached file can get. The cached
-// file is handed to xdg-open, so a sender-chosen name such as "clip.desktop",
-// or a MIME type the system maps to an active format, must not choose one.
-var safeMediaExtensions = map[string]bool{
-	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".heic": true,
-	".mp4": true, ".m4v": true, ".mov": true, ".webm": true, ".mkv": true, ".3gp": true, ".f4v": true,
-	".m4a": true, ".aac": true, ".mp3": true, ".ogg": true, ".opus": true, ".amr": true, ".wav": true,
-}
-
-func mediaExtension(mimeType, name string) string {
-	if ext := strings.ToLower(filepath.Ext(name)); safeMediaExtensions[ext] {
-		return ext
-	}
-	mimeType = strings.ToLower(mimeType)
-	switch {
-	case strings.Contains(mimeType, "jpeg"):
-		return ".jpg"
-	case strings.Contains(mimeType, "png"):
-		return ".png"
-	case strings.Contains(mimeType, "gif"):
-		return ".gif"
-	case strings.Contains(mimeType, "webp"):
-		return ".webp"
-	case strings.HasPrefix(mimeType, "audio/"):
-		return ".audio"
-	case strings.HasPrefix(mimeType, "video/"):
-		return ".video"
-	}
-	return ".bin"
-}
+// mediaExtension picks a cached file's suffix; see store.SafeMediaExtension.
+func mediaExtension(mimeType, name string) string { return appStore.SafeMediaExtension(mimeType, name) }
 
 func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (wire.MediaResult, error) {
 	key := p.Key

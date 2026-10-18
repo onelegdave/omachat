@@ -196,3 +196,26 @@ func TestSignalCLIIgnoresStories(t *testing.T) {
 		}
 	}
 }
+
+// Signal is opt-in: a helper that has never used it writes no Signal inbox.
+func TestUnusedSignalWritesNoInbox(t *testing.T) {
+	paths := testPaths(t)
+	New(zerolog.Nop(), paths, nil).Stop()
+	if _, err := os.Lstat(paths.SignalStoreFile()); !os.IsNotExist(err) {
+		t.Fatalf("Signal inbox created without use: %v", err)
+	}
+}
+
+// Cached files are opened with xdg-open, so the sender's name and MIME type
+// cannot choose an active suffix.
+func TestSignalMediaSuffixComesFromAFixedList(t *testing.T) {
+	b, fake, _ := startedBackend(t)
+	fake.notify(json.RawMessage(`{"envelope":{"sourceNumber":"+15550002222","dataMessage":{"timestamp":1700000000000,"attachments":[{"id":"run","contentType":"application/x-desktop","filename":"clip.desktop","size":5}]}}}`))
+	result, err := b.Media(context.Background(), wire.MediaParams{Key: mediaPrefix + "run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ext := filepath.Ext(result.Path); ext != ".bin" {
+		t.Fatalf("cached suffix = %q", ext)
+	}
+}

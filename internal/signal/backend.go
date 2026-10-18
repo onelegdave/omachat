@@ -62,7 +62,10 @@ type Backend struct {
 func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *Backend {
 	data := emptyStoredData()
 	var storeErr error
+	existing := false
 	if paths != nil {
+		_, statErr := os.Lstat(paths.SignalStoreFile())
+		existing = statErr == nil
 		data, storeErr = loadStoredData(paths.SignalStoreFile())
 	}
 	b := &Backend{
@@ -79,7 +82,11 @@ func New(log zerolog.Logger, paths *appStore.Paths, publish func(wire.Event)) *B
 	b.pruneExpiredLocked(time.Now().UnixMilli())
 	b.recountUnreadLocked()
 	b.scheduleExpirationsLocked()
-	_ = b.saveLocked()
+	// Persist migrations and expiry of an existing inbox. Signal is opt-in,
+	// so a helper that has never used it writes nothing.
+	if existing {
+		_ = b.saveLocked()
+	}
 	b.mu.Unlock()
 	return b
 }
@@ -994,10 +1001,9 @@ func (b *Backend) writeMedia(key string, attachment wire.Attachment, encoded str
 	if b.paths == nil {
 		return "", errors.New("Signal media storage is unavailable")
 	}
-	ext := ""
-	if extensions, _ := mime.ExtensionsByType(attachment.MimeType); len(extensions) > 0 {
-		ext = extensions[0]
-	}
+	// The file is opened with xdg-open, so the sender's MIME type and name
+	// must not pick an active suffix such as .desktop.
+	ext := appStore.SafeMediaExtension(attachment.MimeType, attachment.Name)
 	hash := sha256.Sum256([]byte(key))
 	path := filepath.Join(b.paths.SignalMediaDir(), fmt.Sprintf("%x%s", hash[:16], ext))
 	tmp, err := os.CreateTemp(b.paths.SignalMediaDir(), ".signal-media-*")
