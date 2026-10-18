@@ -190,6 +190,126 @@ with patch.object(u, 'state_path', return_value=Path(sys.argv[3])), patch.object
                     watcher.terminate()
                     watcher.communicate(timeout=5)
 
+    @unittest.skipUnless(shutil.which('inotifywait'), 'inotifywait is needed for the reload regression')
+    def test_shell_watch_of_plugins_folder_sees_only_the_final_install(self):
+        # The shell watches the whole plugins folder and maps each event to a
+        # plugin, ignoring hidden top-level entries (Omarchy PluginRegistry
+        # localPluginIdForPath). Staging must produce no mapped event before
+        # the helper is complete, on a first build and on a rebuild.
+        code = '''import importlib.util, sys, time
+from pathlib import Path
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location('updates', sys.argv[1])
+u = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(u)
+u.ROOT = Path(sys.argv[2])
+def compile(argv, **kwargs):
+    out = Path(argv[argv.index('-o') + 1])
+    out.write_text('partial')
+    time.sleep(0.3)
+    out.write_text('complete')
+with patch.object(u, 'state_path', return_value=Path(sys.argv[3])), patch.object(u.subprocess, 'run', side_effect=compile):
+    u.build()
+'''
+        plugins = self.fixture
+        # Build state lives outside the plugins folder, as in a real profile.
+        state = tempfile.TemporaryDirectory()
+        self.addCleanup(state.cleanup)
+        state_file = Path(state.name) / 'omachat/updates.json'
+        def plugin_for(path):
+            relative = path[len(str(plugins)) + 1:]
+            if not relative or relative.startswith('.') or '/.git/' in relative:
+                return ''
+            return relative.split('/', 1)[0]
+        for existing in (False, True):
+            with self.subTest(existing_helper=existing):
+                if existing:
+                    (self.root / 'bin/omachatd').write_text('old')
+                watcher = subprocess.Popen(['inotifywait', '-m', '-r', '-e',
+                    'close_write,create,delete,move', '--format', '%w%f', str(plugins)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                builder = None
+                try:
+                    ready = b''
+                    while b'Watches established.' not in ready:
+                        self.assertTrue(select.select([watcher.stderr], [], [], 5)[0], 'Watcher did not start')
+                        chunk = os.read(watcher.stderr.fileno(), 4096)
+                        self.assertTrue(chunk, 'Watcher exited before establishing watches')
+                        ready += chunk
+                    builder = subprocess.Popen([sys.executable, '-B', '-c', code,
+                        str(Path(u.__file__)), str(self.root), str(state_file)],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    buffered = b''
+                    while True:
+                        self.assertTrue(select.select([watcher.stdout], [], [], 5)[0], 'No installation event')
+                        buffered += os.read(watcher.stdout.fileno(), 4096)
+                        lines = buffered.split(b'\n')
+                        buffered = lines.pop()
+                        # Any mapped event reloads every plugin, this one included.
+                        if any(plugin_for(line.decode()) for line in lines):
+                            break
+                    # Act as the shell's reload: stop the builder at once.
+                    if builder.poll() is None:
+                        builder.kill()
+                    _, error = builder.communicate(timeout=5)
+                    self.assertEqual((self.root / 'bin/omachatd').read_text(), 'complete', error.decode())
+                    self.assertEqual(list((self.root / 'bin').glob('.omachatd-*')), [])
+                finally:
+                    if builder and builder.poll() is None:
+                        builder.kill()
+                        builder.communicate(timeout=5)
+                    watcher.terminate()
+                    watcher.communicate(timeout=5)
+
+    def test_build_removes_leftovers_from_releases_before_0_5_0(self):
+        bin_dir = self.root / 'bin'
+        bin_dir.mkdir()
+        for name in ('.omachatd-s8kcvop7', '.omachatd-f79dnwzl', '.build.lock'):
+            (bin_dir / name).write_text('leftover')
+        outside = self.fixture / 'keep'
+        outside.write_text('keep')
+        (bin_dir / '.omachatd-link').symlink_to(outside)
+        with patch.object(u.subprocess, 'run', side_effect=lambda argv, **kwargs: Path(argv[argv.index('-o') + 1]).write_text('complete')):
+            u.build()
+        self.assertEqual(sorted(p.name for p in bin_dir.iterdir()), ['.omachatd-link', 'omachatd'])
+        self.assertEqual(outside.read_text(), 'keep')
+
+    def test_cross_filesystem_install_stays_atomic(self):
+        # A rename between filesystems fails with EXDEV. The helper is then
+        # copied beside its destination and renamed there, never written in
+        # place, and nothing temporary is left behind.
+        real_replace = os.replace
+        def replace(source, destination):
+            if Path(source).parent != Path(destination).parent:
+                raise OSError(u.errno.EXDEV, 'Invalid cross-device link')
+            return real_replace(source, destination)
+        compile = lambda argv, **kwargs: Path(argv[argv.index('-o') + 1]).write_text('complete')
+        for existing in (False, True):
+            with self.subTest(existing_helper=existing):
+                if existing:
+                    (self.root / 'bin/omachatd').write_text('old')
+                with patch.object(u.subprocess, 'run', side_effect=compile), patch.object(u.os, 'replace', side_effect=replace):
+                    u.build()
+                helper = self.root / 'bin/omachatd'
+                self.assertEqual(helper.read_text(), 'complete')
+                self.assertEqual(helper.stat().st_mode & 0o777, 0o755)
+                self.assertEqual(list((self.root / 'bin').glob('.omachatd-*')), [])
+                self.assertEqual(list(self.fixture.glob('.omachat-build-*')), [])
+
+    def test_staging_prefers_a_hidden_sibling_on_the_plugin_filesystem(self):
+        self.assertEqual(u.staging_parent(), self.root.parent)
+        cache = self.fixture / 'cache'
+        real_stat = os.stat
+        def stat(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if Path(path) == self.root.parent:
+                fields = list(result)
+                fields[2] = result.st_dev + 1  # st_dev
+                return os.stat_result(fields)
+            return result
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(cache)}), patch.object(u.os, 'stat', side_effect=stat):
+            self.assertEqual(u.staging_parent(), cache / 'omachat')
+
     def test_build_replacement_and_mid_build_change(self):
         def compile(argv, **kwargs):
             self.assertEqual(kwargs['env']['GOPROXY'], 'off')

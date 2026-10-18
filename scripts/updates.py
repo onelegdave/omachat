@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Public release checks and explicit, offline helper builds. No package installs."""
 import argparse
+import errno
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -131,6 +133,68 @@ def update_state(action):
         return dict(data, installed=installed(), error=error)
 
 
+def cache_dir():
+    return Path(os.environ.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'omachat'
+
+
+def staging_parent():
+    """Pick where to build: outside the shell's view, on the plugin's filesystem.
+
+    The shell reloads a plugin on every write within it, but ignores hidden
+    entries at the top of its plugins folder, so a hidden sibling of ROOT is
+    the first choice. A rename is only atomic within one filesystem; if the
+    sibling is elsewhere, the cache folder is tried, and failing both the
+    finished helper is copied next to its destination before the rename.
+    """
+    device = os.stat(ROOT).st_dev
+    for candidate in (ROOT.parent, cache_dir()):
+        try:
+            candidate.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if candidate.resolve().is_relative_to(ROOT.resolve()):
+                continue
+            if os.stat(candidate).st_dev == device:
+                return candidate
+        except OSError:
+            continue
+    return ROOT.parent
+
+
+def sync_file(path):
+    with open(path, 'rb') as stream:
+        os.fsync(stream.fileno())
+
+
+def replace_file(source, destination):
+    """Atomically put source at destination, copying first across filesystems."""
+    try:
+        os.replace(source, destination)
+        return
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+    fd, name = tempfile.mkstemp(dir=destination.parent, prefix='.omachatd-')
+    try:
+        with os.fdopen(fd, 'wb') as out, open(source, 'rb') as stream:
+            shutil.copyfileobj(stream, out, 1024 * 1024)
+            out.flush()
+            os.fsync(out.fileno())
+        os.chmod(name, 0o755)
+        os.replace(name, destination)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def remove_build_leftovers(target):
+    """Remove partial helpers and the old lock left in bin by releases before 0.5.0."""
+    for leftover in list(target.glob('.omachatd-*')) + [target / '.build.lock']:
+        try:
+            if leftover.is_file() and not leftover.is_symlink():
+                leftover.unlink()
+        except OSError:
+            pass
+
+
 def build():
     target = ROOT / 'bin'
     lock_dir = state_path().parent
@@ -141,9 +205,7 @@ def build():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         source = source_id()
         release = installed()
-        # The shell reloads plugins on every write within ROOT. A hidden sibling
-        # is ignored by its watcher and normally shares the install filesystem.
-        with tempfile.TemporaryDirectory(dir=ROOT.parent, prefix='.omachat-build-') as stage:
+        with tempfile.TemporaryDirectory(dir=staging_parent(), prefix='.omachat-build-') as stage:
             staged_bin = Path(stage) / 'bin'
             staged_bin.mkdir(mode=0o755)
             name = staged_bin / 'omachatd'
@@ -156,12 +218,22 @@ def build():
             if source_id() != source or installed() != release:
                 raise RuntimeError('Source changed during the build. Please rebuild again.')
             os.chmod(name, 0o755)
+            sync_file(name)
+            # Nothing above wrote inside ROOT. The rename below is the first
+            # write the shell sees; a reload it causes can only follow it.
             if target.is_dir():
-                os.replace(name, target / 'omachatd')
+                replace_file(name, target / 'omachatd')
             else:
                 # First install publishes the directory and complete helper at
                 # once; creating an empty bin earlier would also trigger reload.
-                os.replace(staged_bin, target)
+                try:
+                    os.replace(staged_bin, target)
+                except OSError as exc:
+                    if exc.errno != errno.EXDEV:
+                        raise
+                    target.mkdir(mode=0o755, exist_ok=True)
+                    replace_file(name, target / 'omachatd')
+            remove_build_leftovers(target)
     return {'sourceID': source, 'installed': release}
 
 
