@@ -92,7 +92,7 @@ func newPreviewCache(paths *store.Paths) *previewCache {
 // service removes its previews along with everything else it cached.
 func (p *previewCache) previewDir(src string) string {
 	dir := filepath.Dir(src)
-	for _, media := range []string{p.paths.MediaDir(), p.paths.WhatsAppMediaDir(), p.paths.TelegramMediaDir(), p.paths.MessengerMediaDir()} {
+	for _, media := range []string{p.paths.MediaDir(), p.paths.WhatsAppMediaDir(), p.paths.TelegramMediaDir(), p.paths.MessengerMediaDir(), p.paths.SignalMediaDir()} {
 		if dir == filepath.Clean(media) {
 			return filepath.Join(dir, previewDirName)
 		}
@@ -117,6 +117,7 @@ func (p *previewCache) forget(network string) {
 		wire.NetworkWhatsApp:  p.paths.WhatsAppMediaDir(),
 		wire.NetworkTelegram:  p.paths.TelegramMediaDir(),
 		wire.NetworkMessenger: p.paths.MessengerMediaDir(),
+		wire.NetworkSignal:    p.paths.SignalMediaDir(),
 	}[network]
 	p.convertMu.Lock()
 	defer p.convertMu.Unlock()

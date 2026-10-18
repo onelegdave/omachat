@@ -24,7 +24,7 @@ func openGateConn(t *testing.T, d *Daemon) *gateConn {
 	t.Cleanup(func() { cancel(); client.Close() })
 	go d.handleConn(ctx, server)
 	c := &gateConn{t: t, client: client, reader: bufio.NewReader(client)}
-	for i := 0; i < 4; i++ { // initial status for each backend
+	for range wire.KnownNetworks { // initial status for each backend
 		if evt := c.read(); evt["event"] != wire.EventStatus {
 			t.Fatalf("initial frame was not status: %v", evt)
 		}

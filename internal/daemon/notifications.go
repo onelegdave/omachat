@@ -50,7 +50,7 @@ func notificationKey(target wire.NotificationTarget) string {
 // command line that other local accounts can read through /proc. Conversation
 // names and message text therefore stay inside OmaChat.
 func notificationText(network string) (string, string) {
-	service := map[string]string{"gmessages": "Google Messages", "whatsapp": "WhatsApp", "telegram": "Telegram", "messenger": "Messenger"}[network]
+	service := map[string]string{"gmessages": "Google Messages", "whatsapp": "WhatsApp", "telegram": "Telegram", "messenger": "Messenger", "signal": "Signal"}[network]
 	return "OmaChat · " + service, "New message"
 }
 
@@ -225,6 +225,8 @@ func (d *Daemon) handleNotificationRequest(ctx context.Context, req wire.Request
 		ready = d.tg != nil && d.tg.Status().State == wire.StateConnected
 	case wire.NetworkMessenger:
 		ready = d.fb != nil && d.fb.Status().State == wire.StateConnected
+	case wire.NetworkSignal:
+		ready = d.sg != nil && d.sg.Status().State == wire.StateConnected
 	}
 	if !ready {
 		return wire.Response{ID: req.ID, OK: true, Result: false}
@@ -275,6 +277,11 @@ func (d *Daemon) conversationsFor(network, conversationID string) ([]wire.Conver
 			conversations = d.fb.Conversations(0)
 		}
 		directory = d.paths.MessengerMediaDir()
+	case wire.NetworkSignal:
+		if d.sg != nil {
+			conversations = d.sg.Conversations(0)
+		}
+		directory = d.paths.SignalMediaDir()
 	}
 	return conversations, directory
 }

@@ -90,7 +90,7 @@ func TestConnectionDrainsStoreWritersBeforeReturning(t *testing.T) {
 	done := make(chan struct{})
 	go func() { d.handleConn(ctx, conn); close(done) }()
 	reader := bufio.NewReader(client)
-	for i := 0; i < 4; i++ {
+	for range wire.KnownNetworks {
 		if _, err := reader.ReadString('\n'); err != nil {
 			t.Fatal(err)
 		}

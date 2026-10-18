@@ -40,6 +40,24 @@ type rpcReply struct {
 	err    error
 }
 
+type pendingCall struct {
+	method string
+	reply  chan rpcReply
+}
+
+// maxRPCLineBytes bounds one line from signal-cli. getAttachment returns the
+// attachment base64-encoded on one line, so the limit sits just above the
+// encoding of the largest attachment OmaChat accepts.
+const maxRPCLineBytes = maxIncomingMediaBytes/3*4 + 1<<20
+
+// signalCLIArgs starts signal-cli in JSON-RPC mode. Receiving starts only
+// after Backend has selected its account; otherwise startup notifications can
+// arrive before listAccounts has completed. Stories are not shown, so they are
+// not fetched or saved either.
+func signalCLIArgs(dataDir string) []string {
+	return []string{"--data-dir", dataDir, "--output=json", "jsonRpc", "--receive-mode=manual", "--ignore-stories"}
+}
+
 // RPCClient owns one signal-cli jsonRpc child. The child is deliberately tied
 // to OmaChat's service lifetime rather than installed as a system service.
 type RPCClient struct {
@@ -48,7 +66,7 @@ type RPCClient struct {
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
 	cancel  context.CancelFunc
-	pending map[string]chan rpcReply
+	pending map[string]pendingCall
 	nextID  atomic.Uint64
 	done    chan struct{}
 	waitErr error
@@ -56,7 +74,7 @@ type RPCClient struct {
 }
 
 func NewRPCClient() *RPCClient {
-	return &RPCClient{pending: make(map[string]chan rpcReply)}
+	return &RPCClient{pending: make(map[string]pendingCall)}
 }
 
 func (c *RPCClient) Start(parent context.Context, dataDir string, notify func(json.RawMessage), onExit func(error)) error {
@@ -69,9 +87,7 @@ func (c *RPCClient) Start(parent context.Context, dataDir string, notify func(js
 		return nil
 	}
 	ctx, cancel := context.WithCancel(parent)
-	// Begin receiving only after Backend has selected its account. Otherwise
-	// startup notifications can arrive before listAccounts has completed.
-	cmd := exec.CommandContext(ctx, "signal-cli", "--data-dir", dataDir, "--output=json", "jsonRpc", "--receive-mode=manual")
+	cmd := exec.CommandContext(ctx, "signal-cli", signalCLIArgs(dataDir)...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
@@ -98,13 +114,48 @@ func (c *RPCClient) Start(parent context.Context, dataDir string, notify func(js
 	return nil
 }
 
+// readLine returns the next line without its newline. A line longer than max
+// is consumed and reported as tooLong, so one oversized reply cannot stop
+// the stream.
+func readLine(r *bufio.Reader, max int) (line []byte, tooLong bool, err error) {
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if !tooLong {
+			if len(line)+len(chunk) > max+1 {
+				tooLong, line = true, nil
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		switch {
+		case err == nil:
+			if tooLong {
+				return nil, true, nil
+			}
+			return line[:len(line)-1], false, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		default:
+			return nil, false, err
+		}
+	}
+}
+
 func (c *RPCClient) readLoop(stdout io.Reader, notify func(json.RawMessage)) {
-	scanner := bufio.NewScanner(stdout)
-	// getAttachment returns base64 in a single JSON-RPC line. Keep the bound
-	// above OmaChat's attachment limit while still rejecting unbounded output.
-	scanner.Buffer(make([]byte, 8192), 144<<20)
-	for scanner.Scan() {
-		line := append([]byte(nil), scanner.Bytes()...)
+	reader := bufio.NewReaderSize(stdout, 64<<10)
+	var readErr error
+	for {
+		line, tooLong, err := readLine(reader, int(maxRPCLineBytes))
+		if err != nil {
+			readErr = err
+			break
+		}
+		if tooLong {
+			// Only getAttachment can return a line this long, and its id is
+			// inside the discarded line. Fail every download waiting for one.
+			c.failPending("getAttachment", errors.New("Signal attachment is too large to download"))
+			continue
+		}
 		var frame rpcFrame
 		if json.Unmarshal(line, &frame) != nil {
 			continue
@@ -122,12 +173,13 @@ func (c *RPCClient) readLoop(stdout io.Reader, notify func(json.RawMessage)) {
 			}
 		}
 		c.mu.Lock()
-		ch := c.pending[id]
+		call, ok := c.pending[id]
 		delete(c.pending, id)
 		c.mu.Unlock()
-		if ch == nil {
+		if !ok {
 			continue
 		}
+		ch := call.reply
 		if frame.Error != nil {
 			// Upstream messages may contain private account or message data.
 			ch <- rpcReply{err: fmt.Errorf("signal-cli RPC failed (code %d); check Signal setup and retry", frame.Error.Code)}
@@ -135,12 +187,24 @@ func (c *RPCClient) readLoop(stdout io.Reader, notify func(json.RawMessage)) {
 			ch <- rpcReply{result: frame.Result}
 		}
 	}
-	if scanner.Err() != nil {
-		c.mu.Lock()
-		cancel := c.cancel
-		c.mu.Unlock()
-		if cancel != nil {
-			cancel()
+	if errors.Is(readErr, io.EOF) {
+		return
+	}
+	c.mu.Lock()
+	cancel := c.cancel
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (c *RPCClient) failPending(method string, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id, call := range c.pending {
+		if call.method == method {
+			delete(c.pending, id)
+			call.reply <- rpcReply{err: err}
 		}
 	}
 }
@@ -155,9 +219,9 @@ func (c *RPCClient) waitLoop() {
 	}
 	c.mu.Lock()
 	c.waitErr = err
-	for id, ch := range c.pending {
+	for id, call := range c.pending {
 		delete(c.pending, id)
-		ch <- rpcReply{err: fmt.Errorf("signal-cli stopped: %w", err)}
+		call.reply <- rpcReply{err: fmt.Errorf("signal-cli stopped: %w", err)}
 	}
 	close(done)
 	onExit := c.onExit
@@ -186,7 +250,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, params any, out any
 		c.mu.Unlock()
 		return errors.New("signal-cli is not running")
 	}
-	c.pending[id] = ch
+	c.pending[id] = pendingCall{method: method, reply: ch}
 	stdin := c.stdin
 	c.mu.Unlock()
 

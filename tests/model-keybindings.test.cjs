@@ -15,7 +15,7 @@ test('default action registry documents stable ids and sensible bindings', () =>
   assert.equal(byId.nextUnread.defaultShortcut, 'u');
   assert.ok(byId.settings);
   assert.equal(byId.newConversation, undefined);
-  assert.equal(byId["service.signal"], undefined);
+  assert.equal(byId["service.signal"].defaultShortcut, '5');
   assert.equal(byId.toggleUnifiedInbox.defaultShortcut, 'Ctrl+Shift+A');
 });
 

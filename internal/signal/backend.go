@@ -28,6 +28,11 @@ const (
 	groupPrefix   = "signal:group:"
 	mediaPrefix   = "signal-media:"
 	maxMediaBytes = int64(100 << 20)
+	// maxIncomingMediaBytes bounds one received attachment. getAttachment
+	// returns it base64-encoded in one JSON line, so this also bounds the
+	// helper memory a download takes. It matches the other services' caps.
+	maxIncomingMediaBytes      = int64(32 << 20)
+	maxMessagesPerConversation = 500
 )
 
 type Backend struct {
@@ -498,6 +503,9 @@ func (b *Backend) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaRes
 			return &wire.MediaResult{Key: key, Path: attachment.Path}, nil
 		}
 	}
+	if attachment.Size > maxIncomingMediaBytes {
+		return nil, fmt.Errorf("Signal attachment exceeds %d MiB limit", maxIncomingMediaBytes>>20)
+	}
 	params := map[string]any{"account": account, "id": strings.TrimPrefix(key, mediaPrefix)}
 	if err := addConversationTarget(params, conversationID); err != nil {
 		return nil, err
@@ -820,7 +828,12 @@ func (b *Backend) handleDataMessage(conversationID, actor, actorName, conversati
 	// to the linked device; OmaChat intentionally neither lists nor caches it.
 	attachments := []wire.Attachment(nil)
 	text := data.Message
-	if !data.ViewOnce {
+	if data.ViewOnce {
+		// signal-cli has already saved the media in its own store.
+		for _, attachment := range data.Attachments {
+			b.removeSignalCLIAttachment(attachment.ID)
+		}
+	} else {
 		for _, attachment := range data.Attachments {
 			if attachment.ID != "" {
 				attachments = append(attachments, attachmentFromMetadata(attachment))
@@ -877,8 +890,18 @@ func (b *Backend) ingest(msg wire.Message, _ string) {
 		}
 	}
 	items = append(items, msg)
-	if len(items) > 500 {
-		items = items[len(items)-500:]
+	if len(items) > maxMessagesPerConversation {
+		dropped := items[:len(items)-maxMessagesPerConversation]
+		for _, old := range dropped {
+			b.removeMessageMediaLocked(old)
+			delete(b.reactionActors, old.ID)
+			delete(b.expirations, old.ID)
+			if timer := b.expiryTimers[old.ID]; timer != nil {
+				timer.Stop()
+				delete(b.expiryTimers, old.ID)
+			}
+		}
+		items = append([]wire.Message(nil), items[len(items)-maxMessagesPerConversation:]...)
 	}
 	b.messages[msg.ConversationID] = items
 	conv := b.convs[msg.ConversationID]
@@ -984,7 +1007,7 @@ func (b *Backend) writeMedia(key string, attachment wire.Attachment, encoded str
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded))
-	written, copyErr := io.Copy(tmp, io.LimitReader(decoder, maxMediaBytes+1))
+	written, copyErr := io.Copy(tmp, io.LimitReader(decoder, maxIncomingMediaBytes+1))
 	closeErr := tmp.Close()
 	if copyErr != nil {
 		return "", fmt.Errorf("decode Signal attachment: %w", copyErr)
@@ -992,8 +1015,8 @@ func (b *Backend) writeMedia(key string, attachment wire.Attachment, encoded str
 	if closeErr != nil {
 		return "", closeErr
 	}
-	if written > maxMediaBytes {
-		return "", fmt.Errorf("Signal attachment exceeds %d MiB limit", maxMediaBytes>>20)
+	if written > maxIncomingMediaBytes {
+		return "", fmt.Errorf("Signal attachment exceeds %d MiB limit", maxIncomingMediaBytes>>20)
 	}
 	if err := os.Chmod(tmpName, 0o600); err != nil {
 		return "", err
@@ -1185,6 +1208,10 @@ func (b *Backend) pruneExpiredLocked(nowMillis int64) {
 	}
 }
 
+// removeMessageMediaLocked deletes every local copy of a message's media:
+// OmaChat's cached file, the helper's previews of it, and signal-cli's own
+// download. A preview or signal-cli copy left behind would outlive a remote
+// delete or a disappearing-message timer.
 func (b *Backend) removeMessageMediaLocked(message wire.Message) {
 	if b.paths == nil {
 		return
@@ -1192,7 +1219,23 @@ func (b *Backend) removeMessageMediaLocked(message wire.Message) {
 	for _, attachment := range message.Attachments {
 		if attachment.Path != "" && strings.HasPrefix(filepath.Clean(attachment.Path), filepath.Clean(b.paths.SignalMediaDir())+string(os.PathSeparator)) {
 			_ = os.Remove(attachment.Path)
+			appStore.RemovePreviews(attachment.Path)
 		}
+		if strings.HasPrefix(attachment.Key, mediaPrefix) {
+			b.removeSignalCLIAttachment(attachment.MediaID)
+		}
+	}
+}
+
+// removeSignalCLIAttachment deletes signal-cli's saved copy of a received
+// attachment. signal-cli names the file by the attachment id it reports.
+func (b *Backend) removeSignalCLIAttachment(id string) {
+	if b.paths == nil || id == "" || id != filepath.Base(id) || strings.HasPrefix(id, ".") || strings.ContainsAny(id, `/\`) {
+		return
+	}
+	path := filepath.Join(b.paths.SignalDataDir(), "attachments", id)
+	if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+		_ = os.Remove(path)
 	}
 }
 

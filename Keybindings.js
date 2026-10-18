@@ -15,7 +15,8 @@ var ACTIONS = [
   { id: "service.gmessages", label: "Switch to Google Messages", category: "Services", context: "navigation", defaultShortcut: "1", keywords: "google messages" },
   { id: "service.whatsapp", label: "Switch to WhatsApp", category: "Services", context: "navigation", defaultShortcut: "2", keywords: "" },
   { id: "service.telegram", label: "Switch to Telegram", category: "Services", context: "navigation", defaultShortcut: "3", keywords: "" },
-  { id: "service.messenger", label: "Switch to Messenger", category: "Services", context: "navigation", defaultShortcut: "4", keywords: "facebook meta" }
+  { id: "service.messenger", label: "Switch to Messenger", category: "Services", context: "navigation", defaultShortcut: "4", keywords: "facebook meta" },
+  { id: "service.signal", label: "Switch to Signal", category: "Services", context: "navigation", defaultShortcut: "5", keywords: "" }
 ]
 
 function buildUnifiedConversations(sources) {
