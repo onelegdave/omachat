@@ -93,6 +93,25 @@ ShellRoot {
           check(field.text === "raft ?" && field.cursorPosition === 0, "deleting at the start keeps the cursor there")
           field.undo()
           check(field.text === "draft ?" && field.cursorPosition < field.length, "undo keeps its own cursor placement")
+          // Edits at the start straight after an assignment, with nothing to undo yet.
+          field.text = "hello"; field.cursorPosition = 0
+          keyboard.keyClick(Qt.Key_Delete, Qt.NoModifier, 0)
+          check(field.text === "ello" && field.cursorPosition === 0, "Delete at the start after an assignment keeps the cursor there")
+          field.text = "hello"; field.cursorPosition = 1
+          keyboard.keyClick(Qt.Key_Backspace, Qt.NoModifier, 0)
+          check(field.text === "ello" && field.cursorPosition === 0, "Backspace to the start after an assignment keeps the cursor there")
+          field.text = "hello"; field.select(0, 2)
+          keyboard.keyClick(Qt.Key_Delete, Qt.NoModifier, 0)
+          check(field.text === "llo" && field.cursorPosition === 0, "deleting a leading selection after an assignment keeps the cursor at the start")
+          field.text = "hello"; field.cursorPosition = 0
+          keyboard.keyClick(Qt.Key_X, Qt.NoModifier, 0)
+          check(field.text === "xhello" && field.cursorPosition === 1, "typing at the start after an assignment inserts there")
+          field.undo()
+          check(field.text === "hello", "undo restores the assigned text")
+          field.redo()
+          check(field.text === "xhello", "redo reapplies the typed text")
+          field.text = ""
+          check(field.cursorPosition === 0 && field.length === 0, "clearing leaves an empty field")
           field.text = "x".repeat(200); field.cursorPosition = field.length
           break
         case 1:

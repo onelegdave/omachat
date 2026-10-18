@@ -302,15 +302,28 @@ func TestPairingPublishesQRAndCompletes(t *testing.T) {
 	if err != nil || uri == "" {
 		t.Fatalf("pair: %q %v", uri, err)
 	}
-	if got := b.Status(); got.State != wire.StatePairing || got.QRURL != uri {
-		t.Fatalf("pairing status = %#v", got)
-	}
+	// The fake finishes linking at once, so pairing can complete before
+	// StartPairing's caller reads Status. Check the published sequence instead:
+	// the link, then a connected status. Start's own statuses come earlier.
+	linked := false
 	deadline := time.After(time.Second)
-	for b.Status().State != wire.StateConnected {
+	for {
 		select {
-		case <-events:
+		case evt := <-events:
+			status, ok := evt.Data.(wire.Status)
+			if !ok || evt.Event != wire.EventStatus {
+				continue
+			}
+			if status.State == wire.StatePairing && status.QRURL == uri {
+				linked = true
+			} else if linked && status.State == wire.StateConnected {
+				if got := b.Status(); got.State != wire.StateConnected || got.QRURL != "" {
+					t.Fatalf("final status = %#v", got)
+				}
+				return
+			}
 		case <-deadline:
-			t.Fatal("pairing did not complete")
+			t.Fatalf("pairing did not publish its link and complete (link seen: %v)", linked)
 		}
 	}
 }
