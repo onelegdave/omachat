@@ -69,7 +69,7 @@ the helper in.
   1.27.0 returned 15 advisories. Thirteen are standard library, all fixed in
   Go 1.27.2. GO-2026-5676 (quic-go HTTP/3) and GO-2026-5932 (`x/crypto/openpgp`)
   name packages the helper does not import. The vendored `golang.org/x/net`
-  0.58.0 `http2` package matches four HTTP/2 advisories fixed in 0.60.0, but
+  0.58.0 `http2` package matches five HTTP/2 advisories fixed in 0.60.0, but
   the helper uses it only to recognize `http2.StreamError`; its transports are
   the standard library's, and the helper runs no HTTP server. This is a version
   and import review, not a `govulncheck` call-graph result.
