@@ -274,30 +274,177 @@ with patch.object(u, 'state_path', return_value=Path(sys.argv[3])), patch.object
         self.assertEqual(sorted(p.name for p in bin_dir.iterdir()), ['.omachatd-link', 'omachatd'])
         self.assertEqual(outside.read_text(), 'keep')
 
-    def test_cross_filesystem_install_stays_atomic(self):
-        # A rename between filesystems fails with EXDEV. The helper is then
-        # copied beside its destination and renamed there, never written in
-        # place, and nothing temporary is left behind.
-        real_replace = os.replace
+    def plugin_files(self):
+        return sorted((str(p.relative_to(self.root)), p.read_bytes() if p.is_file() else None)
+                      for p in self.root.rglob('*'))
+
+    def test_cross_device_publish_is_refused_without_plugin_writes(self):
+        # Equal device numbers can still be separate mounts, where the final
+        # rename fails with EXDEV. Nothing is then copied into the plugin: the
+        # build stops with a clear error and the old helper stays in place.
         def replace(source, destination):
-            if Path(source).parent != Path(destination).parent:
-                raise OSError(u.errno.EXDEV, 'Invalid cross-device link')
-            return real_replace(source, destination)
+            raise OSError(u.errno.EXDEV, 'Invalid cross-device link')
         compile = lambda argv, **kwargs: Path(argv[argv.index('-o') + 1]).write_text('complete')
         for existing in (False, True):
             with self.subTest(existing_helper=existing):
                 if existing:
+                    (self.root / 'bin').mkdir(exist_ok=True)
                     (self.root / 'bin/omachatd').write_text('old')
+                before = self.plugin_files()
                 with patch.object(u.subprocess, 'run', side_effect=compile), patch.object(u.os, 'replace', side_effect=replace):
-                    u.build()
-                helper = self.root / 'bin/omachatd'
-                self.assertEqual(helper.read_text(), 'complete')
-                self.assertEqual(helper.stat().st_mode & 0o777, 0o755)
-                self.assertEqual(list((self.root / 'bin').glob('.omachatd-*')), [])
+                    with self.assertRaisesRegex(RuntimeError, 'cannot install its helper safely'):
+                        u.build()
+                self.assertEqual(self.plugin_files(), before)
                 self.assertEqual(list(self.fixture.glob('.omachat-build-*')), [])
 
+    def test_unsupported_mount_layout_is_refused_before_building(self):
+        # With no folder outside the plugin on the helper's filesystem, the
+        # build is refused before compiling or writing anything in the plugin.
+        cache = self.fixture / 'cache'
+        real_stat = os.stat
+        for existing in (False, True):
+            with self.subTest(existing_helper=existing):
+                if existing:
+                    (self.root / 'bin').mkdir(exist_ok=True)
+                    (self.root / 'bin/omachatd').write_text('old')
+                destination = self.root / 'bin' if existing else self.root
+                def stat(path, *args, **kwargs):
+                    result = real_stat(path, *args, **kwargs)
+                    if Path(path) == destination:
+                        fields = list(result)
+                        fields[2] = result.st_dev + 1  # st_dev
+                        return os.stat_result(fields)
+                    return result
+                before = self.plugin_files()
+                with patch.dict(os.environ, {'XDG_CACHE_HOME': str(cache)}), patch.object(u.os, 'stat', side_effect=stat), \
+                        patch.object(u.subprocess, 'run') as run:
+                    with self.assertRaisesRegex(RuntimeError, 'cannot install its helper safely'):
+                        u.build()
+                run.assert_not_called()
+                self.assertEqual(self.plugin_files(), before)
+                self.assertEqual(list(self.fixture.glob('.omachat-build-*')), [])
+                self.assertEqual(list(cache.glob('omachat/.omachat-build-*')), [])
+
+    def test_cache_inside_the_plugin_is_refused_without_creating_it(self):
+        # With the hidden sibling on another filesystem, a cache folder inside
+        # the plugin, directly or through a symlink, is skipped before mkdir.
+        real_stat = os.stat
+        def stat(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if Path(path) == self.root.parent:
+                fields = list(result)
+                fields[2] = result.st_dev + 1  # st_dev
+                return os.stat_result(fields)
+            return result
+        link = self.fixture / 'cache-link'
+        link.symlink_to(self.root / 'vendor', target_is_directory=True)
+        for cache in (self.root / 'cache', link):
+            with self.subTest(cache=cache.name):
+                shutil.rmtree(self.root / 'cache', ignore_errors=True)
+                before = self.plugin_files()
+                with patch.dict(os.environ, {'XDG_CACHE_HOME': str(cache)}), patch.object(u.os, 'stat', side_effect=stat), \
+                        patch.object(u.subprocess, 'run') as run:
+                    with self.assertRaisesRegex(RuntimeError, 'cannot install its helper safely'):
+                        u.build()
+                run.assert_not_called()
+                self.assertEqual(self.plugin_files(), before)
+
+    def test_staging_follows_the_filesystem_of_an_existing_bin(self):
+        # bin may be its own mount: staging must match it, not ROOT.
+        (self.root / 'bin').mkdir()
+        cache = self.fixture / 'cache'
+        real_stat = os.stat
+        def stat(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if Path(path) in (self.root / 'bin', cache / 'omachat'):
+                fields = list(result)
+                fields[2] = result.st_dev + 1  # st_dev
+                return os.stat_result(fields)
+            return result
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(cache)}), patch.object(u.os, 'stat', side_effect=stat):
+            self.assertEqual(u.staging_parent(self.root / 'bin'), cache / 'omachat')
+
+    @unittest.skipUnless(shutil.which('inotifywait') and os.path.isdir('/dev/shm')
+                         and os.stat('/dev/shm').st_dev != os.stat(tempfile.gettempdir()).st_dev,
+                         'inotifywait and two real filesystems are needed for the cross-filesystem regression')
+    def test_real_cross_filesystem_builds_are_atomic_or_untouched(self):
+        # The plugin lives on the temp filesystem and the cache on /dev/shm.
+        # Supported: staging uses the hidden sibling, and the builder is killed
+        # at its first plugin write, as a shell reload would, with the helper
+        # already complete. Unsupported (staging on the other filesystem, as
+        # when equal device numbers hide separate mounts): the build ends with
+        # an error and the plugin sees no write at all.
+        code = '''import importlib.util, sys, time
+from pathlib import Path
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location('updates', sys.argv[1])
+u = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(u)
+u.ROOT = Path(sys.argv[2])
+def compile(argv, **kwargs):
+    out = Path(argv[argv.index('-o') + 1])
+    out.write_bytes(b'partial')
+    time.sleep(0.3)
+    out.write_bytes(b'complete' * 1024)
+patches = [patch.object(u, 'state_path', return_value=Path(sys.argv[3])), patch.object(u.subprocess, 'run', side_effect=compile)]
+if sys.argv[4] == 'unsupported':
+    patches.append(patch.object(u, 'staging_parent', return_value=Path(sys.argv[5])))
+for p in patches:
+    p.start()
+u.build()
+'''
+        shm = tempfile.TemporaryDirectory(dir='/dev/shm', prefix='omachat-test-')
+        self.addCleanup(shm.cleanup)
+        other = Path(shm.name)
+        state_file = other / 'state/omachat/updates.json'
+        for layout in ('supported', 'unsupported'):
+            for existing in (False, True):
+                with self.subTest(layout=layout, existing_helper=existing):
+                    shutil.rmtree(self.root / 'bin', ignore_errors=True)
+                    if existing:
+                        (self.root / 'bin').mkdir()
+                        (self.root / 'bin/omachatd').write_text('old')
+                    before = self.plugin_files()
+                    watcher = subprocess.Popen(['inotifywait', '-m', '-r', '-e',
+                        'close_write,create,delete,move', '--format', '%w%f %e', str(self.root)],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    builder = None
+                    try:
+                        ready = b''
+                        while b'Watches established.' not in ready:
+                            self.assertTrue(select.select([watcher.stderr], [], [], 5)[0], 'Watcher did not start')
+                            chunk = os.read(watcher.stderr.fileno(), 4096)
+                            self.assertTrue(chunk, 'Watcher exited before establishing watches')
+                            ready += chunk
+                        env = dict(os.environ, XDG_CACHE_HOME=str(other / 'cache'))
+                        builder = subprocess.Popen([sys.executable, '-B', '-c', code, str(Path(u.__file__)),
+                            str(self.root), str(state_file), layout, str(other)],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+                        if layout == 'supported':
+                            self.assertTrue(select.select([watcher.stdout], [], [], 5)[0], 'No installation event')
+                            os.read(watcher.stdout.fileno(), 4096)
+                            if builder.poll() is None:
+                                builder.kill()
+                            _, error = builder.communicate(timeout=5)
+                            self.assertEqual((self.root / 'bin/omachatd').read_bytes(), b'complete' * 1024, error.decode())
+                            self.assertEqual(list(other.rglob('.omachat-build-*')), [])
+                        else:
+                            _, error = builder.communicate(timeout=10)
+                            self.assertFalse(select.select([watcher.stdout], [], [], 0.5)[0], 'Plugin was written')
+                            self.assertEqual(self.plugin_files(), before)
+                            self.assertNotEqual(builder.returncode, 0)
+                            self.assertIn(b'cannot install its helper safely', error)
+                            self.assertEqual(list(other.glob('.omachat-build-*')), [])
+                    finally:
+                        if builder and builder.poll() is None:
+                            builder.kill()
+                            builder.communicate(timeout=5)
+                        watcher.terminate()
+                        watcher.communicate(timeout=5)
+
     def test_staging_prefers_a_hidden_sibling_on_the_plugin_filesystem(self):
-        self.assertEqual(u.staging_parent(), self.root.parent)
+        target = self.root / 'bin'
+        self.assertEqual(u.staging_parent(target), self.root.parent)
         cache = self.fixture / 'cache'
         real_stat = os.stat
         def stat(path, *args, **kwargs):
@@ -308,7 +455,7 @@ with patch.object(u, 'state_path', return_value=Path(sys.argv[3])), patch.object
                 return os.stat_result(fields)
             return result
         with patch.dict(os.environ, {'XDG_CACHE_HOME': str(cache)}), patch.object(u.os, 'stat', side_effect=stat):
-            self.assertEqual(u.staging_parent(), cache / 'omachat')
+            self.assertEqual(u.staging_parent(target), cache / 'omachat')
 
     def test_build_replacement_and_mid_build_change(self):
         def compile(argv, **kwargs):

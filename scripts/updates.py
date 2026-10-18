@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import tempfile
 import time
@@ -137,52 +136,42 @@ def cache_dir():
     return Path(os.environ.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'omachat'
 
 
-def staging_parent():
-    """Pick where to build: outside the shell's view, on the plugin's filesystem.
+def unsupported_layout(destination):
+    return RuntimeError('OmaChat cannot install its helper safely: no folder outside the plugin '
+                        'shares a filesystem with ' + str(destination) + '. Set XDG_CACHE_HOME to a '
+                        'folder on that filesystem, then rebuild.')
+
+
+def staging_parent(target):
+    """Pick where to build: outside the shell's view, on the helper's filesystem.
 
     The shell reloads a plugin on every write within it, but ignores hidden
     entries at the top of its plugins folder, so a hidden sibling of ROOT is
-    the first choice. A rename is only atomic within one filesystem; if the
-    sibling is elsewhere, the cache folder is tried, and failing both the
-    finished helper is copied next to its destination before the rename.
+    the first choice and the cache folder the second. The finished helper is
+    renamed into target, or into ROOT as target on a first install, and a
+    rename is only atomic within one filesystem. Copying into the plugin
+    instead would let the shell reload before the copy is complete, so a
+    layout with neither folder on that filesystem is refused before any write.
     """
-    device = os.stat(ROOT).st_dev
+    destination = target if target.is_dir() else ROOT
+    device = os.stat(destination).st_dev
     for candidate in (ROOT.parent, cache_dir()):
         try:
-            candidate.mkdir(parents=True, exist_ok=True, mode=0o700)
+            # Check before mkdir, following symlinks: creating a cache folder
+            # inside the plugin would itself be a write the shell reloads on.
             if candidate.resolve().is_relative_to(ROOT.resolve()):
                 continue
+            candidate.mkdir(parents=True, exist_ok=True, mode=0o700)
             if os.stat(candidate).st_dev == device:
                 return candidate
         except OSError:
             continue
-    return ROOT.parent
+    raise unsupported_layout(destination)
 
 
 def sync_file(path):
     with open(path, 'rb') as stream:
         os.fsync(stream.fileno())
-
-
-def replace_file(source, destination):
-    """Atomically put source at destination, copying first across filesystems."""
-    try:
-        os.replace(source, destination)
-        return
-    except OSError as exc:
-        if exc.errno != errno.EXDEV:
-            raise
-    fd, name = tempfile.mkstemp(dir=destination.parent, prefix='.omachatd-')
-    try:
-        with os.fdopen(fd, 'wb') as out, open(source, 'rb') as stream:
-            shutil.copyfileobj(stream, out, 1024 * 1024)
-            out.flush()
-            os.fsync(out.fileno())
-        os.chmod(name, 0o755)
-        os.replace(name, destination)
-    finally:
-        if os.path.exists(name):
-            os.unlink(name)
 
 
 def remove_build_leftovers(target):
@@ -205,7 +194,7 @@ def build():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         source = source_id()
         release = installed()
-        with tempfile.TemporaryDirectory(dir=staging_parent(), prefix='.omachat-build-') as stage:
+        with tempfile.TemporaryDirectory(dir=staging_parent(target), prefix='.omachat-build-') as stage:
             staged_bin = Path(stage) / 'bin'
             staged_bin.mkdir(mode=0o755)
             name = staged_bin / 'omachatd'
@@ -221,18 +210,19 @@ def build():
             sync_file(name)
             # Nothing above wrote inside ROOT. The rename below is the first
             # write the shell sees; a reload it causes can only follow it.
-            if target.is_dir():
-                replace_file(name, target / 'omachatd')
-            else:
-                # First install publishes the directory and complete helper at
-                # once; creating an empty bin earlier would also trigger reload.
-                try:
+            # A first install publishes the directory and complete helper at
+            # once; creating an empty bin earlier would also trigger reload.
+            # A failed rename writes nothing, so the old helper stays usable.
+            try:
+                if target.is_dir():
+                    os.replace(name, target / 'omachatd')
+                else:
                     os.replace(staged_bin, target)
-                except OSError as exc:
-                    if exc.errno != errno.EXDEV:
-                        raise
-                    target.mkdir(mode=0o755, exist_ok=True)
-                    replace_file(name, target / 'omachatd')
+            except OSError as exc:
+                # Same device numbers can still be separate mounts.
+                if exc.errno != errno.EXDEV:
+                    raise
+                raise unsupported_layout(target if target.is_dir() else ROOT) from exc
             remove_build_leftovers(target)
     return {'sourceID': source, 'installed': release}
 
