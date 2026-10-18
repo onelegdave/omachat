@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/onelegdave/omachat/internal/store"
@@ -310,6 +311,10 @@ func boundStoredChat(stored *StoredChatData) {
 	if stored.ReactionActors == nil {
 		stored.ReactionActors = make(map[string]map[string]string)
 	}
+
+	// Releases before status filtering stored status/story broadcasts as a
+	// conversation. Dropping it here also drops its messages and media below.
+	delete(stored.Conversations, types.StatusBroadcastJID.String())
 
 	type entry struct {
 		id string
