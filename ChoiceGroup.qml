@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -8,9 +9,9 @@ Flow {
   id: root
   property var options: []
   property string value: ""
-  property color foreground: Color.popups.text
-  property color background: Color.popups.background
-  property color accent: Color.accent
+  property color foreground: Commons.Color.popups.text
+  property color background: Commons.Color.popups.background
+  property color accent: Commons.Color.accent
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.body
   property bool focusable: true
@@ -47,14 +48,14 @@ Flow {
         width: Math.max(Style.space(14), serviceBadgeText.implicitWidth + Style.space(6))
         height: Style.space(14)
         radius: height / 2
-        color: Color.urgent
+        color: Commons.Color.urgent
 
         Text {
           id: serviceBadgeText
           textFormat: Text.PlainText
           anchors.centerIn: parent
           text: Number(choice.modelData.unread || 0) > 9 ? "9+" : String(Number(choice.modelData.unread || 0))
-          color: Model.readableInk(parent.color, Color.background)
+          color: Model.readableInk(parent.color, Commons.Color.background)
           font.family: root.fontFamily
           font.pixelSize: Style.space(9)
           font.bold: true

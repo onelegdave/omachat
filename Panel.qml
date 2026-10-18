@@ -4,6 +4,7 @@ import QtQuick.Controls as Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 import "Keybindings.js" as Keybindings
@@ -148,11 +149,11 @@ Panel {
     return Model.readableInk(surface, preferred, minRatio)
   }
 
-  readonly property color popupBg: Color.popups.background
-  readonly property color foreground: readableInk(popupBg, Color.popups.text, 7)
-  readonly property color mutedInk: readableInk(popupBg, Color.muted, 7)
-  readonly property color accentInk: readableInk(popupBg, Color.accent, 4.5)
-  readonly property color urgentInk: readableInk(popupBg, Color.urgent, 4.5)
+  readonly property color popupBg: Commons.Color.popups.background
+  readonly property color foreground: readableInk(popupBg, Commons.Color.popups.text, 7)
+  readonly property color mutedInk: readableInk(popupBg, Commons.Color.muted, 7)
+  readonly property color accentInk: readableInk(popupBg, Commons.Color.accent, 4.5)
+  readonly property color urgentInk: readableInk(popupBg, Commons.Color.urgent, 4.5)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property bool needsPair: connState === "unpaired" || connState === "pairing"
@@ -1164,7 +1165,7 @@ Panel {
           options: root.serviceTabs
           value: root.activeService
           foreground: root.foreground
-          background: Color.popups.background
+          background: Commons.Color.popups.background
           accent: root.accentInk
           fontFamily: root.fontFamily
           fontSize: root.fs(Style.font.body)
@@ -1198,7 +1199,7 @@ Panel {
             ]
             value: root.popoutMode
             foreground: root.foreground
-            background: Color.popups.background
+            background: Commons.Color.popups.background
             accent: root.accentInk
             fontFamily: root.fontFamily
             fontSize: root.fs(Style.font.bodySmall)

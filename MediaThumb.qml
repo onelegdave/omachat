@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Model.js" as Model
 
 // Still image or looping GIF. GIFs play only while `playing` is true so a
@@ -44,15 +45,15 @@ Item {
     id: errorSurface
     anchors.fill: parent
     visible: root.hasError
-    color: Style.normalFillFor(Color.background, Color.accent)
+    color: Style.normalFillFor(Commons.Color.background, Commons.Color.accent)
     border.width: 1
-    border.color: Color.popups.border
+    border.color: Commons.Color.popups.border
     radius: Style.space(6)
     Text {
       textFormat: Text.PlainText
       anchors.centerIn: parent
       text: "Media error"
-      color: Model.readableInk(errorSurface.color, Color.popups.text)
+      color: Model.readableInk(errorSurface.color, Commons.Color.popups.text)
       font.pixelSize: Style.font.caption
     }
   }

@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -112,14 +113,14 @@ BarWidget {
       width: Math.max(Style.space(14), badgeText.implicitWidth + Style.space(6))
       height: Style.space(14)
       radius: height / 2
-      color: Color.urgent
+      color: Commons.Color.urgent
 
       Text {
         id: badgeText
         textFormat: Text.PlainText
         anchors.centerIn: parent
         text: root.unread > 9 ? "9+" : String(root.unread)
-        color: Model.readableInk(parent.color, Color.background)
+        color: Model.readableInk(parent.color, Commons.Color.background)
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.space(9)
         font.bold: true

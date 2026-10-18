@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -7,7 +8,7 @@ Item {
   id: root
 
   property string serviceId: ""
-  property color foreground: Model.readableInk(Color.popups.background, Color.popups.text, 7)
+  property color foreground: Model.readableInk(Commons.Color.popups.background, Commons.Color.popups.text, 7)
   property string fontFamily: Style.font.family
 
   readonly property var copy: {
@@ -43,7 +44,7 @@ Item {
       title: root.copy.title
       meta: root.copy.meta
       foreground: root.foreground
-      metaColor: Model.readableInk(Color.popups.background, Color.muted)
+      metaColor: Model.readableInk(Commons.Color.popups.background, Commons.Color.muted)
       fontFamily: root.fontFamily
       iconOpacity: 0.7
       iconComponent: Component {
@@ -51,7 +52,7 @@ Item {
           implicitWidth: Style.font.display
           implicitHeight: Style.font.display
           text: root.copy.glyph
-          color: Color.accent
+          color: Commons.Color.accent
           fontFamily: root.fontFamily
           fontSize: Style.font.display
         }

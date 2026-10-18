@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "Chat" as Chat
 import "Chat/Model.js" as Model
 
@@ -31,10 +32,10 @@ ShellRoot {
     implicitWidth: 640
     implicitHeight: 480
     visible: true
-    color: Color.popups.background
+    color: Commons.Color.popups.background
     Rectangle {
       id: canvas
-      color: Color.popups.background
+      color: Commons.Color.popups.background
       anchors.fill: parent
       Loader {
         id: page
@@ -82,11 +83,11 @@ ShellRoot {
   }
   function palette() {
     var light = frame >= 4
-    Color.foreground = light ? "#e0e0e0" : "#202028"
-    Color.muted = light ? "#dddddd" : "#111118"
-    Color.accent = light ? "#f4d4de" : "#40152f"
-    Color.urgent = light ? "#efcccc" : "#351010"
-    Color.shellValues = {"popups.background":light ? "#faf7f1" : "#08090f", "popups.text":light ? "#eeeeee" : "#171821"}
+    Commons.Color.foreground = light ? "#e0e0e0" : "#202028"
+    Commons.Color.muted = light ? "#dddddd" : "#111118"
+    Commons.Color.accent = light ? "#f4d4de" : "#40152f"
+    Commons.Color.urgent = light ? "#efcccc" : "#351010"
+    Commons.Color.shellValues = {"popups.background":light ? "#faf7f1" : "#08090f", "popups.text":light ? "#eeeeee" : "#171821"}
   }
   Timer { interval:800; running:true; onTriggered: { root.palette(); verify.restart() } }
   Timer {
@@ -96,7 +97,7 @@ ShellRoot {
       try {
         if(root.frame === 0) root.checkTelegramGuidance()
         root.check(!!page.item,"page loaded")
-        root.check(Model.contrastRatio(page.item.foreground, Color.popups.background) >= 4.5,"page foreground contrast")
+        root.check(Model.contrastRatio(page.item.foreground, Commons.Color.popups.background) >= 4.5,"page foreground contrast")
         root.inspect(page.item)
         if(root.frame % 4 >= 2) {
           var title=root.findText(page.item,root.frame % 4 === 2 ? "Dependencies and User Choice" : "Contributors, Upstream Credits, and Licenses")

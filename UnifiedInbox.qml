@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -127,7 +128,7 @@ Item {
       anchors.right: parent.right
       anchors.top: parent.top
       text: "ALL INBOXES"
-      color: Model.readableInk(Color.popups.background, Color.muted)
+      color: Model.readableInk(Commons.Color.popups.background, Commons.Color.muted)
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
@@ -162,7 +163,7 @@ Item {
       anchors.topMargin: Style.space(6)
       height: visible ? Style.space(28) : 0
       radius: Style.space(6)
-      color: Style.normalFillFor(root.foreground, Color.accent)
+      color: Style.normalFillFor(root.foreground, Commons.Color.accent)
       MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
@@ -205,10 +206,10 @@ Item {
         height: Math.max(Style.space(60), root.fs(Style.font.bodySmall) + root.fs(Style.font.caption) + Style.space(24))
         radius: Style.space(4)
         color: selected
-          ? Style.normalFillFor(root.foreground, Color.accent)
-          : (convMouse.containsMouse ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent")
+          ? Style.normalFillFor(root.foreground, Commons.Color.accent)
+          : (convMouse.containsMouse ? Style.hoverFillFor(root.foreground, Commons.Color.accent) : "transparent")
         border.width: selected || (convItem.ListView.isCurrentItem && convList.activeFocus) ? 1 : 0
-        border.color: convItem.ListView.isCurrentItem && convList.activeFocus ? Color.accent : (selected ? Color.accent : "transparent")
+        border.color: convItem.ListView.isCurrentItem && convList.activeFocus ? Commons.Color.accent : (selected ? Commons.Color.accent : "transparent")
 
         MouseArea {
           id: convMouse
@@ -277,7 +278,7 @@ Item {
           anchors.bottom: parent.bottom
           anchors.bottomMargin: Style.space(7)
           text: Model.previewText(convItem.modelData)
-          color: Model.readableInk(Color.popups.background, Color.muted)
+          color: Model.readableInk(Commons.Color.popups.background, Commons.Color.muted)
           elide: Text.ElideRight
           font.family: root.fontFamily
           font.pixelSize: root.fs(Style.font.caption)
@@ -294,7 +295,7 @@ Item {
     anchors.bottom: parent.bottom
     anchors.leftMargin: Style.space(8)
     width: 1
-    color: Color.popups.border
+    color: Commons.Color.popups.border
   }
 
   Item {

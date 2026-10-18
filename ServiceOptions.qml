@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -25,8 +26,8 @@ Column {
   }
   readonly property bool ready: service && service.servicesConfigLoaded === true
   readonly property bool saving: service && service.savingServices === true
-  readonly property color ink: Model.readableInk(Color.popups.background, Color.popups.text, 7)
-  readonly property color errorInk: Model.readableInk(Color.popups.background, Color.urgent)
+  readonly property color ink: Model.readableInk(Commons.Color.popups.background, Commons.Color.popups.text, 7)
+  readonly property color errorInk: Model.readableInk(Commons.Color.popups.background, Commons.Color.urgent)
   function fs(n) { return Math.max(12,Math.round(n*uiScale)) }
   spacing: Style.space(10)
   function reload() {
@@ -189,7 +190,7 @@ Column {
     confirmText:"Install and enable"
     cancelText:"Cancel"
     foreground:root.ink
-    background:Color.popups.background
+    background:Commons.Color.popups.background
     fontFamily:root.fontFamily
     onConfirmed:root.confirmSignalInstall()
     onCanceled:root.cancelSignalInstall()

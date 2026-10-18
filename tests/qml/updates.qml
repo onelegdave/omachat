@@ -2,6 +2,7 @@ import QtQuick
 import QtTest
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "Chat" as Chat
 
 ShellRoot {
@@ -39,7 +40,7 @@ ShellRoot {
  }
  FloatingWindow {
   id:window
-  implicitWidth:660; implicitHeight:820; visible:true; color:Color.popups.background
+  implicitWidth:660; implicitHeight:820; visible:true; color:Commons.Color.popups.background
   Rectangle {
    id:canvas;anchors.fill:parent;color:root.frame===0?"#161820":"#faf7f1"
    Chat.UpdateSettings {id:settings;anchors.fill:parent;anchors.margins:24;service:fake;uiScale:1.15;foreground:root.frame===0?"#eeeeee":"#202020";mutedColor:foreground}
@@ -72,7 +73,7 @@ ShellRoot {
   }
  }
  function next(){
-  if(frame===0){frame=1;Color.shellValues={"popups.background":"#faf7f1","popups.text":"#202020"};fake.helperNeedsRebuild=false;capture.restart()}
+  if(frame===0){frame=1;Commons.Color.shellValues={"popups.background":"#faf7f1","popups.text":"#202020"};fake.helperNeedsRebuild=false;capture.restart()}
   else {console.log("OMACHAT_UPDATES_PASS update controls, opt-in, rebuild guidance, and build exclusion");Qt.quit()}
  }
 }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls as Controls
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui as Ui
 
 // Single-line text field styled like Omarchy's Ui.TextField.
@@ -12,8 +13,8 @@ import qs.Ui as Ui
 // while TextEdit only checks the offered formats.
 FocusScope {
   id: root
-  property color foreground: Color.foreground
-  property color accent: Color.accent
+  property color foreground: Commons.Color.foreground
+  property color accent: Commons.Color.accent
   property color selectionTint: Style.selectionFillFor(foreground, accent)
   property bool hasCursor: false
   property real horizontalPadding: Style.spacing.controlPaddingX

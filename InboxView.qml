@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 import "EmojiSearch.js" as EmojiSearch
@@ -12,7 +13,7 @@ Item {
 
   property var service: null
   readonly property var keyboardInitialFocus: convList
-  property color foreground: Model.readableInk(Color.popups.background, Color.popups.text, 7)
+  property color foreground: Model.readableInk(Commons.Color.popups.background, Commons.Color.popups.text, 7)
   property string fontFamily: Style.font.family
   property real uiScale: 1
   function fs(n) { return Math.max(12, Math.round(Number(n) * uiScale)) }
@@ -36,16 +37,16 @@ Item {
   readonly property bool reactionsSupported: true
   property string networkLabel: isWhatsApp ? "WhatsApp" : (isTelegram ? "Telegram" : (isMessenger ? "Messenger" : (isSignal ? "Signal" : "Google Messages")))
 
-  readonly property color dim: Model.readableInk(panelBg, Color.muted)
-  readonly property color errorInk: Model.readableInk(panelBg, Color.urgent)
-  readonly property color panelBg: Color.popups.background
-  readonly property color mineFill: Model.outgoingFill(panelBg, Color.accent, foreground)
+  readonly property color dim: Model.readableInk(panelBg, Commons.Color.muted)
+  readonly property color errorInk: Model.readableInk(panelBg, Commons.Color.urgent)
+  readonly property color panelBg: Commons.Color.popups.background
+  readonly property color mineFill: Model.outgoingFill(panelBg, Commons.Color.accent, foreground)
   readonly property color mineInk: Model.inkOn(mineFill, foreground, panelBg)
   readonly property color mineMeta: Model.metaInk(mineInk, mineFill)
   readonly property color theirsFill: Model.incomingFill(panelBg, foreground)
   readonly property color theirsInk: Model.inkOn(theirsFill, foreground, panelBg)
   readonly property color theirsMeta: Model.metaInk(theirsInk, theirsFill)
-  readonly property color selectedFill: Model.outgoingFill(panelBg, Color.accent, foreground)
+  readonly property color selectedFill: Model.outgoingFill(panelBg, Commons.Color.accent, foreground)
   readonly property color selectedInk: Model.inkOn(selectedFill, foreground, panelBg)
   readonly property color selectedMeta: Model.metaInk(selectedInk, selectedFill)
   readonly property bool pendingIsGif: Model.isGif("", "", pendingAttachment)
@@ -1538,7 +1539,7 @@ Item {
       anchors.topMargin: Style.space(6)
       height: visible ? Style.space(28) : 0
       radius: Style.space(6)
-      color: Style.normalFillFor(root.foreground, Color.accent)
+      color: Style.normalFillFor(root.foreground, Commons.Color.accent)
 
       MouseArea {
         id: nextUnreadAction
@@ -1609,9 +1610,9 @@ Item {
         radius: Style.space(4)
         color: selected
           ? root.selectedFill
-          : (convMouse.containsMouse ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent")
+          : (convMouse.containsMouse ? Style.hoverFillFor(root.foreground, Commons.Color.accent) : "transparent")
         border.width: selected || (convItem.ListView.isCurrentItem && convList.activeFocus) ? 1 : 0
-        border.color: convItem.ListView.isCurrentItem && convList.activeFocus ? Color.accent : (selected ? Color.accent : "transparent")
+        border.color: convItem.ListView.isCurrentItem && convList.activeFocus ? Commons.Color.accent : (selected ? Commons.Color.accent : "transparent")
 
         Rectangle {
           visible: convItem.selected
@@ -1619,7 +1620,7 @@ Item {
           anchors.top: parent.top
           anchors.bottom: parent.bottom
           width: Style.space(2)
-          color: Color.accent
+          color: Commons.Color.accent
         }
 
         MouseArea {
@@ -1701,7 +1702,7 @@ Item {
     anchors.bottom: parent.bottom
     anchors.leftMargin: visible ? Style.space(8) : 0
     width: visible ? 1 : 0
-    color: Color.popups.border
+    color: Commons.Color.popups.border
   }
 
   Item {
@@ -1916,7 +1917,7 @@ Item {
             radius: Style.space(8)
             color: row.mine ? root.mineFill : root.theirsFill
             border.width: 1
-            border.color: row.mine ? Color.accent : Color.popups.border
+            border.color: row.mine ? Commons.Color.accent : Commons.Color.popups.border
 
             MouseArea {
               anchors.fill: parent
@@ -1981,9 +1982,9 @@ Item {
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
-                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Commons.Color.accent)
                     border.width: 1
-                    border.color: row.mine ? root.mineInk : Color.popups.border
+                    border.color: row.mine ? root.mineInk : Commons.Color.popups.border
 
                     MouseArea {
                       anchors.fill: parent
@@ -2009,9 +2010,9 @@ Item {
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
-                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Commons.Color.accent)
                     border.width: 1
-                    border.color: row.mine ? root.mineInk : Color.popups.border
+                    border.color: row.mine ? root.mineInk : Commons.Color.popups.border
 
                     MouseArea {
                       anchors.fill: parent
@@ -2035,9 +2036,9 @@ Item {
                     width: Math.min(parent.width, Style.space(160))
                     height: Style.space(34)
                     radius: height / 2
-                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Commons.Color.accent)
                     border.width: 1
-                    border.color: row.mine ? root.mineInk : Color.popups.border
+                    border.color: row.mine ? root.mineInk : Commons.Color.popups.border
 
                     Text {
                       textFormat: Text.PlainText
@@ -2055,9 +2056,9 @@ Item {
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
-                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Commons.Color.accent)
                     border.width: 1
-                    border.color: row.mine ? root.mineInk : Color.popups.border
+                    border.color: row.mine ? root.mineInk : Commons.Color.popups.border
 
                     MouseArea {
                       anchors.fill: parent
@@ -2081,9 +2082,9 @@ Item {
                     width: Math.min(parent.width, Style.space(220))
                     height: Style.space(34)
                     radius: height / 2
-                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Commons.Color.accent)
                     border.width: 1
-                    border.color: row.mine ? root.mineInk : Color.popups.border
+                    border.color: row.mine ? root.mineInk : Commons.Color.popups.border
 
                     MouseArea {
                       anchors.fill: parent
@@ -2143,7 +2144,7 @@ Item {
                 }
                 linkColor: {
                   if (row.mine) return root.mineInk
-                  return Model.readableInk(root.theirsFill, Color.accent)
+                  return Model.readableInk(root.theirsFill, Commons.Color.accent)
                 }
                 font.italic: row.msg && row.msg.deleted === true
                 font.family: root.fontFamily
@@ -2172,9 +2173,9 @@ Item {
                     width: copyLabel.implicitWidth + Style.space(12)
                     height: Style.space(22)
                     radius: height / 2
-                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Color.accent)
+                    color: Style.normalFillFor(row.mine ? root.mineInk : root.theirsInk, Commons.Color.accent)
                     border.width: 1
-                    border.color: row.mine ? root.mineInk : Color.accent
+                    border.color: row.mine ? root.mineInk : Commons.Color.accent
 
                     Text {
                       id: copyLabel
@@ -2210,7 +2211,7 @@ Item {
                   text: Model.receiptLabel(row.msg)
                   color: {
                     var s = String(row.msg && (row.msg.delivery || row.msg.status) || "")
-                    if (s === "failed") return Model.readableInk(row.mine ? root.mineFill : root.theirsFill, Color.urgent)
+                    if (s === "failed") return Model.readableInk(row.mine ? root.mineFill : root.theirsFill, Commons.Color.urgent)
                     return root.mineMeta
                   }
                   font.family: root.fontFamily
@@ -2249,9 +2250,9 @@ Item {
                 radius: height / 2
                 color: modelData.mine
                   ? root.selectedFill
-                  : Style.normalFillFor(root.foreground, Color.accent)
+                  : Style.normalFillFor(root.foreground, Commons.Color.accent)
                 border.width: 1
-                border.color: modelData.mine ? Color.accent : Color.popups.border
+                border.color: modelData.mine ? Commons.Color.accent : Commons.Color.popups.border
 
                 Text {
                   id: chipLabel
@@ -2325,9 +2326,9 @@ Item {
       anchors.bottomMargin: Style.space(6)
       height: visible ? (root.pendingIsVoice ? Style.space(48) : Style.space(132)) : 0
       radius: Style.space(8)
-      color: Color.popups.background
+      color: Commons.Color.popups.background
       border.width: 1
-      border.color: Color.popups.border
+      border.color: Commons.Color.popups.border
 
       Item {
         visible: root.pendingIsVoice
@@ -2470,7 +2471,7 @@ Item {
       radius: Style.space(6)
       color: "transparent"
       border.width: 1
-      border.color: Color.popups.border
+      border.color: Commons.Color.popups.border
 
       Button {
         id: sendButton
@@ -2600,9 +2601,9 @@ Item {
       anchors.bottomMargin: Style.space(6)
       height: visible ? Style.space(312) : 0
       radius: Style.space(8)
-      color: Color.popups.background
+      color: Commons.Color.popups.background
       border.width: 1
-      border.color: Color.popups.border
+      border.color: Commons.Color.popups.border
       clip: true
 
       SafeTextField {
@@ -2657,7 +2658,7 @@ Item {
             event.accepted = false
           }
         }
-        highlight: Rectangle { color: "transparent"; border.width: 2; border.color: Color.accent }
+        highlight: Rectangle { color: "transparent"; border.width: 2; border.color: Commons.Color.accent }
         highlightFollowsCurrentItem: true
         anchors.left: parent.left
         anchors.right: parent.right
@@ -2740,7 +2741,7 @@ Item {
     confirmText: "Open"
     cancelText: "Cancel"
     foreground: root.foreground
-    background: Color.popups.background
+    background: Commons.Color.popups.background
     fontFamily: root.fontFamily
     onConfirmed: root.confirmOpenUrl()
     onCanceled: root.cancelOpenUrl()
@@ -2768,7 +2769,7 @@ Item {
       radius: Style.space(10)
       color: root.panelBg
       border.width: 1
-      border.color: Color.popups.border
+      border.color: Commons.Color.popups.border
 
       MouseArea { anchors.fill: parent }
 
@@ -2829,7 +2830,7 @@ Item {
           KeyNavigation.backtab: newChatSearch
           Keys.onSpacePressed: if (!root.newChatLoading && currentItem) root.toggleNewChatTarget(String(currentItem.modelData.id))
           Keys.onReturnPressed: if (!root.newChatLoading && currentItem) root.toggleNewChatTarget(String(currentItem.modelData.id))
-          highlight: Rectangle { color: "transparent"; border.width: newChatTargetList.activeFocus ? 2 : 0; border.color: Color.accent; radius: Style.space(5) }
+          highlight: Rectangle { color: "transparent"; border.width: newChatTargetList.activeFocus ? 2 : 0; border.color: Commons.Color.accent; radius: Style.space(5) }
           objectName: "newChatTargetList"
           width: parent.width
           height: parent.height - y - newChatActions.height - Style.space(34)
@@ -2849,7 +2850,7 @@ Item {
             Keys.onReturnPressed: if (!root.newChatLoading) root.toggleNewChatTarget(String(modelData.id))
             Keys.onEnterPressed: if (!root.newChatLoading) root.toggleNewChatTarget(String(modelData.id))
             border.width: activeFocus ? 2 : 0
-            border.color: Color.accent
+            border.color: Commons.Color.accent
             width: newChatTargetList.width
             height: Style.space(48)
             radius: Style.space(5)

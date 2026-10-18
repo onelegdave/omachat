@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -42,12 +43,12 @@ Flickable {
     return Model.readableInk(surface, preferred, minRatio)
   }
 
-  readonly property color popupBg: Color.popups.background
-  property color foreground: readableInk(popupBg, Color.popups.text, 7)
-  readonly property color copyColor: readableInk(popupBg, Color.popups.text, 7)
-  readonly property color mutedColor: readableInk(popupBg, Color.muted, 7)
-  readonly property color accentColor: readableInk(popupBg, Color.accent, 4.5)
-  readonly property color urgentColor: readableInk(popupBg, Color.urgent, 4.5)
+  readonly property color popupBg: Commons.Color.popups.background
+  property color foreground: readableInk(popupBg, Commons.Color.popups.text, 7)
+  readonly property color copyColor: readableInk(popupBg, Commons.Color.popups.text, 7)
+  readonly property color mutedColor: readableInk(popupBg, Commons.Color.muted, 7)
+  readonly property color accentColor: readableInk(popupBg, Commons.Color.accent, 4.5)
+  readonly property color urgentColor: readableInk(popupBg, Commons.Color.urgent, 4.5)
 
   readonly property string siteUrl: "https://www.onelegdave.dev/"
   readonly property string repoUrl: "https://github.com/onelegdave/omachat"
@@ -310,7 +311,7 @@ Flickable {
     Rectangle {
       width: parent.width
       height: 1
-      color: Color.popups.border
+      color: Commons.Color.popups.border
     }
 
     Flow {
@@ -660,7 +661,7 @@ Flickable {
     Rectangle {
       width: parent.width
       height: 1
-      color: Color.popups.border
+      color: Commons.Color.popups.border
     }
 
     // Section 2: Interface Scale
@@ -706,7 +707,7 @@ Flickable {
           return "1"
         }
         foreground: root.foreground
-        background: Color.popups.background
+        background: Commons.Color.popups.background
         accent: root.accentColor
         fontFamily: root.fontFamily
         fontSize: fs(Style.font.body)
@@ -759,7 +760,7 @@ Flickable {
         ]
         value: String(root.whatsappHistoryCacheMB || 128)
         foreground: root.foreground
-        background: Color.popups.background
+        background: Commons.Color.popups.background
         accent: root.accentColor
         fontFamily: root.fontFamily
         fontSize: fs(Style.font.body)
@@ -782,7 +783,7 @@ Flickable {
     Rectangle {
       width: parent.width
       height: 1
-      color: Color.popups.border
+      color: Commons.Color.popups.border
     }
 
     NotificationSettings {
@@ -838,7 +839,7 @@ Flickable {
     Rectangle {
       width: parent.width
       height: 1
-      color: Color.popups.border
+      color: Commons.Color.popups.border
     }
 
     // Section 4: Service Guides
@@ -973,7 +974,7 @@ Flickable {
     Rectangle {
       width: parent.width
       height: 1
-      color: Color.popups.border
+      color: Commons.Color.popups.border
     }
 
     // Section 5: Telegram API Credentials
@@ -1164,7 +1165,7 @@ Flickable {
     Rectangle {
       width: parent.width
       height: 1
-      color: Color.popups.border
+      color: Commons.Color.popups.border
     }
 
 
@@ -1469,7 +1470,7 @@ Flickable {
     Rectangle {
       width: parent.width
       height: 1
-      color: Color.popups.border
+      color: Commons.Color.popups.border
     }
 
     // Section 7: About and Maintenance
@@ -1598,7 +1599,7 @@ Flickable {
     Rectangle {
       width: parent.width
       height: 1
-      color: Color.popups.border
+      color: Commons.Color.popups.border
     }
 
     // Section 8: Feedback and Bug Reports

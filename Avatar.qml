@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import qs.Commons
+import qs.Commons as Commons
 import "Model.js" as Model
 
 Rectangle {
@@ -10,7 +11,7 @@ Rectangle {
   property string initials: "#"
   property string hexColor: ""
   property string seed: ""
-  property color fallbackColor: Color.accent
+  property color fallbackColor: Commons.Color.accent
   property string fontFamily: Style.font.family
 
   implicitWidth: Style.space(36)
@@ -24,7 +25,7 @@ Rectangle {
     anchors.centerIn: parent
     visible: avatarImage.status !== Image.Ready
     text: root.initials
-    color: Model.inkOn(root.color, Color.foreground, Color.background)
+    color: Model.inkOn(root.color, Commons.Color.foreground, Commons.Color.background)
     font.family: root.fontFamily
     font.pixelSize: Math.round(root.height * 0.4)
     font.bold: true

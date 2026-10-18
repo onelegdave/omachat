@@ -3,6 +3,7 @@ import QtQuick.Controls as Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -20,11 +21,11 @@ Item {
     return Model.readableInk(surface, preferred, minRatio)
   }
 
-  readonly property color popupBg: Color.popups.background
-  property color foreground: readableInk(popupBg, Color.popups.text, 7)
-  readonly property color dim: readableInk(popupBg, Color.muted, 7)
-  readonly property color accentInk: readableInk(popupBg, Color.accent, 4.5)
-  readonly property color urgentInk: readableInk(popupBg, Color.urgent, 4.5)
+  readonly property color popupBg: Commons.Color.popups.background
+  property color foreground: readableInk(popupBg, Commons.Color.popups.text, 7)
+  readonly property color dim: readableInk(popupBg, Commons.Color.muted, 7)
+  readonly property color accentInk: readableInk(popupBg, Commons.Color.accent, 4.5)
+  readonly property color urgentInk: readableInk(popupBg, Commons.Color.urgent, 4.5)
 
   readonly property bool isWhatsApp: network === "whatsapp"
   readonly property bool isTelegram: network === "telegram"
@@ -441,8 +442,8 @@ Item {
             height: profileName.implicitHeight + profileReason.implicitHeight + Style.space(18)
             radius: Style.space(6)
             color: modelData.selected
-              ? Style.selectedFillFor(root.foreground, Color.accent)
-              : (profileHover.containsMouse ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent")
+              ? Style.selectedFillFor(root.foreground, Commons.Color.accent)
+              : (profileHover.containsMouse ? Style.hoverFillFor(root.foreground, Commons.Color.accent) : "transparent")
 
             MouseArea {
               id: profileHover

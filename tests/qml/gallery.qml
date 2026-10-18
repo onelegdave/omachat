@@ -2,6 +2,7 @@ import QtQuick
 import QtTest
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import "Chat" as Chat
 
 // Real plugin components, fictional data, no protocol helper or account access.
@@ -104,9 +105,9 @@ ShellRoot {
   }
   function setPalette() {
     var p=palettes[captures[frame].palette]
-    Color.background=p.background; Color.foreground=p.foreground
-    Color.accent=p.accent; Color.muted=p.muted; Color.urgent=p.red
-    Color.shellValues={"popups.background":p.background,"popups.text":p.foreground,"popups.border":p.accent}
+    Commons.Color.background=p.background; Commons.Color.foreground=p.foreground
+    Commons.Color.accent=p.accent; Commons.Color.muted=p.muted; Commons.Color.urgent=p.red
+    Commons.Color.shellValues={"popups.background":p.background,"popups.text":p.foreground,"popups.border":p.accent}
     Style.applyShellValues({})
   }
   Timer {

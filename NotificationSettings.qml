@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 Column {
@@ -8,7 +9,7 @@ Column {
   readonly property var notifications: service && service.notifications ? service.notifications : null
   property string fontFamily: Style.font.family
   property real uiScale: 1
-  property color foreground: Color.popups.text
+  property color foreground: Commons.Color.popups.text
   spacing: Style.space(8)
   function fs(n) { return Math.max(12, Math.round(n * uiScale)) }
 
