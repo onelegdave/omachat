@@ -1,5 +1,22 @@
 # Theme gallery
 
+## Promotional overview
+
+![OmaChat promotional overview with fictional conversations, main features, and supported services](omachat-overview.png)
+
+`omachat-overview.png` is the promotional overview, also used as the root
+`preview.png`. It is marketing artwork made with OpenAI's built-in image
+generation, not a pixel-exact screenshot. Its panel was drawn from
+[`omachat-demo-v060.png`](omachat-demo-v060.png), a capture of the real QML
+panel with all five service tabs, made in an isolated session. Every contact,
+message, unread count, reaction, and connection or delivery state in both
+images is invented demonstration data. Signal is optional and experimental. The
+exact prompt is in [`omachat-overview-prompt.txt`](omachat-overview-prompt.txt).
+The overview file keeps its C2PA content credentials, which record it as
+generated media. The demo capture is not produced by `tests/render-gallery.py`.
+
+## Plain captures
+
 These are captures of the real OmaChat QML panel with fictional contacts and
 messages, rendered using the stock Omarchy theme base palettes listed below.
 The fixture uses default control styling, not machine-specific shell overrides.
@@ -37,6 +54,6 @@ The renderer never starts the protocol helper or accesses accounts. It reads
 the installed stock `colors.toml` files and changes colors only inside its
 temporary process, with separate temporary configuration, data, cache, and
 runtime directories. No real contacts, messages, profile images, or wallpaper
-assets are used. The root preview is refreshed automatically from the Tokyo
-Night capture. The renderer also checks native header status changes with
+assets are used. The renderer writes only these five gallery captures and
+leaves the root preview alone. It also checks native header status changes with
 Google disabled, a partially connected set, and an offline helper.

@@ -270,8 +270,11 @@ does passing automated validation.
 The [current submission guide](https://github.com/omacom/omarchy-plugin-marketplace/blob/main/SUBMISSION.md)
 requires a public repository, a root manifest for one plugin, installation and
 removal documentation, license and dependency information, and a unique plugin
-ID. OmaChat uses `onelegdave.omachat`. The root `preview.png` and
-[theme gallery](screenshots/README.md) use fictional data in actual QML components.
+ID. OmaChat uses `onelegdave.omachat`. The root `preview.png` is a promotional
+overview: generated artwork around a capture of the actual QML panel, with
+fictional data and simulated states, labeled as such in the README. The
+[theme gallery](screenshots/README.md) keeps plain captures of the actual QML
+components with fictional data.
 
 Suggested listing category: **Productivity**. Suggested tags: **bar**, **quickshell**,
 **media**. These were submitted as suggestions and have not been confirmed by a

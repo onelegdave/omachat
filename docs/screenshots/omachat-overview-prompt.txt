@@ -1,0 +1,43 @@
+Use case: ads-marketing.
+Create ONE finished, exceptionally polished software marketplace hero poster for OmaChat, a native Omarchy desktop messaging plugin. This is a professional one-page product advertisement, landscape 16:10, target 2560 x 1600 pixels, crisp enough for a README and marketplace preview. It should look like a carefully art-directed commercial product launch cover, not a generic AI infographic.
+
+Input image 1 is a genuine screenshot of the actual OmaChat v0.6 QML interface with entirely FICTIONAL demo data. Use it as the actual product screenshot, placed prominently as one beautiful flat front-facing panel on the right, preserving its real interface design, text, service tabs, conversation sidebar, message bubbles, avatars, controls, and proportions as faithfully as possible. Do not invent a different app interface. Keep the entire screenshot including the titlebar, all service tabs, search field, conversation list, chat, and bottom composer visible. Do not crop controls. The contacts Alex Rivera, Nora Park, Weekend Walks, Riley Chen, Design Lab, Jordan Lee, and their messages are invented demo content and are safe to retain. No real person photos, private information, usernames, emails, device names, paths or account data should appear.
+
+ART DIRECTION:
+A refined Tokyo Night inspired dark navy/ink background, pale cool white typography, restrained periwinkle blue and mint accents. A very subtle atmospheric gradient and minimal luminous conversation-shaped arcs in the far background can add depth, but use ample quiet negative space. Clean Swiss/editorial type hierarchy with strong modern sans-serif headlines, precise spacing, attractive small line icons, subtle rule lines and balanced composition. No busy circuit boards, no gimmicky neon, no excessive gloss, no tilted perspective, no 3D laptop, no phones, no photographic desk. A soft controlled shadow and thin muted blue border around the real app panel are welcome.
+Generous safe margins, every element comfortably within the canvas, and a clear reading order: brand, headline, product screenshot, features, service row, disclosure. Keep the important content in a safe interior so a marketplace thumbnail crop does not lose text.
+
+COMPOSITION:
+Top-left: a tasteful simple speech-bubble mark with the large exact wordmark "OmaChat". Top-right: small elegant label "NATIVE OMARCHY PLUGIN".
+Left side below brand: large beautifully typeset headline in 2-3 lines:
+"All your chats.
+One native home."
+Smaller supporting sentence:
+"Messages, media and replies, right on your desktop."
+Below that, six well-spaced compact feature highlights, with clean thin line icons, in a tidy 2-column grid. All should be easy to scan, not inside six heavy bulky cards.
+The right approximately 60% of the hero area is the supplied real screenshot, front-facing, large enough that its content remains credible and readable. Maintain its original ~1.586:1 aspect ratio. Left copy must not overlap the UI.
+Across the lower section put five restrained text service badges evenly spaced, with optional small faithful service glyphs. A small Signal asterisk connects to the bottom disclosure.
+Bottom: a quiet but clearly readable disclosure. No URLs or author names.
+
+EXACT VISIBLE MARKETING COPY:
+"OmaChat"
+"NATIVE OMARCHY PLUGIN"
+"All your chats."
+"One native home."
+"Messages, media and replies, right on your desktop."
+"Unified inbox"
+"Direct & group chats"
+"Photos & voice notes"
+"Reactions & emoji"
+"Pop out & tile"
+"Themes & scaling"
+"Google Messages"
+"WhatsApp"
+"Telegram"
+"Messenger"
+"Signal*"
+"Signal is optional and experimental. All conversations shown are fictional."
+
+ACCURACY CONSTRAINTS:
+All six feature categories are supported by the product. Signal MUST be labeled optional and experimental in the disclosure. Do not claim official provider endorsement, marketplace approval, verified security, end-to-end encryption across services, zero bugs, offline messaging, automatic installation, Windows support, AI chat, transcription, analytics, or any unsupported capabilities. Do not add taglines, price, CTA buttons, ratings, release numbers, certificates, extra statistics or other invented marketing claims.
+Aim for an exceptionally elegant, coherent, premium-looking marketplace main picture with high typographic quality and exact spelling.

@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import shutil
 import tempfile
 import tomllib
 
@@ -42,4 +41,3 @@ with tempfile.TemporaryDirectory(prefix="omachat-gallery-") as folder:
     print(run.stdout)
     if run.returncode or "OMACHAT_GALLERY_PASS" not in run.stdout or "ERROR" in run.stdout:
         raise SystemExit(1)
-    shutil.copyfile(output / "tokyo-night.png", repo / "preview.png")

@@ -7,15 +7,21 @@ sessions, conversation drafts, history, and inline media.
 
 Current stable release: **0.6.0**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.6.0).
 
-![OmaChat inbox with invented demo contacts](preview.png)
+![OmaChat promotional overview: the panel with fictional conversations beside its main features and supported services](preview.png)
 
-The preview shows the current QML panel with fictional contacts and messages,
-all service tabs, unread badges, and reactions using the Tokyo Night base
-palette. Connection and delivery states are simulated.
+This promotional overview places a capture of the real OmaChat panel, with
+fictional contacts and messages, in artwork made with image generation. It is
+an illustration, not a pixel-exact screenshot. Connection, unread, reaction, and
+delivery states are simulated, and Signal is optional and experimental. A
+[standalone copy](docs/screenshots/omachat-overview.png) is in the gallery
+folder. For plain captures of the panel, open the theme examples below or the
+[gallery and reproduction details](docs/screenshots/README.md).
 Never include private conversations or account details in public screenshots.
 
 <details>
-<summary>More theme examples: Catppuccin Latte and Gruvbox</summary>
+<summary>Plain panel captures: Tokyo Night, Catppuccin Latte, and Gruvbox</summary>
+
+![OmaChat with the Tokyo Night base palette](docs/screenshots/tokyo-night.png)
 
 ![OmaChat with the Catppuccin Latte light base palette](docs/screenshots/catppuccin-latte.png)
 
@@ -431,8 +437,11 @@ tools. Claude (Anthropic) writes much of the code, including the 0.6.0
 integration of the Signal, new-conversation, and WhatsApp status contributions
 and its fixes and tests. Codex (OpenAI) reviews changes, audits
 security-sensitive routes such as remote content reaching the shell, and has
-also written code. Earlier releases had code and reviews from both. Community
-contributors wrote their own patches and keep their commit authorship.
+also written code. Earlier releases had code and reviews from both. For the
+promotional overview image, Codex prepared the fictional demo capture and the
+marketing copy, and OpenAI's built-in image generation created the artwork.
+Community contributors wrote their own patches and keep their commit
+authorship.
 
 Other plugins: [OmaDroid](https://github.com/onelegdave/omadroid) and
 [System QuikView](https://github.com/onelegdave/system-quikview).
