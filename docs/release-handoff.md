@@ -1,15 +1,19 @@
-# Release handoff: OmaChat 0.6.0 candidate
+# Release handoff: OmaChat 0.6.0
 
-This is the continuation point for the 0.6.0 release candidate. It records what
-the candidate contains, what was verified and how, and what still needs live
-acceptance and the maintainer's publication steps. Update it when the
-candidate changes. Last updated October 17, 2026.
+This records the 0.6.0 changes, verification, live acceptance limits, and
+publication procedure. The public release and Marketplace request linked
+below are the sources for current publication status. Last updated October
+17, 2026.
 
-## Candidate
+## Release record
 
 - Branch `release/omachat-complete-20261017`, based on `main` at v0.5.5
-  (`3dbd975f8a0fbf427bbb7c09179664f02a824e53`). The candidate is the branch tip
-  that contains this file. Nothing from it is pushed, tagged, or published.
+  (`3dbd975f8a0fbf427bbb7c09179664f02a824e53`). The release candidate is the
+  branch tip that contains this file.
+- [GitHub release v0.6.0](https://github.com/onelegdave/omachat/releases/tag/v0.6.0)
+  records release publication. [Marketplace request #10861](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861)
+  records the separate exact-commit review and catalog promotion. A GitHub
+  release does not by itself mean Marketplace approval.
 - One release, 0.6.0. The remote-content work prepared as v0.5.6 was never
   published and is part of 0.6.0; its notes became
   [RELEASE-0.6.0](history/RELEASE-0.6.0.md).
@@ -121,7 +125,9 @@ Notes from the native runs:
 
 ## Publication steps (maintainer)
 
-These are not done. Keep `main` fixed while a Marketplace review is pending.
+These steps were pending when the candidate was prepared. Check the linked
+public records for their current state. Keep `main` fixed while a Marketplace
+review is pending.
 
 1. Review the candidate, then fast-forward or merge it to `main` and push.
 2. Create the `v0.6.0` tag and GitHub release from that commit, using the

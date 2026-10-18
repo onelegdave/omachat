@@ -199,7 +199,8 @@ alongside the existing chat/media and notification capabilities.
 The alternate local installer and early-bin/cache staging patch from PR #9 are
 excluded. Installation remains `omarchy plugin add`, with no installer hook,
 automatic package installation, new systemd unit, or tracked executable binary.
-Signal and conversation creation remain separate review candidates.
+At the October 9 checkpoint, Signal and conversation creation were separate
+review candidates. They are included in the combined v0.6.0 update above.
 
 Local test/manifest evidence does not cover the official marketplace baseline,
 maintainer approval, native Wayland focus/rendering, or real provider accounts.
