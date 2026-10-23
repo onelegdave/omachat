@@ -49,9 +49,11 @@ they complete verification and release review.
 
 Original contributor commits are retained in the integration history. Release
 notes name contributors whose work is included in each release. OneLegDave
-remains the maintainer. Claude writes much of the code and Codex reviews and
-audits it; see [AI assistance](README.md#ai-assistance). Earlier assistance and
-upstream copyright notices remain credited.
+remains the maintainer. Claude is the AI development lead and contributor
+working under OneLegDave's direction. Codex contributes implementation,
+review, and security audits, including the unreleased Messenger HTTP response
+limit and its regression tests; see [AI assistance](README.md#ai-assistance).
+Earlier assistance and upstream copyright notices remain credited.
 
 The maintainer reports successful fresh-install use with Google Messages disabled.
 Google Messages was not tested in this acceptance pass. The unified-inbox status

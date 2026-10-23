@@ -24,7 +24,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -41,6 +40,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
 
+	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/useragent"
 )
 
@@ -97,7 +97,10 @@ func (c *Client) doE2EERequest(ctx context.Context, endpoint string, body url.Va
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := httpclient.ReadResponseBody(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
 	logEvt := zerolog.Ctx(ctx).Trace().
 		Str("url", addr).
 		Int("status_code", resp.StatusCode)
@@ -107,9 +110,7 @@ func (c *Client) doE2EERequest(ctx context.Context, endpoint string, body url.Va
 		logEvt.Str("response_body", base64.StdEncoding.EncodeToString(respBody))
 	}
 	logEvt.Msg("ICDC response")
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	} else if resp.StatusCode >= 300 || resp.StatusCode < 200 {
+	if resp.StatusCode >= 300 || resp.StatusCode < 200 {
 		return fmt.Errorf("unexpected status code %d", resp.StatusCode)
 	} else if err = json.Unmarshal(respBody, into); err != nil {
 		return fmt.Errorf("failed to unmarshal response: %w", err)

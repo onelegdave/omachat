@@ -1,5 +1,22 @@
 # Marketplace readiness
 
+## Unreleased Messenger HTTP response correction
+
+The [October 21 review finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6314053857)
+identified an unbounded Messenger inbox response read in v0.6.0. The pending
+correction caps decoded HTTP responses at 32 MiB, covers the separate encrypted
+device-registration reader, and treats oversized replies as permanent errors.
+See [response safety](messenger-response-safety.md) for scope, regression
+fixtures, the compatibility ceiling, and vendoring instructions. Codex
+implemented this correction under OneLegDave's direction. Claude independently
+reviewed the response paths and regression tests, found no blocking issues,
+and suggested additional registration read-error and trace-log checks, now
+included in the fixtures.
+
+This is an unreleased correction. The current Marketplace request and release
+tag are unchanged. A complete maintainer review of the eventual public SHA
+and live-provider acceptance remain outstanding.
+
 ## v0.6.0 update
 
 v0.6.0 is one update covering the remote-content correction below and new

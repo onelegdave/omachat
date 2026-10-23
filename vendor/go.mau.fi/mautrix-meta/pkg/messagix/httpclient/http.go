@@ -301,6 +301,10 @@ func (c *HTTPClient) NewHTTPQuery() *HTTPQuery {
 
 const MaxHTTPRetries = 5
 
+// MaxResponseBodyBytes bounds decoded API, inbox HTML, and JavaScript responses.
+// OmaChat local patch: keep this limit when updating the vendored client.
+const MaxResponseBodyBytes = 32 << 20
+
 var (
 	ErrTokenInvalidated         = errors.New("access token is no longer valid")
 	ErrTokenInvalidatedRedirect = fmt.Errorf("%w: redirected", ErrTokenInvalidated)
@@ -310,6 +314,7 @@ var (
 	ErrAccountSuspended         = errors.New("account suspended")
 	ErrRequestFailed            = errors.New("failed to send request")
 	ErrResponseReadFailed       = errors.New("failed to read response body")
+	ErrResponseTooLarge         = fmt.Errorf("response body exceeds %d byte limit", MaxResponseBodyBytes)
 	ErrUnexpectedError          = errors.New("server returned unexpected HTTP status")
 	ErrMaxRetriesReached        = errors.New("maximum retries reached")
 	ErrTooManyRedirects         = errors.New("too many redirects")
@@ -323,7 +328,8 @@ func IsPermanentRequestError(err error) bool {
 		errors.Is(err, ErrCheckpointRequired) ||
 		errors.Is(err, ErrConsentRequired) ||
 		errors.Is(err, ErrAccountSuspended) ||
-		errors.Is(err, ErrTooManyRedirects)
+		errors.Is(err, ErrTooManyRedirects) ||
+		errors.Is(err, ErrResponseTooLarge)
 }
 
 func (c *HTTPClient) checkHTTPRedirect(req *http.Request, via []*http.Request) error {
@@ -464,7 +470,7 @@ func (c *HTTPClient) makeRequestDirect(ctx context.Context, url string, method s
 		return nil, nil, fmt.Errorf("%w: %w", ErrRequestFailed, err)
 	}
 
-	responseBody, err := io.ReadAll(response.Body)
+	responseBody, err := ReadResponseBody(response.Body)
 	if err != nil {
 		return response, nil, fmt.Errorf("%w: %w", ErrResponseReadFailed, err)
 	}
@@ -475,6 +481,20 @@ func (c *HTTPClient) makeRequestDirect(ctx context.Context, url string, method s
 	}
 
 	return response, responseBody, nil
+}
+
+// ReadResponseBody reads after the HTTP transport's decompression, without
+// trusting Content-Length. The caller must close the body on every outcome.
+// No partial body is returned on failure, so callers cannot parse or log it.
+func ReadResponseBody(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, MaxResponseBodyBytes+1))
+	if len(data) > MaxResponseBodyBytes {
+		return nil, ErrResponseTooLarge
+	}
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func (c *HTTPClient) fetchPageData(ctx context.Context, page string) ([]byte, error) {
