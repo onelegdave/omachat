@@ -1,6 +1,9 @@
 # OmaChat documentation
 
-The current stable release is OmaChat v0.6.0, which adds optional Signal support
+The current stable release is OmaChat v0.6.1, which bounds decoded Messenger
+HTTP responses. See the [v0.6.1 release notes](history/RELEASE-0.6.1.md) and
+[response safety](messenger-response-safety.md). It includes v0.6.0, which adds
+optional Signal support
 and starting new direct and group chats, and keeps remote images, names, and
 messages away from the shell's decoders. See the
 [v0.6.0 release notes](history/RELEASE-0.6.0.md) and
@@ -16,7 +19,7 @@ and verification limits.
 
 - [Theme screenshots with fictional chats](screenshots/README.md)
 - [Marketplace readiness and review limits](marketplace-readiness.md)
-- [0.6.0 release candidate handoff](release-handoff.md)
+- [Release handoff and previous verification records](release-handoff.md)
 - [Oldsmaru acceptance record](oldsmaru-checklist.md)
 
 - [Overview, installation, features, and removal](../README.md)

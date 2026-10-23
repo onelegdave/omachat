@@ -1,4 +1,27 @@
-# Release handoff: OmaChat 0.6.0
+# Release handoff: OmaChat 0.6.1
+
+v0.6.1 contains the decoded Messenger HTTP response limit described in
+[release notes](history/RELEASE-0.6.1.md) and [response safety](messenger-response-safety.md).
+It builds on public `main` at `fa06f4e1cd222494662e707b87056680ea42e08b`.
+Codex implemented the fix and Claude independently reviewed it with no blocking
+findings; all optional review suggestions were addressed.
+
+Publish the final release commit to `main`, create a new immutable `v0.6.1`
+tag and stable GitHub release, then edit the existing Marketplace
+[request #10861](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861)
+to that exact 40-character HEAD SHA. Reply to the
+[Messenger response finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6314053857)
+with implementation and verification evidence. Keep `main` fixed during review.
+Fresh compatibility validation, the Automated Security Baseline, an authorized
+maintainer's `approved-and-verified` decision, and catalog deployment are
+separate from the GitHub release. The linked public records show their current
+status; no old approval applies to the new commit.
+
+Users must rebuild the helper after updating. No session migration or re-pairing
+is introduced. Live provider accounts and an installed-profile upgrade have
+not been exercised for this correction; older evidence below is historical.
+
+## Previous v0.6.0 handoff (historical)
 
 This records the 0.6.0 changes, verification, live acceptance limits, and
 publication procedure. The public release and Marketplace request linked
