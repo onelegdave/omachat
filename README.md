@@ -5,7 +5,7 @@ and an experimental Signal integration.
 Read and reply to conversations in a native panel with separate service
 sessions, conversation drafts, history, and inline media.
 
-Current stable release: **0.6.1**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.6.1).
+Current stable release: **0.6.2**. [Release notes](https://github.com/onelegdave/omachat/releases/tag/v0.6.2).
 
 ![OmaChat promotional overview: the panel with fictional conversations beside its main features and supported services](preview.png)
 

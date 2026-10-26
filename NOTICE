@@ -44,6 +44,9 @@ OmaChat locally modifies its messagix HTTP client and encrypted-device
 registration reader to cap decoded responses at 32 MiB and refuse retries
 of oversized responses. Preserve this patch and its regression tests when
 updating the dependency; see docs/messenger-response-safety.md.
+The DGW WebSocket receiver also caps each decoded incoming message at 32 MiB,
+including fragmented and compressed messages. Preserve this local patch and
+its socket regression tests; see docs/messenger-websocket-safety.md.
 
 Optional Signal support invokes the separately installed signal-cli executable
 over its JSON-RPC interface. signal-cli is an independent GPL-3.0 project by

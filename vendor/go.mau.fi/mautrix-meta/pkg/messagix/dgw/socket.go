@@ -184,6 +184,11 @@ var ErrSocketAlreadyOpen = errors.New("dgw: socket is already open")
 var ErrDial = errors.New("dgw: failed to dial socket")
 var ErrPongTimeout = errors.New("dgw: pong timeout")
 
+// A WebSocket message can contain multiple DGW frames. Bound the complete
+// decoded message before parsing it, including fragments and negotiated
+// compression. This is a per-message ceiling, not a total memory budget.
+const maxIncomingMessageBytes = 32 << 20
+
 type wrappedDataFrame struct {
 	s Stream
 	f *DataFrame
@@ -204,7 +209,7 @@ func (s *Socket) Connect(ctx context.Context) (err error) {
 		}
 		return fmt.Errorf("%w: %w", ErrDial, err)
 	}
-	conn.SetReadLimit(-1)
+	conn.SetReadLimit(maxIncomingMessageBytes)
 	s.conn.Store(conn)
 	if s.stopping.Load() {
 		s.conn.Store(nil)

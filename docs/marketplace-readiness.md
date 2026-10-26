@@ -1,5 +1,20 @@
 # Marketplace readiness
 
+## v0.6.2 Messenger WebSocket correction
+
+The [October 25 finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6403016904)
+confirmed the v0.6.1 HTTP correction and identified the separate unbounded
+DGW WebSocket receiver. This candidate bounds each incoming decoded message
+at 32 MiB before parsing, including fragments and negotiated compression.
+See [WebSocket safety](messenger-websocket-safety.md) for disconnect handling,
+regressions, and limits. Codex implemented and verified this correction.
+
+The existing request #10861 must be retargeted to the final public release
+commit after publication is authorized. Fresh validation, baseline checks,
+and the maintainer's remaining source/capability review are still required.
+This candidate is not Marketplace-approved; live Messenger compatibility
+at the new ceiling has not been established.
+
 ## v0.6.1 Messenger HTTP response correction
 
 The [October 21 review finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6314053857)

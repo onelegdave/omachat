@@ -1,7 +1,9 @@
 # OmaChat documentation
 
-The current stable release is OmaChat v0.6.1, which bounds decoded Messenger
-HTTP responses. See the [v0.6.1 release notes](history/RELEASE-0.6.1.md) and
+The current stable release is OmaChat v0.6.2, which bounds incoming Messenger
+WebSocket messages. See the [v0.6.2 release notes](history/RELEASE-0.6.2.md) and
+[WebSocket safety](messenger-websocket-safety.md). It retains the decoded
+Messenger HTTP limits from [v0.6.1](history/RELEASE-0.6.1.md) and
 [response safety](messenger-response-safety.md). It includes v0.6.0, which adds
 optional Signal support
 and starting new direct and group chats, and keeps remote images, names, and

@@ -1,4 +1,27 @@
-# Release handoff: OmaChat 0.6.1
+# Release handoff: OmaChat 0.6.2
+
+Prepared October 26, 2026 from public v0.6.1 at
+`ba115ba4140dd7cccd38281320edb7c5ec462612`. This candidate corrects the
+[October 25 WebSocket finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6403016904)
+with a 32 MiB decoded-message limit and production-socket regression tests.
+See [WebSocket safety](messenger-websocket-safety.md) and the
+[release notes](history/RELEASE-0.6.2.md).
+
+Current state: implementation and release verification pass. The full Go
+suite, vendored regression suites, `go vet ./...`, 18 socket cases under the
+race detector, 77 Node tests, 63 Python tests, and all 25 native QML fixture
+markers passed on October 26, 2026. Plugin validation and the offline helper
+build passed; the built helper reports `0.6.2`. The overflow tests fail with
+the original unlimited reader. Runtime: installed Go 1.27.3 on Linux, using
+vendored dependencies and isolated test data. No live provider account has
+been used. The public branch and Marketplace request remain on v0.6.1.
+
+Exact next work: obtain publication approval, then publish the final commit,
+v0.6.2 tag and release.
+Retarget the existing request #10861 and reply to the latest finding with the
+new exact commit and evidence. Keep main fixed during renewed review.
+
+## Previous v0.6.1 handoff (historical)
 
 v0.6.1 contains the decoded Messenger HTTP response limit described in
 [release notes](history/RELEASE-0.6.1.md) and [response safety](messenger-response-safety.md).

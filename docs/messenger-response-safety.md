@@ -25,7 +25,8 @@ message frames, while bounding each response buffer. It is not a 32 MiB cap
 on total helper memory: allocation growth, parsing, other state, and concurrent
 requests also consume memory. Attachment downloads retain their separate
 [file limits](media-download-safety.md). WebSocket message handling is outside
-this HTTP-response correction.
+this HTTP-response correction. v0.6.2 adds a separate
+[WebSocket message limit](messenger-websocket-safety.md).
 
 `ponytail:` 32 MiB is a fixed ceiling, not a user setting. Revisit it only with
 a reproducible legitimate provider response that exceeds it and a measured
