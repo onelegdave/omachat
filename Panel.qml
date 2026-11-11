@@ -256,6 +256,9 @@ Panel {
     popoutModeError = ""
     appliedPopoutMode = ""
     popoutAddress = ""
+    // After a compositor-side close, FloatingWindow still holds its requested
+    // visibility at true, so assigning true again is a no-op. Reset it first.
+    popoutWindow.visible = false
     popoutWindow.visible = true
     requestPopoutMode(popoutMode)
     Qt.callLater(function() {
