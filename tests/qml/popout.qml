@@ -65,10 +65,22 @@ ShellRoot {
           clientCheck.command = ["hyprctl", "-j", "clients"]
           clientCheck.running = true
           root.step = 7
-        } else if (root.step === 8) {
+        } else if (root.step === 8 && !panel.popoutOpen) {
+          root.check(!panel.opened,
+            "a compositor-side close does not reopen the anchored panel")
+          panel.open()
+          root.step = 9
+        } else if (root.step === 9 && panel.popoutOpen && panel.appliedPopoutMode === "tiled") {
+          root.check(panel.contentInPopout,
+            "the pop-out opens again after a compositor-side close")
+          clientCheck.expectedFloating = false
+          clientCheck.command = ["hyprctl", "-j", "clients"]
+          clientCheck.running = true
+          root.step = 10
+        } else if (root.step === 11) {
           root.check(!panel.popoutOpen && !panel.opened,
             "closing an automatic pop-out does not reopen the anchored panel")
-          console.log("OMACHAT_POPOUT_PASS hidden default, shared surface, floating, tiled, return, and automatic tiled open")
+          console.log("OMACHAT_POPOUT_PASS hidden default, shared surface, floating, tiled, return, automatic tiled open, and reopen after a compositor-side close")
           Qt.quit()
         }
       } catch (error) {
@@ -107,13 +119,28 @@ ShellRoot {
         } else if (root.step === 4) {
           panel.returnToPanel()
           root.step = 5
+        } else if (root.step === 7) {
+          // Close the window the way a compositor keybind does, not through the panel.
+          compositorClose.command = [
+            "hyprctl", "dispatch",
+            "hl.dsp.window.close({ window = \"address:" + panel.popoutAddress + "\" })"
+          ]
+          compositorClose.running = true
+          root.step = 8
         } else {
           panel.closePopout(false)
-          root.step = 8
+          root.step = 11
         }
       } catch (error) {
         root.fail(String(error) + " " + String(clientsStderr.text || ""))
       }
+    }
+  }
+
+  Process {
+    id: compositorClose
+    onExited: function(code) {
+      if (code !== 0) root.fail("Hyprland could not close the pop-out window")
     }
   }
 
