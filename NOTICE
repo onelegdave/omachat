@@ -21,6 +21,13 @@ It also includes a surgical backport of upstream commit 7b4cac4dc61a4617d6ede52e
 (Aug 31, 2026) to fix error code 32 (CLIENT_ATTESTATION_MISSING) during Gaia pairing,
 adding PrivateAPIConfirmation to GaiaPairingRequestContainer.
 
+It also includes a surgical backport of upstream commit b580a1a14f5893d7afcf3538f065b783a0d51a29
+(Nov 12, 2026, released in v0.2611.0). When Google Messages sends a conversation
+or message with an empty top-level ID, the decrypt path fills it from the nested
+ID field; IDs that are present are never changed. The backport and its tests are
+in pkg/libgm/event_handler.go and nested_ids_backport_test.go. Preserve both when
+updating the vendored dependency until upstream includes the change.
+
 WhatsApp support vendors go.mau.fi/whatsmeow and related go.mau.fi modules
 under the Mozilla Public License 2.0. Those files remain MPL-2.0; this plugin
 does not relicense them. github.com/mattn/go-sqlite3 is MIT and is linked
