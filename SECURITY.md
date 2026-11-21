@@ -3,7 +3,9 @@
 This Native Omarchy Plugin talks to Google Messages, WhatsApp, Telegram,
 Messenger, and, when explicitly enabled, the external `signal-cli` process. It
 reads browser cookies while checking pairing profiles, pairing, changing the
-selected profile, and recovering from authentication failures. WhatsApp and
+selected profile, and recovering from authentication failures. Only while the
+opt-in sign-in diagnostics are on, it also checks Google sign-in cookie
+metadata in the selected browser profile without decrypting it. WhatsApp and
 Telegram use their QR flows. Message content and credentials are cached locally.
 
 ## Report a vulnerability
@@ -21,7 +23,8 @@ or working exploit details in a public issue.
 - Telegram session and chat cache: `~/.local/share/omachat/telegram.session` and `telegram_store.json` (0600)
 - Messenger session, encrypted-device state, and chat cache: `~/.local/share/omachat/messenger.db` and `messenger_store.json` (0600)
 - Signal linked-device keys and local message cache: `~/.local/share/omachat/signal-cli/` and `signal_store.json`; OmaChat creates the enclosing directories as 0700 and its message cache as 0600, while file modes within the `signal-cli`-managed directory are controlled by `signal-cli`
-- Config (browser profile, Telegram API credentials, notification and pop-out preferences, sidebar layout, last service and per-service conversation IDs): `~/.local/share/omachat/config.json` (0600)
+- Config (browser profile, Telegram API credentials, notification and pop-out preferences, sidebar layout, last service and per-service conversation IDs, sign-in diagnostics choice): `~/.local/share/omachat/config.json` (0600)
+- Google Messages sign-in diagnostics, only if switched on in Settings > Debug: `~/.local/state/omachat/auth.log` and one older `auth.log.1` (0600, folder 0700, about 2 MB in total). See [Sign-in diagnostics](#sign-in-diagnostics).
 - Attachment cache: `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, `media_messenger/`, and `media_signal/`
 - Telegram conversation caches from before typed peer IDs are ignored on upgrade;
   pairing credentials are retained and ambiguous attachment filenames are not reused.
@@ -109,6 +112,41 @@ programs it starts. The pairing link reaches `qrencode` on standard input.
   URLs. Images open locally with `xdg-open` after they are already in the cache.
 - Pairing copies the browser cookie database to a 0600 tempfile so it can
   be read while the browser holds a lock, then deletes it.
+
+## Sign-in diagnostics
+
+Settings > Debug > Sign-in diagnostics is off by default and exists to find out
+why Google Messages asks to pair again. While it is off, nothing is logged, the
+browser is not checked, and no diagnostics folder is created. Turning it off
+stops writing immediately; **Delete log** removes both log files.
+
+While it is on, the helper writes `~/.local/state/omachat/auth.log` itself. The
+Google Messages library's own logging never reaches it. It records:
+
+- Google sign-in failures: where they happened, the HTTP status and error text,
+  and, for 401 and 403 responses only, Google's error response as received
+  (up to 64 KiB, deduplicated and rate limited).
+- Browser cookie refreshes that OmaChat already performs, the browser profile
+  name, and whether they worked.
+- The names of sign-in cookies that changed in OmaChat's session or in the
+  browser, with salted 8-character fingerprints. The salt is random per log, so
+  fingerprints cannot be compared across logs and values cannot be recovered.
+- Connection, pairing, and phone status changes with their status messages.
+
+Cookie and token values are never written; text fields are also scrubbed for
+the live credentials before they are written. Messages, contacts, and phone
+numbers are not recorded. Google's error responses are kept as received and
+can include an IP address or, occasionally, an account name, so review the
+log before sharing it.
+
+While diagnostics are on and Google Messages is paired, the helper checks the
+selected browser profile's cookie file at most every three minutes. When it
+changed, `sqlite3` reads the live file read-only (`mode=ro&immutable=1`, no
+copy) and returns, for the listed Google sign-in cookies on `.google.com` and
+`messages.google.com` only, their dates, sizes, and a SHA3 hash of the
+still-encrypted value. It never runs `secret-tool`, never decrypts, and never
+uses what it reads. The log is restricted to your account; root and programs
+running as you can still read it.
 
 Revoke the paired device on your phone when you stop using this machine.
 

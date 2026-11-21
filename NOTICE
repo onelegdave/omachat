@@ -28,6 +28,13 @@ ID field; IDs that are present are never changed. The backport and its tests are
 in pkg/libgm/event_handler.go and nested_ids_backport_test.go. Preserve both when
 updating the vendored dependency until upstream includes the change.
 
+It also includes a local, log-only patch in pkg/libgm/client.go: AuthData has an
+optional CookieObserver that UpdateCookiesFromResponse calls, after releasing
+CookiesLock, with the names (never the values) of cookies a response set. It
+does not change how cookies are stored. OmaChat's opt-in sign-in diagnostics use
+it. The patch and its tests (cookie_observer_backport_test.go) must be preserved
+when updating the vendored dependency.
+
 WhatsApp support vendors go.mau.fi/whatsmeow and related go.mau.fi modules
 under the Mozilla Public License 2.0. Those files remain MPL-2.0; this plugin
 does not relicense them. github.com/mattn/go-sqlite3 is MIT and is linked

@@ -292,6 +292,27 @@ func (d *Daemon) dispatch(ctx context.Context, req wire.Request) wire.Response {
 		}
 		return wire.Response{ID: req.ID, OK: true, Result: d.PluginConfig()}
 	}
+	if req.Method == wire.MethodSetDebugLogging {
+		p, err := decodeParams[wire.SetDebugLoggingParams](req.Params)
+		if err == nil && p.Enabled == nil {
+			err = errors.New("enabled must be true or false")
+		}
+		if err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+		if err := d.SetDebugLogging(*p.Enabled); err != nil {
+			return wire.Response{ID: req.ID, Error: err.Error()}
+		}
+		return wire.Response{ID: req.ID, OK: true, Result: d.PluginConfig()}
+	}
+	if req.Method == wire.MethodDeleteDebugLog {
+		// Handled before the service checks so it works with Google Messages
+		// disabled or a restart pending.
+		if err := d.DeleteDebugLog(); err != nil {
+			return wire.Response{ID: req.ID, Error: "Could not delete the log: " + err.Error()}
+		}
+		return wire.Response{ID: req.ID, OK: true, Result: map[string]bool{"deleted": true}}
+	}
 	if globalSetting(req.Method) {
 		return d.dispatchGMessages(ctx, req)
 	}

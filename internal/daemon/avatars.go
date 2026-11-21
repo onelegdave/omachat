@@ -156,6 +156,7 @@ func (d *Daemon) fetchOneAvatar(ctx context.Context, src avatarSource) ([]byte, 
 	}
 	resp, err := c.GetParticipantThumbnail(ctx, src.participantID)
 	if err != nil {
+		d.diagObserveAuthError("rpc:participantThumbnail", err)
 		return nil, err
 	}
 	thumbs := resp.GetThumbnail()

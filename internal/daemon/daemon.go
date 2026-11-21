@@ -72,6 +72,9 @@ type Daemon struct {
 	cookies cookieRefresher
 	syncing bool // guarded by sessionMu
 
+	// diag is the opt-in sign-in diagnostics log (Settings > Debug).
+	diag *authDiag
+
 	// Maintenance starts either after a stored session connects or after a
 	// fresh pairing, whichever happens first, and must run exactly once. It is
 	// tied to the daemon's own context so it stops with the daemon rather than
@@ -114,6 +117,7 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		previews:  newPreviewCache(paths),
 		config:    store.NewConfigStore(paths.ConfigFile()),
 		reactions: make(map[string][]reactionRecord),
+		diag:      newAuthDiag(paths),
 		// PhoneOK starts true: it is only ever falsified by an explicit
 		// PhoneNotResponding event. Starting false meant the bar read
 		// "Phone not responding" forever, because the event that clears it
@@ -171,6 +175,11 @@ func (d *Daemon) Start(ctx context.Context) error {
 	// daemon instead of outliving it.
 	d.maintCtx, d.maintCancel = context.WithCancel(ctx)
 	d.sessionCtx, d.sessionCancel = context.WithCancel(d.maintCtx)
+	if d.config.Get().DebugLogging {
+		if err := d.applyDebugLogging(true, "helperStart"); err != nil {
+			d.log.Warn().Err(err).Msg("Sign-in diagnostics could not start")
+		}
+	}
 
 	// Independent network start: start WhatsApp and Telegram regardless of Google session status
 	if d.wa != nil && d.serviceEnabled(wire.NetworkWhatsApp) {
@@ -215,6 +224,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.setState(wire.StateDisconnected, "load session: "+err.Error())
 		return nil
 	}
+	d.attachAuthObservers(auth)
 	d.mu.Lock()
 	d.auth = auth
 	d.client = libgm.NewClient(auth, nil, d.log.With().Str("component", "libgm").Logger())
@@ -234,6 +244,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	d.setState(wire.StateConnecting, "")
 	if err := d.client.Connect(); err != nil {
+		d.diagStartupConnectFailed(err)
 		// A failed connect is recoverable (phone offline, token expired), so
 		// surface it rather than exiting; the plugin shows a retry affordance.
 		if isAuthError(err) {
@@ -310,6 +321,7 @@ func (d *Daemon) canSyncLocked() bool {
 
 // Stop disconnects cleanly and persists the session.
 func (d *Daemon) Stop() {
+	d.stopDiagnostics()
 	d.sessionMu.Lock()
 	if d.maintCancel != nil {
 		d.maintCancel()
@@ -359,7 +371,9 @@ func (d *Daemon) saveSessionLocked() {
 	}
 	if err := d.paths.SaveSession(auth); err != nil {
 		d.log.Error().Err(err).Msg("Failed to save session")
+		return
 	}
+	d.diagSessionSaved(auth)
 }
 
 // --- event fan-out ---
@@ -400,6 +414,7 @@ func (d *Daemon) publish(name string, data any) {
 
 func (d *Daemon) setState(state wire.ConnState, errMsg string) {
 	d.mu.Lock()
+	fromState, fromMsg := d.status.State, d.status.Error
 	d.status.State = state
 	d.status.Error = errMsg
 	// Hint belongs to the error it was set with; a new state invalidates it.
@@ -413,6 +428,7 @@ func (d *Daemon) setState(state wire.ConnState, errMsg string) {
 	d.status.Unread = d.unreadCountLocked()
 	st := d.status
 	d.mu.Unlock()
+	d.diagStateChange("setState", fromState, fromMsg, state, errMsg)
 	d.publish(wire.EventStatus, st)
 }
 

@@ -49,13 +49,17 @@ func (d *Daemon) clientEventHandler(c *libgm.Client, ctx context.Context) libgm.
 		d.sessionMu.Lock()
 		defer d.sessionMu.Unlock()
 		if ctx.Err() != nil {
+			d.diagLibgmEvent(evt, "sessionEnded")
 			return
 		}
 		d.mu.RLock()
 		current := d.client == c
 		d.mu.RUnlock()
 		if current {
+			d.diagLibgmEvent(evt, "")
 			d.handleEvent(evt)
+		} else {
+			d.diagLibgmEvent(evt, "staleClient")
 		}
 	}
 }
@@ -79,8 +83,10 @@ func (d *Daemon) resetSessionLocked() (*libgm.Client, error) {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	auth := libgm.NewAuthData()
+	d.attachAuthObservers(auth)
 	c := libgm.NewClient(auth, nil, d.log.With().Str("component", "libgm").Logger())
 	d.mu.Lock()
+	fromState, fromMsg := d.status.State, d.status.Error
 	old := d.client
 	d.paired = false
 	d.client, d.auth = c, auth
@@ -90,6 +96,7 @@ func (d *Daemon) resetSessionLocked() (*libgm.Client, error) {
 	d.selfIDs = make(map[string]bool)
 	d.status = wire.Status{State: wire.StateUnpaired, PhoneOK: true}
 	d.mu.Unlock()
+	d.diagStateChange("resetSession", fromState, fromMsg, wire.StateUnpaired, "")
 	d.bindClient(c, ctx)
 	d.cookies.mu.Lock()
 	d.cookies.last = time.Time{}
@@ -115,6 +122,7 @@ func (d *Daemon) resetLoggedOut(ctx context.Context) {
 	if err != nil {
 		d.log.Error().Err(err).Msg("Could not clear logged-out session")
 	}
+	d.diagEvent("sessionCleared", logFields{"reason": "serverLoggedOut", "clearError": errText(err)})
 	d.setState(wire.StateUnpaired, "Google signed this device out. Pair again.")
 	d.sessionMu.Unlock()
 	if old != nil {

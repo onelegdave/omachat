@@ -264,7 +264,7 @@ func (d *Daemon) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaResu
 
 	switch {
 	case secret.mediaID != "":
-		data, err = withAuthRetry(ctx, d, func() ([]byte, error) {
+		data, err = withAuthRetryAt(ctx, d, "rpc:downloadMedia", func() ([]byte, error) {
 			return d.downloadMediaBounded(ctx, secret.mediaID, secret.key)
 		})
 		if err != nil {
@@ -272,7 +272,7 @@ func (d *Daemon) Media(ctx context.Context, p wire.MediaParams) (*wire.MediaResu
 		}
 
 	case secret.thumbID != "":
-		data, err = withAuthRetry(ctx, d, func() ([]byte, error) {
+		data, err = withAuthRetryAt(ctx, d, "rpc:downloadThumbnail", func() ([]byte, error) {
 			return d.downloadMediaBounded(ctx, secret.thumbID, secret.thumbKey)
 		})
 		if err != nil {
@@ -343,6 +343,7 @@ func (d *Daemon) requestFullSize(ctx context.Context, key string, secret mediaSe
 		ctx, cancel := context.WithTimeout(parent, 45*time.Second)
 		defer cancel()
 		if _, err := c.GetFullSizeImage(ctx, secret.messageID, secret.partID); err != nil {
+			d.diagObserveAuthError("rpc:fullSizeImage", err)
 			d.log.Debug().Err(err).Str("key", key).Msg("Full-size media request failed")
 			return
 		}

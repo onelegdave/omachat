@@ -80,7 +80,16 @@ func (d *Daemon) downloadMediaBounded(ctx context.Context, mediaID string, key [
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download failed: HTTP %d", res.StatusCode)
+		failure := &mediaHTTPError{status: res.StatusCode, contentType: res.Header.Get("Content-Type")}
+		if d.diagOn() && (res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden) {
+			// Diagnostics only: keep the start of the error response.
+			failure.body, _ = io.ReadAll(io.LimitReader(res.Body, authLogBodyCap))
+			failure.bodyLen = len(failure.body)
+			if res.ContentLength > int64(failure.bodyLen) {
+				failure.bodyLen = int(res.ContentLength)
+			}
+		}
+		return nil, failure
 	}
 	body, err := readBounded(res.ContentLength, res.Body)
 	if err != nil {

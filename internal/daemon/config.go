@@ -1,6 +1,11 @@
 package daemon
 
-import "github.com/onelegdave/omachat/internal/wire"
+import (
+	"os"
+	"strings"
+
+	"github.com/onelegdave/omachat/internal/wire"
+)
 
 // PluginConfig is the panel-safe snapshot of daemon preferences.
 func (d *Daemon) PluginConfig() wire.ConfigResult {
@@ -34,7 +39,21 @@ func (d *Daemon) PluginConfig() wire.ConfigResult {
 		KeepPreviousEmojiSearchText: cfg.KeepPreviousEmojiSearchText,
 		UnifiedInboxEnabled:         cfg.UnifiedInboxEnabled,
 		WhatsAppHistoryCacheMB:      cfg.WhatsAppHistoryCacheMB,
+		DebugLogging:                cfg.DebugLogging,
+		DebugLogPath:                d.debugLogDisplayPath(),
 	}
+}
+
+// debugLogDisplayPath shows the log location with the home folder as ~.
+func (d *Daemon) debugLogDisplayPath() string {
+	path, err := d.paths.DebugLogFile()
+	if err != nil {
+		return ""
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(path, home+string(os.PathSeparator)) {
+		return "~" + path[len(home):]
+	}
+	return path
 }
 
 func (d *Daemon) SetUiScale(scale float64) error {

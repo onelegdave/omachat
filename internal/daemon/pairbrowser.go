@@ -87,10 +87,12 @@ func (d *Daemon) setPairErrorFor(ctx context.Context, msg, hint string) {
 		return
 	}
 	d.mu.Lock()
+	fromState, fromMsg := d.status.State, d.status.Error
 	d.status.State = wire.StateError
 	d.status.Error = msg
 	d.status.Hint = hint
 	st := d.status
 	d.mu.Unlock()
+	d.diagStateChange("pairFromBrowser", fromState, fromMsg, wire.StateError, msg+" "+hint)
 	d.publish(wire.EventStatus, st)
 }

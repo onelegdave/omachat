@@ -48,6 +48,16 @@ Choose **Unpair this desktop** on the Google tab to remove local credentials
 and media and request remote revocation. If revocation fails, remove the device
 in **Google Messages > Device pairing** on your phone. Other services remain paired.
 
+## Diagnosing repeated re-pairing
+
+If Google Messages keeps asking you to pair again, turn on **Settings > Debug >
+Sign-in diagnostics**. Keep using OmaChat until the request to pair appears,
+then read `~/.local/state/omachat/auth.log` (and `auth.log.1` if present)
+before pairing again. The log records sign-in failures, Google's error
+responses, browser cookie refreshes, and fingerprints of the sign-in cookies,
+never their values; review it before sharing. Turn the setting off and choose
+**Delete log** when you are done. See [Security](../../SECURITY.md#sign-in-diagnostics).
+
 Credentials are stored in `~/.local/share/omachat/session.json` with mode 0600.
 Downloaded attachments use `~/.cache/omachat/media/`. Shared configuration is
 in `~/.local/share/omachat/config.json`. See [Security](../../SECURITY.md).

@@ -81,7 +81,7 @@ func (d *Daemon) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.S
 	fileName := filepath.Base(p.Path)
 	mime := detectMime(data, fileName)
 
-	media, err := withAuthRetry(ctx, d, func() (*gmproto.MediaContent, error) {
+	media, err := withAuthRetryAt(ctx, d, "rpc:uploadMedia", func() (*gmproto.MediaContent, error) {
 		return c.UploadMedia(data, fileName, mime)
 	})
 	if err != nil {
@@ -89,7 +89,7 @@ func (d *Daemon) SendMedia(ctx context.Context, p wire.SendMediaParams) (*wire.S
 	}
 
 	result, err := sendMediaMessages(ctx, p, conv.OutgoingID, tmpID, media, func(ctx context.Context, req *gmproto.SendMessageRequest) (*gmproto.SendMessageResponse, error) {
-		return withAuthRetry(ctx, d, func() (*gmproto.SendMessageResponse, error) {
+		return withAuthRetryAt(ctx, d, "rpc:sendMedia", func() (*gmproto.SendMessageResponse, error) {
 			return c.SendMessage(ctx, req)
 		})
 	})

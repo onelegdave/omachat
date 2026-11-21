@@ -51,6 +51,10 @@ type Config struct {
 
 	// TelegramAPIHash is the application api_hash (32-character hex) from my.telegram.org.
 	TelegramAPIHash string `json:"telegramApiHash,omitempty"`
+
+	// DebugLogging enables the opt-in Google Messages sign-in diagnostics
+	// log. Missing means off.
+	DebugLogging bool `json:"debugLogging,omitempty"`
 }
 
 type configAlias Config
@@ -526,6 +530,14 @@ func (c *ConfigStore) SetUnifiedInboxEnabled(enabled bool) error {
 	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
 		cfg["unifiedInboxEnabled"] = enabled
 		loaded.UnifiedInboxEnabled = enabled
+	})
+}
+
+// SetDebugLogging persists the sign-in diagnostics preference.
+func (c *ConfigStore) SetDebugLogging(enabled bool) error {
+	return c.updateLocked(func(cfg map[string]any, loaded *Config) {
+		cfg["debugLogging"] = enabled
+		loaded.DebugLogging = enabled
 	})
 }
 

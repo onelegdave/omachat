@@ -360,7 +360,8 @@ files as new downloads complete.
 | `~/.local/share/omachat/telegram.session` and `telegram_store.json` | Telegram credentials and chat cache |
 | `~/.local/share/omachat/messenger_session.json` and `messenger.db` | Messenger session cookies and encrypted-device state |
 | `~/.local/share/omachat/signal-cli/` and `signal_store.json` | Signal linked-device keys and the locally accumulated message cache |
-| `~/.local/share/omachat/config.json` | Service choices, notification preferences, text size, sidebar layout, last service and conversation IDs, browser selection, Telegram API credentials |
+| `~/.local/share/omachat/config.json` | Service choices, notification preferences, text size, sidebar layout, last service and conversation IDs, browser selection, Telegram API credentials, sign-in diagnostics choice |
+| `~/.local/state/omachat/auth.log` and `auth.log.1` | Optional Google Messages sign-in diagnostics, only while turned on in **Settings > Debug**; see [Diagnosing repeated re-pairing](docs/services/google-messages.md#diagnosing-repeated-re-pairing) |
 | `~/.cache/omachat/media/`, `media_whatsapp/`, `media_telegram/`, `media_messenger/`, `media_signal/` | Service-specific media caches |
 | `$XDG_RUNTIME_DIR/omachat/daemon.sock` | Private plugin/helper control socket |
 

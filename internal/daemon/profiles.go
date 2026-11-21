@@ -64,10 +64,11 @@ func (d *Daemon) SetProfile(name string) error {
 		return fmt.Errorf("save profile choice: %w", err)
 	}
 	d.log.Info().Str("profile", name).Msg("Browser profile selection changed")
+	d.diagEvent("profileSelected", logFields{"profile": name})
 
 	// Adopt the newly chosen profile's cookies immediately: the user picked it
 	// precisely because the current ones are not working.
-	d.refreshBrowserCookies(d.sessionContext())
+	d.refreshBrowserCookiesFor(d.sessionContext(), "setProfile", "")
 	return nil
 }
 

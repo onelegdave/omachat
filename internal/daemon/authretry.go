@@ -28,6 +28,12 @@ const cookieRefreshInterval = 30 * time.Second
 type cookieRefresher struct {
 	mu   sync.Mutex
 	last time.Time
+
+	// Diagnostics only: what the last refresh was for and how it ended, and
+	// which profile last supplied cookies.
+	lastTrigger string
+	lastResult  string
+	lastProfile string
 }
 
 // changedCookies names the cookies whose values differ. Names only: the values
@@ -53,54 +59,96 @@ func isSessionInvalid(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "session_cookie_invalid")
 }
 
+// authErrorMarkers are matched, in order, against the lowercased error text.
+var authErrorMarkers = []string{"401", "403", "invalid authentication", "unauthenticated", "oauth 2 access token", "session_cookie_invalid"}
+
 func isAuthError(err error) bool {
+	return authErrorMatch(err) != ""
+}
+
+// authErrorMatch names the marker that makes err a sign-in failure, or "".
+func authErrorMatch(err error) string {
 	if err == nil {
-		return false
+		return ""
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "401") ||
-		strings.Contains(msg, "403") ||
-		strings.Contains(msg, "invalid authentication") ||
-		strings.Contains(msg, "unauthenticated") ||
-		strings.Contains(msg, "oauth 2 access token") ||
-		strings.Contains(msg, "session_cookie_invalid")
+	for _, marker := range authErrorMarkers {
+		if strings.Contains(msg, marker) {
+			return marker
+		}
+	}
+	return ""
 }
 
 // refreshBrowserCookies re-reads Google cookies from the browser and installs
 // them on the live client. Returns true when a complete cookie set was read.
 func (d *Daemon) refreshBrowserCookies(ctx context.Context) bool {
+	return d.refreshBrowserCookiesFor(ctx, "unspecified", "")
+}
+
+// refreshBrowserCookiesFor is refreshBrowserCookies with a trigger and call
+// ID for the diagnostics log. They do not affect what it does.
+func (d *Daemon) refreshBrowserCookiesFor(ctx context.Context, trigger, callID string) bool {
 	if ctx.Err() != nil {
 		return false
 	}
 	d.cookies.mu.Lock()
-	if time.Since(d.cookies.last) < cookieRefreshInterval {
+	if since := time.Since(d.cookies.last); since < cookieRefreshInterval {
+		lastTrigger, lastResult := d.cookies.lastTrigger, d.cookies.lastResult
 		d.cookies.mu.Unlock()
+		d.diagCookieRefresh(logFields{
+			"trigger": trigger, "callID": callID, "result": "throttled",
+			"sinceLastSec": since.Seconds(), "lastTrigger": lastTrigger, "lastResult": lastResult,
+		})
 		return false
 	}
 	d.cookies.last = time.Now()
+	d.cookies.lastTrigger = trigger
+	d.cookies.lastResult = "running"
 	d.cookies.mu.Unlock()
+	result := "failed"
+	defer func() {
+		d.cookies.mu.Lock()
+		d.cookies.lastResult = result
+		d.cookies.mu.Unlock()
+	}()
+	ended := func(r string) bool {
+		result = r
+		d.diagCookieRefresh(logFields{"trigger": trigger, "callID": callID, "result": r})
+		return false
+	}
 
+	var attempts []logFields
 	for _, p := range d.candidateProfiles() {
 		if ctx.Err() != nil {
-			return false
+			return ended("canceled")
 		}
 		cookies, err := browser.ExtractGoogleCookiesContext(ctx, p)
-		if err != nil || len(wire.MissingGaiaCookies(cookies)) > 0 {
+		if err != nil {
+			attempts = append(attempts, logFields{"profile": p.Name, "error": err.Error()})
+			continue
+		}
+		if missing := wire.MissingGaiaCookies(cookies); len(missing) > 0 {
+			attempts = append(attempts, logFields{"profile": p.Name, "missing": missing})
 			continue
 		}
 		d.sessionMu.Lock()
 		if ctx.Err() != nil {
 			d.sessionMu.Unlock()
-			return false
+			return ended("canceled")
 		}
 		d.mu.RLock()
 		auth := d.auth
 		d.mu.RUnlock()
 		if auth == nil {
 			d.sessionMu.Unlock()
-			return false
+			return ended("noSession")
 		}
 		changed := changedCookies(auth, cookies)
+		var before map[string]string
+		if d.diagOn() {
+			before = snapshotCookies(auth)
+		}
 		auth.SetCookies(cookies)
 		d.saveSessionLocked()
 		d.sessionMu.Unlock()
@@ -108,10 +156,16 @@ func (d *Daemon) refreshBrowserCookies(ctx context.Context) bool {
 			Str("profile", p.Name).
 			Strs("updated", changed).
 			Msg("Refreshed Google cookies from browser")
+		result = "ok"
+		d.cookies.mu.Lock()
+		d.cookies.lastProfile = p.Name
+		d.cookies.mu.Unlock()
+		d.diagCookieRefreshSuccess(ctx, trigger, callID, p, attempts, before, cookies, changed)
 		return true
 	}
 
 	d.log.Warn().Msg("Could not refresh cookies from any browser profile")
+	d.diagCookieRefresh(logFields{"trigger": trigger, "callID": callID, "result": "noUsableProfile", "profiles": attempts})
 	return false
 }
 
@@ -119,6 +173,12 @@ func (d *Daemon) refreshBrowserCookies(ctx context.Context) bool {
 // access by refreshing browser cookies and retrying once. It never initiates
 // re-pairing automatically; re-pairing requires explicit user action.
 func withAuthRetry[T any](ctx context.Context, d *Daemon, op func() (T, error)) (T, error) {
+	return withAuthRetryAt(ctx, d, "rpc", op)
+}
+
+// withAuthRetryAt is withAuthRetry with a request name for the diagnostics
+// log. The name does not affect what it does.
+func withAuthRetryAt[T any](ctx context.Context, d *Daemon, where string, op func() (T, error)) (T, error) {
 	if err := ctx.Err(); err != nil {
 		var zero T
 		return zero, err
@@ -127,21 +187,39 @@ func withAuthRetry[T any](ctx context.Context, d *Daemon, op func() (T, error)) 
 	if !isAuthError(err) {
 		return result, err
 	}
+	callID := d.diagAuthFailure(where, err, true)
 
 	if isSessionInvalid(err) {
 		d.requirePairing(ctx)
+		d.diagAuthOutcome(callID, where, logFields{"refresh": "skipped", "reason": "sessionInvalidMatched", "retried": false, "requirePairing": true})
 		return result, err
 	}
 	d.log.Warn().Err(err).Msg("Request failed authentication; refreshing cookies")
-	if d.refreshBrowserCookies(ctx) {
+	refreshed := d.refreshBrowserCookiesFor(ctx, where, callID)
+	retried := false
+	if refreshed {
 		if err := ctx.Err(); err != nil {
 			var zero T
+			d.diagAuthOutcome(callID, where, logFields{"refresh": "ok", "retried": false, "canceled": true, "requirePairing": false})
 			return zero, err
 		}
 		result, err = op()
+		retried = true
 	}
-	if isAuthError(err) {
+	needsPairing := isAuthError(err)
+	if needsPairing {
 		d.requirePairing(ctx)
+	}
+	if callID != "" {
+		outcome := logFields{"refresh": map[bool]string{true: "ok", false: "notRefreshed"}[refreshed], "retried": retried, "requirePairing": needsPairing}
+		if retried {
+			if err != nil {
+				outcome["retry"] = describeAuthError(err)
+			} else {
+				outcome["retry"] = logFields{"ok": true}
+			}
+		}
+		d.diagAuthOutcome(callID, where, outcome)
 	}
 	return result, err
 }
@@ -154,8 +232,10 @@ func (d *Daemon) requirePairing(ctx context.Context) {
 
 func (d *Daemon) requirePairingLocked() {
 	if d.gaiaActive {
+		d.diagEvent("requirePairing", logFields{"ignored": "pairingInProgress"})
 		return
 	}
+	d.diagEvent("requirePairing", logFields{"ignored": ""})
 	d.mu.Lock()
 	d.paired = false
 	d.mu.Unlock()

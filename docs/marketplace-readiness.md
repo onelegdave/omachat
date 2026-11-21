@@ -361,6 +361,12 @@ with the bar, quickshell, and media tags.
   and pacman retains its own transaction prompt. This is a privilege and package
   management capability, even though it is optional.
 - Google pairing reads browser cookies and may refresh them while paired.
+- Opt-in sign-in diagnostics (Settings > Debug, off by default) write
+  `~/.local/state/omachat/auth.log` (0600). While on and paired, the helper
+  runs `sqlite3` read-only and in place (`immutable=1`) on the selected browser
+  profile's cookie file for Google sign-in cookie metadata and a hash of each
+  still-encrypted value. It does not run `secret-tool` or decrypt anything. See
+  [Security](../SECURITY.md#sign-in-diagnostics).
   All services retain credentials and chat/media caches locally. These are
   sensitive capabilities, not sandboxed or isolated from other same-user code.
 - Vendored generated Telegram files contain setup-related names, and an upstream
