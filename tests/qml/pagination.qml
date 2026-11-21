@@ -9,11 +9,20 @@ ShellRoot {
  property var anchor: null
  property var oldRequest: null
  property var otherRequest: null
+ property int settleWaits: 0
+ property bool flushed: true
  function check(value, label) { if (!value) throw new Error(label); console.log("PASS:", label) }
  function msg(n, conv) { return {id:"m"+n,conversationID:conv || "a",timestamp:Date.UTC(2026,8,1)*1000+n*3600000000,fromMe:false,text:"Message "+n+ (n%3===0 ? "\nA second line of text.\nAnother line." : "")} }
  function page(first,last) { var out=[];for(var n=first;n<=last;n++)out.push(msg(n));return out }
  function reply(messages,cursor,more) { return {messages:messages,cursorID:cursor,cursorTime:1234,hasMore:more} }
  function take() { var req=fake.requests.shift();check(!!req,"history request exists");return req }
+ // Viewport moves land in Qt.callLater. On a vsync-driven window a long step can
+ // let this timer fire again before them, so wait a bounded few ticks. The
+ // flushed marker is queued after a step's own deferred calls and runs after them.
+ function settling() {
+  if ((flushed && !inbox.pendingLatestScroll && !inbox.pendingAnchor && !inbox.followLatestQueued) || settleWaits >= 10) { settleWaits=0; return false }
+  settleWaits++;return true
+ }
  function sameAnchor(label) { var now=inbox.captureViewport();check(now && anchor && now.key===anchor.key && Math.abs(now.offset-anchor.offset)<1.5,label) }
  QtObject {
   id: fake
@@ -48,6 +57,7 @@ ShellRoot {
     var list=inspect.findChild(inbox,"messageList")
     var button=inspect.findChild(inbox,"loadOlderButton")
     var req
+    if(root.settling()) return
     switch(root.step++) {
     case 0:
      inbox.selectConversation("a")
@@ -133,6 +143,7 @@ ShellRoot {
      else {console.log("OMACHAT_PAGINATION_PASS");Qt.quit()}
      stop();break
     }
+    root.flushed=false;Qt.callLater(function(){root.flushed=true})
    } catch(e) {console.error("OMACHAT_PAGINATION_FAIL",e.message, e.stack || e);Qt.quit()}
   }
  }

@@ -19,7 +19,7 @@ omarchy = Path(os.environ.get("OMARCHY_PATH", "/usr/share/omarchy"))
 headless = os.environ.get("OMACHAT_QML_HEADLESS") == "1"
 if not headless and not os.environ.get("WAYLAND_DISPLAY"):
     raise SystemExit("QML integration checks need an active Wayland desktop and open a temporary demo window.")
-with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
+with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder, tempfile.TemporaryDirectory(prefix="oq-") as short_runtime:
     config = Path(folder)
     for module in ("Ui", "Commons"):
         (config / module).symlink_to(omarchy / "shell" / module)
@@ -29,8 +29,7 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     image_second = config / "demo-second.svg"
     image_second.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#c080a0"/></svg>')
     (config / "shell.qml").write_text((repo / "tests/qml/shell.qml").read_text())
-    runtime = config / "runtime"
-    runtime.mkdir(mode=0o700)
+    runtime = Path(short_runtime)
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen" if headless else "wayland",
                QT_QPA_PLATFORMTHEME="", QT_QUICK_CONTROLS_STYLE="Basic", OMACHAT_TEST_IMAGE=str(image), OMACHAT_TEST_IMAGE_SECOND=str(image_second),
                XDG_CONFIG_HOME=str(config / "settings"), XDG_STATE_HOME=str(config / "state"),
@@ -43,6 +42,15 @@ with tempfile.TemporaryDirectory(prefix="omachat-qml-") as folder:
     elif not os.path.isabs(env["WAYLAND_DISPLAY"]):
         # Keep the compositor reachable while isolating fixture sockets/data.
         env["WAYLAND_DISPLAY"] = str(Path(os.environ["XDG_RUNTIME_DIR"]) / env["WAYLAND_DISPLAY"])
+    if not headless and os.environ.get("XDG_RUNTIME_DIR"):
+        # hyprctl and Quickshell find Hyprland's IPC sockets only under
+        # $XDG_RUNTIME_DIR/hypr, and the short runtime keeps them within sun_path.
+        hypr = Path(os.environ["XDG_RUNTIME_DIR"]) / "hypr"
+        if hypr.is_dir():
+            (runtime / "hypr").symlink_to(hypr)
+            socket = runtime / "hypr" / os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "") / ".socket2.sock"
+            if len(os.fsencode(socket)) > 107:
+                raise SystemExit("TMPDIR is too long for Hyprland's IPC socket path. Run with TMPDIR=/tmp.")
     # Clipboard fixture uses a fake wl-paste in every backend. No test touches
     # the user's clipboard, and the provider configuration stays in this temp dir.
     clipboard_tools = config / "clipboard-tools"
