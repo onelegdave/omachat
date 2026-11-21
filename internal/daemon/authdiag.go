@@ -484,7 +484,16 @@ func (d *Daemon) diagCookieRefreshSuccess(ctx context.Context, trigger, callID s
 		if !inBefore && !inFresh {
 			continue
 		}
-		cookies[n] = logFields{"omachat": d.diag.log.fp(b), "browser": d.diag.log.fp(fr), "differs": b != fr}
+		// "notRead" means OmaChat does not take this cookie from the browser,
+		// not that the browser lacks it; browserMetadata shows what it holds.
+		entry := logFields{"omachat": "notHeld", "fromBrowser": "notRead", "differs": b != fr}
+		if inBefore {
+			entry["omachat"] = d.diag.log.fp(b)
+		}
+		if inFresh {
+			entry["fromBrowser"] = d.diag.log.fp(fr)
+		}
+		cookies[n] = entry
 	}
 	f := logFields{
 		"trigger": trigger, "callID": callID, "result": "ok", "profile": p.Name,

@@ -608,9 +608,16 @@ func TestCookieRefreshSuccessLogsDropsAndBrowserMetadata(t *testing.T) {
 	if fmt.Sprint(r["removed"]) != "[SIDCC]" || fmt.Sprint(r["added"]) != "[OSID]" || r["profile"] != "Chrome / Profile 1" || r["skippedProfiles"] == nil {
 		t.Fatalf("refresh entry = %v", r)
 	}
-	sid := r["cookies"].(map[string]any)["SID"].(map[string]any)
-	if sid["differs"] != true || sid["omachat"] == sid["browser"] {
+	compared := r["cookies"].(map[string]any)
+	sid := compared["SID"].(map[string]any)
+	if sid["differs"] != true || sid["omachat"] == sid["fromBrowser"] || len(sid["fromBrowser"].(string)) != authLogFPHexLen {
 		t.Fatalf("SID comparison = %v", sid)
+	}
+	if dropped := compared["SIDCC"].(map[string]any); dropped["fromBrowser"] != "notRead" || dropped["differs"] != true {
+		t.Fatalf("dropped cookie comparison = %v", dropped)
+	}
+	if added := compared["OSID"].(map[string]any); added["omachat"] != "notHeld" {
+		t.Fatalf("added cookie comparison = %v", added)
 	}
 	meta := r["browserMetadata"].([]any)[0].(map[string]any)
 	if meta["name"] != "SID" || meta["lastUpdate"] == "" || meta["encryptedFP"] == "feedfacecafe" || meta["encryptedFP"] == nil {
