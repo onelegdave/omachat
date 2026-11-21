@@ -1,5 +1,40 @@
 # Marketplace readiness
 
+## v0.6.3 Google Messages, Telegram sign-in, and pop-out fixes
+
+This candidate builds on v0.6.2 at
+`61bc1bd60ddfc4d869c7610fbf9063d5a52db9ef`, which request #10861 targets. It
+changes no declared capability, process launch, network endpoint, or storage
+location. The changes a reviewer should check are:
+
+- **Vendored libgm.** A backport of upstream mautrix-gmessages `b580a1a` fills an
+  empty conversation, latest-message, or message ID from its nested field
+  after decryption. It never changes a present ID. See `NOTICE` and
+  `vendor/go.mau.fi/mautrix-gmessages/pkg/libgm/event_handler.go`.
+- **Telegram cloud password.** New IPC method `submitCloudPassword` carries one
+  password of at most 256 bytes to the open QR sign-in over the existing
+  private socket. The helper performs gotd's SRP check, clears its byte copy,
+  and neither stores nor logs the password; it is never part of a status event.
+  The account's hint is cut to 128 runes of single-line plain text and
+  rendered with `Text.PlainText`. The prompt closes on success, error, unpair,
+  restart, or after 10 minutes. The panel field reuses `SafePasswordField`, so
+  it keeps the clipboard protections from v0.5.1/v0.5.2. See
+  `internal/telegram/password.go` and [the Telegram guide](services/telegram.md#two-step-verification).
+- **Pop-out.** `openPopout()` resets the requested window visibility before
+  showing it, so a compositor-side close does not leave it unable to reopen.
+- **OpenTelemetry v1.47.0.** Fixes GHSA-q7gw-24fr-5p69 in vendored
+  `otel/trace`. A clean `go mod vendor` differs from `vendor/` only by the local
+  patches recorded in `NOTICE`.
+
+All existing limits and patches (clipboard, downloads, notifications, previews,
+Messenger HTTP and WebSocket limits, `publicsuffix` table names) are unchanged.
+Local verification is listed in the [v0.6.3 release notes](history/RELEASE-0.6.3.md).
+Request #10861 must be retargeted to the final public commit after publication
+is authorized. That restarts exact-commit validation and the Automated Security
+Baseline, and the maintainer's source and capability review still applies. The
+`manual-setup` classification agreed on October 29 is unchanged: the helper is
+still built locally. This candidate is not Marketplace-approved.
+
 ## v0.6.2 Messenger WebSocket correction
 
 The [October 25 finding](https://github.com/omacom/omarchy-plugin-marketplace/issues/10861#issuecomment-6403016904)

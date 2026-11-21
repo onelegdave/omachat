@@ -34,3 +34,4 @@ Use the [current documentation](../README.md) for setup and capabilities.
 - [v0.6.0 release notes](RELEASE-0.6.0.md) (includes the unpublished v0.5.6 work)
 - [v0.6.1 release notes](RELEASE-0.6.1.md)
 - [v0.6.2 release notes](RELEASE-0.6.2.md)
+- [v0.6.3 release notes](RELEASE-0.6.3.md)

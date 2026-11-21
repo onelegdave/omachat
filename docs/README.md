@@ -1,8 +1,11 @@
 # OmaChat documentation
 
-The current stable release is OmaChat v0.6.2, which bounds incoming Messenger
-WebSocket messages. See the [v0.6.2 release notes](history/RELEASE-0.6.2.md) and
-[WebSocket safety](messenger-websocket-safety.md). It retains the decoded
+The current stable release is OmaChat v0.6.3, which fixes Google Messages
+conversations sent with nested IDs, adds Telegram sign-in with two-step
+verification, and fixes reopening the pop-out. See the
+[v0.6.3 release notes](history/RELEASE-0.6.3.md). It retains the incoming
+Messenger WebSocket limit from [v0.6.2](history/RELEASE-0.6.2.md) and
+[WebSocket safety](messenger-websocket-safety.md), and the decoded
 Messenger HTTP limits from [v0.6.1](history/RELEASE-0.6.1.md) and
 [response safety](messenger-response-safety.md). It includes v0.6.0, which adds
 optional Signal support

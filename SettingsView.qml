@@ -1215,7 +1215,7 @@ Flickable {
           textFormat: Text.PlainText
           width: parent.width
           wrapMode: Text.Wrap
-          text: "Andrew Birklid (@tumbleweedlabs): unread and Messenger read-state fixes, Git-independent builds, and automatic pop-out. Alex Vlissidis (@alexvlis): chat restoration, sidebar controls, notifications, and Telegram photos. Matthias MB (@Hizoul): keyboard navigation, offline emoji search, WhatsApp history/photos, and the optional unified inbox. @ozz1ee-dev: detailed build-loop reproduction. HANCORE-linux: native clipboard safety report during Marketplace review. Original authorship and upstream notices are preserved; see All credits and licenses for PR links and review status."
+          text: "Andrew Birklid (@tumbleweedlabs): unread and Messenger read-state fixes, Git-independent builds, and automatic pop-out. Alex Vlissidis (@alexvlis): chat restoration, sidebar controls, notifications, and Telegram photos. Matthias MB (@Hizoul): keyboard navigation, offline emoji search, WhatsApp history/photos, and the optional unified inbox. @ozz1ee-dev: detailed build-loop reproduction. HANCORE-linux: native clipboard safety report during Marketplace review. @mollymillions2035: pop-out reopen fix and native test fixes. @BZachHuff and @jotapesse: Google Messages and Telegram sign-in reports. Original authorship and upstream notices are preserved; see All credits and licenses for PR links and review status."
           color: root.mutedColor
           font.family: root.fontFamily
           font.pixelSize: fs(Style.font.body)

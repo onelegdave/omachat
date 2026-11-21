@@ -1,4 +1,28 @@
-# Release handoff: OmaChat 0.6.2
+# Release handoff: OmaChat 0.6.3
+
+Prepared November 21, 2026 from public v0.6.2 at
+`61bc1bd60ddfc4d869c7610fbf9063d5a52db9ef` on branch `fix/v0.6.3-candidate`.
+It merges PRs #11 and #12 with their original commits, backports the upstream
+Google Messages nested-ID fix (#14), adds Telegram cloud password sign-in (#13),
+and updates vendored OpenTelemetry to v1.47.0. See the
+[release notes](history/RELEASE-0.6.3.md) and
+[Marketplace readiness](marketplace-readiness.md).
+
+Current state: implementation and local verification pass on Omarchy 4.5.0,
+Hyprland 0.56.2, Quickshell 0.3.2, Qt 6.12.0, and installed Go 1.27.3. The full
+Go and vendored suites pass under the race detector (568 tests, two intended
+Signal skips), with `go vet`, 77 Node tests, 63 Python tests, 279 headless QML
+checks, all 26 native QML fixtures (512 checks), the offline helper build, and
+plugin validation. No live Google Messages or Telegram account has been used.
+
+Exact next work: confirm the Google Messages fix and the Telegram cloud
+password sign-in with real accounts. Then, with publication approval, merge to
+main (which closes #10, #11, #12, #13 and #14), tag and release v0.6.3, and
+retarget request #10861 to the exact commit. Merging moves main away from the
+commit #10861 currently targets, so do it only together with the retarget.
+
+## Previous v0.6.2 handoff (historical)
+
 
 Prepared October 26, 2026 from public v0.6.1 at
 `ba115ba4140dd7cccd38281320edb7c5ec462612`. This candidate corrects the
