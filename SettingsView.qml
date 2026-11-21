@@ -1308,7 +1308,7 @@ Flickable {
           {heading: true, text: "What it never records"},
           {heading: false, text: "Your messages, contacts, phone numbers, passwords, or the cookies themselves."},
           {heading: true, text: "Where it's kept"},
-          {heading: false, text: "Only your user account can open it, though programs running as you, and the system administrator, can too. It is limited to about 2 MB and replaces its oldest entries as it grows."},
+          {heading: false, text: "In the log file shown below. Only your user account can open it, though programs running as you, and the system administrator, can too. It is limited to about 2 MB and replaces its oldest entries as it grows."},
           {heading: true, text: "Before sharing it"},
           {heading: false, text: "Google's error responses are saved as received. Some are web pages that can include your IP address, and occasionally one may name your account. Read the log before posting it anywhere public."},
           {heading: false, text: "Turning this off stops logging immediately. Your existing log stays until you choose Delete log."}

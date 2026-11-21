@@ -212,7 +212,8 @@ func TestDeleteDebugLogWorksWhileServiceDisabledOrRestarting(t *testing.T) {
 		t.Fatal("rotated log not deleted")
 	}
 	entries := readLogEntries(t, logPath)
-	if len(entries) != 1 || entries[0]["kind"] != "logCleared" || entries[0]["log"] == oldID {
+	if len(entries) != 2 || entries[0]["kind"] != "logCleared" || entries[0]["log"] == oldID ||
+		entries[1]["kind"] != "startup" || entries[1]["reason"] != "logCleared" || entries[1]["session"] == nil {
 		t.Fatalf("new log after delete = %v", entries)
 	}
 

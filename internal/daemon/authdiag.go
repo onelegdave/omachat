@@ -199,7 +199,10 @@ func (d *Daemon) DeleteDebugLog() error {
 	reopened, err := d.diag.log.remove()
 	d.diag.watcher.resetBaseline()
 	if reopened {
-		d.diagWrite("logCleared", logFields{"build": buildinfo.SourceID})
+		// Fingerprints use a new salt now, so start the new log with a full
+		// summary to compare later entries against.
+		d.diagWrite("logCleared", logFields{})
+		d.diagStartup("logCleared")
 		d.diagResetSavedBaseline()
 	}
 	return err

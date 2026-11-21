@@ -86,7 +86,7 @@ ShellRoot {
           check(!!findTextContaining(settings, "Some file locations, which include your user name."), "explains file paths")
           check(!!findTextContaining(settings, "It doesn't unlock your keyring, doesn't decrypt anything, and doesn't use what it reads."), "explains the browser watcher is keyless and read-only")
           check(!!findText(settings, "Your messages, contacts, phone numbers, passwords, or the cookies themselves."), "explains what is never recorded")
-          check(!!findTextContaining(settings, "programs running as you, and the system administrator, can too"), "access wording is accurate")
+          check(!!findTextContaining(settings, "In the log file shown below. Only your user account can open it, though programs running as you, and the system administrator, can too"), "says where the log is and who can read it")
           check(!!findTextContaining(settings, "about 2 MB"), "states the size limit")
           check(!!findTextContaining(settings, "can include your IP address"), "warns before sharing")
           check(!!findTextContaining(settings, "Your existing log stays until you choose Delete log."), "explains turning off keeps the log")
