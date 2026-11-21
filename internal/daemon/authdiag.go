@@ -536,10 +536,17 @@ func (d *Daemon) diagCookieUpdate(u libgm.CookieUpdate) {
 		return
 	}
 	names := make([]logFields, 0, len(u.Names))
+	keyNames := make([]string, 0, len(u.Names))
 	for _, n := range u.Names {
 		names = append(names, logFields{"name": n.Name, "cleared": n.Cleared})
+		keyNames = append(keyNames, n.Name+"="+strconv.FormatBool(n.Cleared))
 	}
-	d.diagWriteLimited("cookieUpdate:"+u.Host+":"+strconv.Itoa(u.Status), 10, time.Minute, "omachatCookiesSet", logFields{
+	sort.Strings(keyNames)
+	// Google sets some cookies on nearly every request. Log the first two of
+	// each distinct set per ten minutes and count the rest, so routine
+	// updates cannot push sign-in failures out of the log.
+	key := "cookieUpdate:" + u.Host + ":" + strconv.Itoa(u.Status) + ":" + strings.Join(keyNames, ",")
+	d.diagWriteLimited(key, 2, 10*time.Minute, "omachatCookiesSet", logFields{
 		"host": u.Host, "status": u.Status, "contentType": u.ContentType, "names": names,
 		"authFailure": u.Status == http.StatusUnauthorized || u.Status == http.StatusForbidden,
 	})

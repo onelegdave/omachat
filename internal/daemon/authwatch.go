@@ -11,7 +11,10 @@ import (
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
-const cookieWatchInterval = 3 * time.Minute
+const (
+	cookieWatchInterval   = 3 * time.Minute
+	cookieWatchFirstDelay = 15 * time.Second
+)
 
 // cookieWatcher records when the browser renews its Google sign-in cookies.
 // It runs only while diagnostics are on and Google Messages is enabled and
@@ -62,6 +65,15 @@ func (w *cookieWatcher) start(parent context.Context, d *Daemon) {
 	interval := w.interval
 	go func() {
 		defer close(done)
+		// The helper switches diagnostics on before it has loaded its
+		// session, so take the first reading shortly after, not at once.
+		first := cookieWatchFirstDelay
+		if interval < first {
+			first = interval
+		}
+		if !waitContext(ctx, first) {
+			return
+		}
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {

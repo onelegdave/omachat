@@ -805,3 +805,30 @@ func TestSessionClearedReasonsAreLogged(t *testing.T) {
 		t.Fatalf("sessionCleared = %v", cleared)
 	}
 }
+
+func TestRoutineCookieUpdatesAreSummarized(t *testing.T) {
+	d, _, logPath := newDiagDaemon(t)
+	now := time.Unix(5000, 0)
+	d.diag.log.now = func() time.Time { return now }
+	d.attachAuthObservers(d.auth)
+	enableDiag(t, d)
+	for i := 0; i < 30; i++ {
+		d.auth.UpdateCookiesFromResponse(httpResp(200, "", "SIDCC=v"))
+	}
+	// A different cookie set, a deletion, and a failure are never hidden by
+	// the routine SIDCC updates.
+	d.auth.UpdateCookiesFromResponse(httpResp(200, "", "SIDCC=v", "__Secure-1PSIDTS=v"))
+	d.auth.UpdateCookiesFromResponse(httpResp(200, "", "SIDCC=; Max-Age=0"))
+	d.auth.UpdateCookiesFromResponse(httpResp(401, "", "SIDCC=v"))
+	now = now.Add(11 * time.Minute)
+	d.auth.UpdateCookiesFromResponse(httpResp(200, "", "SIDCC=v"))
+
+	entries := readLogEntries(t, logPath)
+	if got := len(entriesOfKind(entries, "omachatCookiesSet")); got != 6 {
+		t.Fatalf("omachatCookiesSet entries = %d, want 2 routine + 3 distinct + 1 in the next window", got)
+	}
+	s := entriesOfKind(entries, "suppressed")
+	if len(s) != 1 || s[0]["count"].(float64) != 28 || !strings.Contains(s[0]["key"].(string), "SIDCC=false") {
+		t.Fatalf("suppressed summary = %v", s)
+	}
+}

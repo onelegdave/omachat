@@ -79,7 +79,7 @@ func TestWatcherReadsOnlyWhileOnEnabledAndPaired(t *testing.T) {
 	if fb.readCount() != 0 {
 		t.Fatal("watcher read the browser while diagnostics were off")
 	}
-	setPaired(d, false) // keep the watcher's own first tick from reading
+	setPaired(d, false)
 	enableDiag(t, d)
 	w.stop() // drive ticks by hand from here
 	w.tick(ctx, d)
@@ -107,7 +107,7 @@ func TestWatcherLogsBaselineThenOnlyChanges(t *testing.T) {
 	d, fb, logPath := newWatchDaemon(t)
 	ctx := context.Background()
 	w := d.diag.watcher
-	enableDiag(t, d) // unpaired, so the watcher's own first tick reads nothing
+	enableDiag(t, d)
 	w.stop()
 	setPaired(d, true)
 
@@ -231,5 +231,23 @@ func TestWatcherUsesReadOnlySQLiteRunner(t *testing.T) {
 		if uri != "file:///p1/Cookies?mode=ro&immutable=1" {
 			t.Fatalf("uri = %s", uri)
 		}
+	}
+}
+
+func TestWatcherTakesFirstReadingAfterAShortDelay(t *testing.T) {
+	d, fb, logPath := newWatchDaemon(t)
+	d.diag.watcher.interval = 20 * time.Millisecond
+	enableDiag(t, d) // unpaired at start, as when the helper starts
+	setPaired(d, true)
+	deadline := time.Now().Add(5 * time.Second)
+	for fb.readCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	d.diag.watcher.stop()
+	if fb.readCount() == 0 {
+		t.Fatal("watcher never read after pairing became available")
+	}
+	if e := entriesOfKind(readLogEntries(t, logPath), "browserCookies"); len(e) != 1 || e[0]["baseline"] != true {
+		t.Fatalf("baseline = %v", e)
 	}
 }
