@@ -1014,8 +1014,11 @@ func TestStartPairing2FAPasswordNeeded(t *testing.T) {
 	if st.State != wire.StateUnpaired {
 		t.Errorf("expected StateUnpaired after 2FA error, got %s", st.State)
 	}
-	if !strings.Contains(st.Error, "Telegram 2FA Cloud Password required") {
-		t.Errorf("expected 2FA cloud password message in Error, got %q", st.Error)
+	if !strings.Contains(st.Error, "Telegram needs your cloud password") || strings.Contains(st.Error, "not yet supported") {
+		t.Errorf("expected the ended cloud password message in Error, got %q", st.Error)
+	}
+	if st.PasswordRequired {
+		t.Error("an ended sign-in must not leave the password prompt open")
 	}
 }
 

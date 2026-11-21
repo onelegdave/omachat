@@ -27,6 +27,7 @@ var ErrNotConfigured = errors.New("Telegram client is not configured: protocol l
 const (
 	hintCredentialsRequired   = "Telegram API credentials required. Configure your api_id and api_hash in Settings > Telegram API, or run configure-telegram.py. Then choose Pair with Telegram. Obtain credentials from my.telegram.org."
 	hintCredentialsConfigured = "Telegram API credentials configured; pairing not yet started"
+	hintCloudPasswordRequired = "Two-step verification is on for this account. Enter your Telegram cloud password to finish signing in."
 )
 
 // Backend manages the Telegram service state, local data isolation, and protocol routing.
@@ -56,6 +57,11 @@ type Backend struct {
 	epoch         uint64 // account lifetime, independent of QR attempt generation
 	accountCtx    context.Context
 	accountCancel context.CancelFunc
+
+	// passwordSubmit answers the open cloud password prompt for passwordGen.
+	// It is nil whenever no prompt is open.
+	passwordSubmit CloudPasswordSubmitter
+	passwordGen    uint64
 
 	convs         map[string]wire.Conversation
 	order         []string
@@ -603,8 +609,17 @@ func (b *Backend) SetState(state wire.ConnState, errStr string) {
 	b.setState(state, errStr)
 }
 
+// clearPasswordPromptLocked closes any open cloud password prompt. b.mu must be held.
+func (b *Backend) clearPasswordPromptLocked() {
+	b.passwordSubmit = nil
+	b.passwordGen = 0
+	b.status.PasswordRequired = false
+	b.status.PasswordHint = ""
+}
+
 func (b *Backend) setState(state wire.ConnState, errStr string) {
 	b.mu.Lock()
+	b.clearPasswordPromptLocked()
 	b.status.State = state
 	b.status.Error = errStr
 	st := b.status
@@ -621,6 +636,7 @@ func (b *Backend) setState(state wire.ConnState, errStr string) {
 
 func (b *Backend) setStatusWithHint(state wire.ConnState, hint string, errStr string) {
 	b.mu.Lock()
+	b.clearPasswordPromptLocked()
 	b.status.State = state
 	b.status.Hint = hint
 	b.status.Error = errStr
@@ -1062,6 +1078,7 @@ func (b *Backend) StartPairing(ctx context.Context) (string, error) {
 		if b.gen == gen {
 			b.gen++
 		}
+		b.clearPasswordPromptLocked()
 		b.status.State = wire.StateUnpaired
 		b.status.Hint = hintCredentialsConfigured
 		b.status.Error = userMsg
@@ -1143,17 +1160,36 @@ func (b *Backend) listenQRChannel(qrChan <-chan QRChannelItem, cancel context.Ca
 		switch item.Event {
 		case QRChannelEventCode:
 			b.status.QRURL = item.Code
+		case QRChannelEventPassword:
+			if item.SubmitPassword == nil {
+				b.mu.Unlock()
+				continue
+			}
+			// The QR code was accepted; the same session now waits for the
+			// cloud password. Keep the pairing state and hide the used code.
+			b.passwordSubmit = item.SubmitPassword
+			b.passwordGen = gen
+			b.status.State = wire.StatePairing
+			b.status.QRURL = ""
+			b.status.Error = ""
+			b.status.Hint = hintCloudPasswordRequired
+			b.status.PasswordRequired = true
+			b.status.PasswordHint = item.Hint
 		case QRChannelEventSuccess:
+			b.clearPasswordPromptLocked()
 			b.paired = true
 			b.status.State = wire.StateConnected
 			b.status.QRURL, b.status.Hint, b.status.Error = "", "", ""
 			terminal = true
 		case QRChannelEventError:
+			b.clearPasswordPromptLocked()
 			b.status.State = wire.StateUnpaired
 			b.status.Hint = hintCredentialsConfigured
 			b.status.QRURL = ""
 			if item.Error != nil && strings.Contains(item.Error.Error(), "SESSION_PASSWORD_NEEDED") {
-				b.status.Error = "Telegram 2FA Cloud Password required; cloud password authentication is not yet supported."
+				b.status.Error = "Telegram needs your cloud password, but the sign-in ended before it was entered. Select Pair with Telegram to try again."
+			} else if errors.Is(item.Error, ErrCloudPasswordTimedOut) {
+				b.status.Error = ErrCloudPasswordTimedOut.Error()
 			} else if item.Error != nil {
 				b.status.Error = "Telegram pairing failed: " + item.Error.Error()
 			}
@@ -1175,6 +1211,26 @@ func (b *Backend) listenQRChannel(qrChan <-chan QRChannelItem, cancel context.Ca
 		}
 	}
 	cancel()
+}
+
+// SubmitCloudPassword answers the open two-step verification prompt. It takes
+// ownership of password and clears it. A wrong password returns
+// ErrCloudPasswordInvalid and leaves the prompt open; success is published by
+// the pairing listener as the connected state.
+func (b *Backend) SubmitCloudPassword(ctx context.Context, password []byte) error {
+	if err := ValidateCloudPassword(password); err != nil {
+		clearPassword(password)
+		return err
+	}
+	b.mu.RLock()
+	submit := b.passwordSubmit
+	open := submit != nil && b.passwordGen == b.gen && !b.stopping
+	b.mu.RUnlock()
+	if !open {
+		clearPassword(password)
+		return ErrCloudPasswordNotRequested
+	}
+	return submit(ctx, password)
 }
 
 // Unpair wipes local Telegram session, store, and media files, and transitions to StateUnpaired.

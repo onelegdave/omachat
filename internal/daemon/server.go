@@ -1125,6 +1125,16 @@ func (d *Daemon) dispatchTelegram(ctx context.Context, req wire.Request) wire.Re
 		}
 		return ok(map[string]string{"url": qr})
 
+	case wire.MethodSubmitCloudPassword:
+		p, err := decodeParams[wire.SubmitCloudPasswordParams](req.Params)
+		if err != nil {
+			return fail(errors.New("invalid cloud password request"))
+		}
+		if err := d.tg.SubmitCloudPassword(ctx, []byte(p.Password)); err != nil {
+			return fail(err)
+		}
+		return ok(nil)
+
 	case wire.MethodUnpair:
 		if err := d.tg.Unpair(ctx); err != nil {
 			return fail(err)

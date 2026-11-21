@@ -31,15 +31,20 @@ import (
 
 // QRChannelItem represents an event emitted during Telegram QR code pairing.
 type QRChannelItem struct {
-	Event string // "code", "success", "error"
+	Event string // "code", "password", "success", "error"
 	Code  string // tg://login?token=... URL when Event == "code"
 	Error error  // Non-nil when Event == "error"
+	// Hint is the account's bounded cloud password hint when Event == "password".
+	Hint string
+	// SubmitPassword answers the open cloud password prompt when Event == "password".
+	SubmitPassword CloudPasswordSubmitter
 }
 
 const (
-	QRChannelEventCode    = "code"
-	QRChannelEventSuccess = "success"
-	QRChannelEventError   = "error"
+	QRChannelEventCode     = "code"
+	QRChannelEventPassword = "password"
+	QRChannelEventSuccess  = "success"
+	QRChannelEventError    = "error"
 )
 
 // Client defines the interface for MTProto client operations required by Backend.
@@ -358,6 +363,9 @@ func (g *GotdClient) GetQRChannel(ctx context.Context) (<-chan QRChannelItem, er
 					return clientCtx.Err()
 				}
 			})
+			if isPasswordNeeded(authErr) {
+				authRes, authErr = g.awaitCloudPassword(clientCtx, qrChan)
+			}
 			if authErr != nil {
 				return authErr
 			}
@@ -400,6 +408,21 @@ func (g *GotdClient) GetQRChannel(ctx context.Context) (<-chan QRChannelItem, er
 	}()
 
 	return qrChan, nil
+}
+
+// awaitCloudPassword keeps the QR session open for two-step verification and
+// signs in with SRP once the user submits the cloud password.
+func (g *GotdClient) awaitCloudPassword(ctx context.Context, out chan<- QRChannelItem) (*tg.AuthAuthorization, error) {
+	hint := ""
+	if p, err := g.client.API().AccountGetPassword(ctx); err == nil {
+		hint = p.Hint
+	} else if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	authClient := g.client.Auth()
+	return awaitCloudPassword(ctx, out, hint, cloudPasswordWait, func(ctx context.Context, password []byte) (*tg.AuthAuthorization, error) {
+		return authClient.PasswordWith(ctx, auth.PasswordHashFor(password))
+	})
 }
 
 // Ping pings the Telegram DC to check connectivity.

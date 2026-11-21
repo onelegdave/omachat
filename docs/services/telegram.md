@@ -58,7 +58,25 @@ a Telegram QR login token and keeps the client session in
 explicit and does not start automatically during startup or recovery.
 
 In the Telegram phone app, open **Settings > Devices > Link Desktop Device**
-and scan the displayed QR code. Keep API credentials private. Python 3 is
+and scan the displayed QR code. Keep API credentials private.
+
+### Two-step verification
+
+If your account has a Telegram cloud password (two-step verification), OmaChat
+asks for it after the QR code is accepted. Type the password in the masked field
+and select **Sign in**. Your account's password hint, if you set one, is shown
+above the field. A wrong password keeps the prompt open so you can try again;
+**Cancel sign-in** ends the attempt. The prompt closes after 10 minutes without
+an answer, and you can start again with **Pair with Telegram**.
+
+The password goes from the panel to the helper over its private local socket
+and is used only for Telegram's SRP check, so Telegram receives a proof rather
+than the password itself. OmaChat does not save the password, write it to logs,
+or show it in status messages. The field clears as soon as the password is sent,
+and the helper clears its byte copy after the check. Strings in QML and Go
+cannot be wiped reliably, so a copy can remain in process memory until it is
+reused. The field accepts typed or pasted text without an input method, so
+characters that need one cannot be entered. Python 3 is
 needed only for the configuration script; the shared helper needs Go and a
 C compiler to build. See the dependency guide before building.
 
@@ -131,6 +149,8 @@ make test-ui
 omarchy plugin validate .
 ```
 
-Telegram unit tests use mock clients and do not contact Telegram. Live pairing
+Telegram unit tests use mock clients and do not contact Telegram. The
+`telegram-password` QML fixture covers the cloud password prompt with a fake
+service. Live pairing
 and message tests require the user to pair a device and confirm the result in
 the Telegram app.

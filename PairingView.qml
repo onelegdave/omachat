@@ -34,7 +34,37 @@ Item {
   readonly property var status: service ? (typeof service.statusFor === "function" ? service.statusFor(network) : service.status) : ({})
   readonly property string connState: service ? (typeof service.stateFor === "function" ? service.stateFor(network) : (service.state || "")) : ""
   readonly property bool isGaia: !isWhatsApp && connState === "gaiaPairing"
-  readonly property bool isQR: connState === "pairing"
+  // Telegram keeps the pairing state while it waits for a cloud password; the
+  // accepted QR code is no longer shown then.
+  readonly property bool passwordPrompt: isTelegram && !!status && status.passwordRequired === true
+  readonly property string passwordHint: passwordPrompt && status.passwordHint ? String(status.passwordHint) : ""
+  readonly property bool isQR: connState === "pairing" && !passwordPrompt
+  property bool passwordBusy: false
+  property string passwordError: ""
+  onPasswordPromptChanged: {
+    passwordBusy = false
+    passwordError = ""
+    if (cloudPasswordField) cloudPasswordField.text = ""
+  }
+
+  // The password goes only to the helper's open sign-in; the field is cleared
+  // as soon as it is sent, and nothing here stores or logs it.
+  function submitCloudPassword() {
+    if (!service || passwordBusy || !passwordPrompt) return
+    var value = cloudPasswordField.text
+    cloudPasswordField.text = ""
+    if (value.length === 0) {
+      passwordError = "Enter your Telegram cloud password."
+      return
+    }
+    passwordBusy = true
+    passwordError = ""
+    service.call("submitCloudPassword", { password: value }, function(ok, res) {
+      root.passwordBusy = false
+      if (!ok) root.passwordError = String(res || "Telegram did not accept the password.")
+      if (root.passwordPrompt) cloudPasswordField.forceActiveFocus()
+    }, "telegram")
+  }
   readonly property bool isError: connState === "error"
   readonly property string unpairWarning: connState === "unpaired" && status && status.error && status.error !== status.hint ? status.error : ""
   readonly property string emoji: status && status.emoji ? status.emoji : ""
@@ -151,6 +181,7 @@ Item {
             return "Pair with Messenger"
           }
           if (root.isTelegram) {
+            if (root.passwordPrompt) return "Enter your Telegram cloud password"
             if (root.isQR) return "Scan QR code with Telegram"
             if (root.isError) return root.status && root.status.error ? root.status.error : "Pairing failed"
             if (root.status && root.status.state === "connected") return "Telegram connected"
@@ -181,6 +212,7 @@ Item {
             return "Sign in to facebook.com or messenger.com in a Chromium-family browser, unlock your desktop keyring, then pair this desktop. Messenger support uses Meta's unofficial client protocol and may require re-pairing after provider changes."
           }
           if (root.isTelegram) {
+            if (root.passwordPrompt) return root.status && root.status.hint ? root.status.hint : "Two-step verification is on for this account. Enter your Telegram cloud password to finish signing in."
             if (root.isQR) return "Open Telegram on your phone, go to Settings > Devices > Link Desktop Device, then scan this QR code."
             if (root.isError) return root.status && root.status.hint ? root.status.hint : "Check your connection and credentials, then try again."
             if (root.status && root.status.state === "connected") return "Telegram is connected and ready. Chats, media, and voice notes are available."
@@ -345,10 +377,86 @@ Item {
         }
       }
 
+      Column {
+        objectName: "cloudPasswordPrompt"
+        width: parent.width
+        spacing: Style.space(8)
+        visible: root.passwordPrompt
+
+        Text {
+          objectName: "cloudPasswordHint"
+          width: parent.width
+          visible: root.passwordHint !== ""
+          text: "Hint: " + root.passwordHint
+          textFormat: Text.PlainText
+          wrapMode: Text.Wrap
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: root.fs(Style.font.body)
+        }
+
+        SafePasswordField {
+          id: cloudPasswordField
+          objectName: "cloudPasswordField"
+          width: parent.width
+          maximumLength: 256
+          enabled: !root.passwordBusy
+          pasteAllowed: !root.passwordBusy
+          placeholderText: "Cloud password"
+          placeholderTextColor: root.dim
+          foreground: root.foreground
+          font.pixelSize: root.fs(Style.font.body)
+          Accessible.name: "Telegram cloud password"
+          onAccepted: root.submitCloudPassword()
+        }
+
+        Text {
+          objectName: "cloudPasswordError"
+          width: parent.width
+          visible: root.passwordError !== ""
+          text: root.passwordError
+          textFormat: Text.PlainText
+          wrapMode: Text.Wrap
+          color: root.urgentInk
+          font.family: root.fontFamily
+          font.pixelSize: root.fs(Style.font.body)
+        }
+
+        Row {
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: Style.space(8)
+
+          Button {
+            objectName: "cloudPasswordSubmit"
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: text
+            text: root.passwordBusy ? "Signing in..." : "Sign in"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            bordered: true
+            enabled: !root.passwordBusy
+            onClicked: root.submitCloudPassword()
+          }
+
+          Button {
+            objectName: "cloudPasswordCancel"
+            focusable: true
+            Accessible.role: Accessible.Button
+            Accessible.name: text
+            text: "Cancel sign-in"
+            foreground: root.dim
+            fontFamily: root.fontFamily
+            enabled: !root.passwordBusy
+            onClicked: if (root.service) root.service.call("unpair", null, null, "telegram")
+          }
+        }
+      }
+
       Row {
         anchors.horizontalCenter: parent.horizontalCenter
         spacing: Style.space(8)
-        visible: root.isTelegram && root.status && root.status.state !== "connected"
+        visible: root.isTelegram && !root.passwordPrompt && root.status && root.status.state !== "connected"
 
         Button {
           focusable: true

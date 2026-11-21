@@ -140,7 +140,7 @@ Each service is optional and pairs only when you request it.
 | --- | --- | --- |
 | Google Messages | Sign in to Messages for web in a supported Chromium-family browser, then select **Pair with Google** and confirm the matching emoji on the phone. | [Google Messages](docs/services/google-messages.md) |
 | WhatsApp | Select **Use a QR code** in the WhatsApp tab and scan it using the phone's **Linked devices** screen. | [WhatsApp](docs/services/whatsapp.md) |
-| Telegram | Configure your own Telegram API credentials, select **Pair with Telegram**, and scan the QR code from Telegram's **Devices** screen. | [Telegram](docs/services/telegram.md) |
+| Telegram | Configure your own Telegram API credentials, select **Pair with Telegram**, and scan the QR code from Telegram's **Devices** screen. Accounts with two-step verification then enter their cloud password. | [Telegram](docs/services/telegram.md) |
 | Messenger | Sign in to Facebook or Messenger in a supported Chromium-family browser, then select **Pair from browser**. | [Messenger](docs/services/messenger.md) |
 | Signal | Install `signal-cli`, enable Signal, select **Link Signal**, and scan the QR code from Signal's **Linked devices** screen. | [Signal](docs/services/signal.md) |
 

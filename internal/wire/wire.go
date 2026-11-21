@@ -132,6 +132,9 @@ const (
 	MethodAvatar                    = "avatar"
 	MethodRefresh                   = "refresh"
 	MethodSetTelegramCredentials    = "setTelegramCredentials"
+	// MethodSubmitCloudPassword answers Telegram's two-step verification
+	// prompt while Status.PasswordRequired is set.
+	MethodSubmitCloudPassword = "submitCloudPassword"
 )
 
 // ConnState describes where the daemon is in its lifecycle. The plugin keys
@@ -173,6 +176,10 @@ type Status struct {
 	// BoundedRead advertises markRead with ThroughTimestamp. Old helpers must
 	// not be assumed to enforce an unknown optional field.
 	BoundedRead bool `json:"boundedRead,omitempty"`
+	// PasswordRequired reports an open Telegram cloud password prompt during
+	// pairing. PasswordHint is the account's own bounded hint, never the password.
+	PasswordRequired bool   `json:"passwordRequired,omitempty"`
+	PasswordHint     string `json:"passwordHint,omitempty"`
 }
 
 // Conversation is a flattened gmproto.Conversation, carrying only what the
@@ -410,6 +417,12 @@ type BrowserProfile struct {
 // SetProfileParams chooses a profile by name; empty means automatic.
 type SetProfileParams struct {
 	Name string `json:"name"`
+}
+
+// SubmitCloudPasswordParams carries one Telegram cloud password attempt. The
+// helper neither stores nor logs it.
+type SubmitCloudPasswordParams struct {
+	Password string `json:"password"`
 }
 
 type SetTelegramCredentialsParams struct {
