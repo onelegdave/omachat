@@ -57,6 +57,7 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 	}
 	session, sessionCancel := context.WithCancel(base)
 	auth := libgm.NewAuthData()
+	d.attachAuthObservers(auth)
 	c := libgm.NewClient(auth, nil, d.log.With().Str("component", "libgm").Logger())
 	d.mu.Lock()
 	old := d.client
@@ -65,6 +66,13 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 	d.mu.Unlock()
 	d.bindClient(c, session)
 	d.syncing = false
+	d.listenRecoveryAt = time.Time{}
+	// A new pairing's cookies may come from another profile, or be pasted;
+	// forget what the cookie check knew. pairFromBrowser sets it again.
+	d.follow.reset()
+	d.cookies.mu.Lock()
+	d.cookies.lastProfile = ""
+	d.cookies.mu.Unlock()
 	if old != nil {
 		go old.Disconnect()
 	}
@@ -79,12 +87,15 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 	d.gaiaCtx = ctx
 
 	d.mu.Lock()
+	fromState, fromMsg := d.status.State, d.status.Error
 	d.status.State = wire.StateGaiaPairing
 	d.status.Error = ""
 	d.status.QRURL = ""
 	d.status.Emoji = ""
 	st := d.status
 	d.mu.Unlock()
+	d.diagStateChange("gaiaPairing", fromState, fromMsg, wire.StateGaiaPairing, "")
+	d.diagEvent("pairingStarted", logFields{"method": "gaia"})
 	d.publish(wire.EventStatus, st)
 
 	go func() {
@@ -126,6 +137,7 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 				d.status.Emoji = ""
 				d.mu.Unlock()
 				if errors.Is(err, context.DeadlineExceeded) {
+					d.diagEvent("pairingFailed", logFields{"method": "gaia", "reason": "phoneDidNotConfirm"})
 					d.log.Warn().Msg("Gaia pairing timed out waiting for the phone")
 					d.setState(wire.StateUnpaired,
 						"the phone never confirmed. Open Google Messages on the phone "+
@@ -133,6 +145,9 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 					return
 				}
 				d.log.Error().Err(err).Msg("Gaia pairing failed")
+				f := describeAuthError(err)
+				f["method"] = "gaia"
+				d.diagEvent("pairingFailed", f)
 				// Cookies that fail here are usually stale rather than wrong, so
 				// say so plainly instead of leaving a bare API error.
 				d.setState(wire.StateError, gaiaErrorHint(err))

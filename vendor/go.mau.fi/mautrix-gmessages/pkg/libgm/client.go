@@ -45,6 +45,27 @@ type AuthData struct {
 
 	Cookies     map[string]string `json:"cookies,omitempty"`
 	CookiesLock sync.RWMutex      `json:"-"`
+
+	// OmaChat: optional, log-only notification of the cookie names a response
+	// set. It never receives cookie values and never changes how cookies are
+	// stored. It is called after CookiesLock is released.
+	CookieObserver func(CookieUpdate) `json:"-"`
+}
+
+// OmaChat: CookieUpdate describes which cookies one response set. It
+// deliberately has no field for cookie values.
+type CookieUpdate struct {
+	Host        string
+	Status      int
+	ContentType string
+	Names       []CookieName
+}
+
+// OmaChat: CookieName is one cookie set by a response. Cleared means the
+// response deleted or expired it (empty value, Max-Age <= 0, or a past expiry).
+type CookieName struct {
+	Name    string
+	Cleared bool
 }
 
 func (ad *AuthData) SetCookies(cookies map[string]string) {
@@ -70,13 +91,40 @@ func (ad *AuthData) AddCookiesToRequest(req *http.Request) {
 
 func (ad *AuthData) UpdateCookiesFromResponse(resp *http.Response) {
 	ad.CookiesLock.Lock()
-	defer ad.CookiesLock.Unlock()
 	if ad.Cookies == nil {
+		ad.CookiesLock.Unlock()
 		return
 	}
-	for _, cookie := range resp.Cookies() {
+	cookies := resp.Cookies()
+	for _, cookie := range cookies {
 		ad.Cookies[cookie.Name] = cookie.Value
 	}
+	observer := ad.CookieObserver
+	ad.CookiesLock.Unlock()
+	// OmaChat: report names only, outside the lock, so an observer may read
+	// the cookie jar without deadlocking.
+	if observer != nil && len(cookies) > 0 {
+		observer(cookieUpdateFromResponse(resp, cookies))
+	}
+}
+
+// OmaChat: cookieUpdateFromResponse builds the names-only CookieUpdate.
+func cookieUpdateFromResponse(resp *http.Response, cookies []*http.Cookie) CookieUpdate {
+	update := CookieUpdate{
+		Status:      resp.StatusCode,
+		ContentType: resp.Header.Get("Content-Type"),
+		Names:       make([]CookieName, 0, len(cookies)),
+	}
+	if resp.Request != nil && resp.Request.URL != nil {
+		update.Host = resp.Request.URL.Host
+	}
+	now := time.Now()
+	for _, cookie := range cookies {
+		cleared := cookie.Value == "" || cookie.MaxAge < 0 ||
+			(!cookie.Expires.IsZero() && cookie.Expires.Before(now))
+		update.Names = append(update.Names, CookieName{Name: cookie.Name, Cleared: cleared})
+	}
+	return update
 }
 
 func (ad *AuthData) HasCookies() bool {
@@ -120,6 +168,10 @@ type Client struct {
 	listenID        int
 	skipCount       int
 	disconnecting   bool
+	// OmaChat: set by Disconnect and cleared by Connect. The long-poll loop
+	// checks it, so a Disconnect that lands before the first poll response
+	// (when longPollingConn is still nil) still stops the loop.
+	stopped atomic.Bool
 
 	pingInterval             time.Duration
 	alertTimeoutCount        int
@@ -227,6 +279,7 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("not logged in")
 	}
 
+	c.stopped.Store(false) // OmaChat: see Client.stopped
 	err := c.refreshAuthToken(nil)
 	if err != nil {
 		return fmt.Errorf("failed to refresh auth token: %w", err)
@@ -249,6 +302,7 @@ func (c *Client) ConnectBackground() error {
 	} else if c.AuthData.Browser == nil {
 		return fmt.Errorf("not logged in")
 	}
+	c.stopped.Store(false) // OmaChat: see Client.stopped
 	cleanExit := c.doLongPoll(true, true, nil)
 	c.sessionHandler.sendAckRequest()
 	if !cleanExit {
@@ -302,6 +356,7 @@ func (c *Client) postConnect() {
 }
 
 func (c *Client) Disconnect() {
+	c.stopped.Store(true) // OmaChat: see Client.stopped
 	c.closeLongPolling()
 	// Fail any requests that are still waiting for a response from the phone:
 	// the responses are delivered over the long polling connection, so they can

@@ -83,6 +83,15 @@ Flickable {
   property string telegramStatusText: ""
   property bool savingTelegram: false
 
+  property bool debugLogging: false
+  property bool savingDebugLogging: false
+  property int debugLoggingGeneration: 0
+  property string debugLogPath: "~/.local/state/omachat/auth.log"
+  property string debugStatusText: ""
+  property bool debugStatusIsError: false
+  property bool deleteDebugLogConfirmOpen: false
+  property bool deletingDebugLog: false
+
   clip: true
   boundsBehavior: Flickable.StopAtBounds
   contentWidth: width
@@ -97,7 +106,7 @@ Flickable {
   }
 
   function load() {
-    if (!service || service.connected === false || savingWindowPreferences || savingEmojiSearchPreference || savingUnifiedInboxPreference || savingHistoryPreference) return
+    if (!service || service.connected === false || savingWindowPreferences || savingEmojiSearchPreference || savingUnifiedInboxPreference || savingHistoryPreference || savingDebugLogging) return
     var target = service
     var generation = ++windowRequestGeneration
     var revision = preferenceRevision
@@ -113,6 +122,50 @@ Flickable {
       root.popoutMode = res.popoutMode === "tiled" ? "tiled" : "floating"
       root.keyboardShortcuts = res.keyboardShortcuts || ({})
       root.unifiedInboxEnabled = res.unifiedInboxEnabled === true
+      root.debugLogging = res.debugLogging === true
+      if (typeof res.debugLogPath === "string" && res.debugLogPath !== "") root.debugLogPath = res.debugLogPath
+    }, "gmessages")
+  }
+
+  function saveDebugLogging(enabled) {
+    if (!service || service.connected === false || savingDebugLogging) return
+    var target = service
+    var generation = ++debugLoggingGeneration
+    preferenceRevision++
+    savingDebugLogging = true
+    debugStatusText = ""
+    debugStatusIsError = false
+    service.call("setDebugLogging", {enabled: enabled === true}, function(ok, res) {
+      if (root.service !== target || generation !== root.debugLoggingGeneration) return
+      root.savingDebugLogging = false
+      if (!ok || !res || typeof res.debugLogging !== "boolean") {
+        root.debugStatusText = String(res || "Could not change sign-in diagnostics.")
+        root.debugStatusIsError = true
+        root.load()
+        return
+      }
+      root.debugLogging = res.debugLogging === true
+      if (typeof res.debugLogPath === "string" && res.debugLogPath !== "") root.debugLogPath = res.debugLogPath
+    }, "gmessages")
+  }
+
+  function deleteDebugLog() {
+    if (!service || service.connected === false || deletingDebugLog) return
+    var target = service
+    deleteDebugLogConfirmOpen = false
+    deletingDebugLog = true
+    debugStatusText = ""
+    debugStatusIsError = false
+    service.call("deleteDebugLog", null, function(ok, res) {
+      if (root.service !== target) return
+      root.deletingDebugLog = false
+      if (!ok) {
+        root.debugStatusText = String(res || "Could not delete the log.")
+        root.debugStatusIsError = true
+        return
+      }
+      root.debugStatusText = "Log deleted."
+      root.debugStatusIsError = false
     }, "gmessages")
   }
 
@@ -263,8 +316,9 @@ Flickable {
   function retireWindowRequests() {
     windowRequestGeneration++
     preferenceRevision++
-    emojiPreferenceGeneration++; unifiedPreferenceGeneration++; historyPreferenceGeneration++
-    savingEmojiSearchPreference = false; savingUnifiedInboxPreference = false; savingHistoryPreference = false
+    emojiPreferenceGeneration++; unifiedPreferenceGeneration++; historyPreferenceGeneration++; debugLoggingGeneration++
+    savingEmojiSearchPreference = false; savingUnifiedInboxPreference = false; savingHistoryPreference = false; savingDebugLogging = false
+    deleteDebugLogConfirmOpen = false; deletingDebugLog = false
     savingWindowPreferences = false
     windowStatusText = ""
   }
@@ -330,6 +384,7 @@ Flickable {
           {label:"Service guides", section:servicesSection},
           {label:"Tools", section:toolsSection},
           {label:"Telegram API", section:telegramSection},
+          {label:"Debug", section:debugSection},
           {label:"Credits", section:creditsSection},
           {label:"About", section:aboutSection}
         ]
@@ -980,6 +1035,7 @@ Flickable {
     // Section 5: Telegram API Credentials
     Column {
       id: telegramSection
+      objectName: "telegramSection"
       width: parent.width
       spacing: Style.space(10)
 
@@ -1169,9 +1225,197 @@ Flickable {
     }
 
 
+    // Section 5b: Debug
+    Column {
+      id: debugSection
+      objectName: "debugSection"
+      width: parent.width
+      spacing: Style.space(10)
+
+      Text {
+        textFormat: Text.PlainText
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: "Debug"
+        color: root.copyColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.heading)
+        font.bold: true
+      }
+
+      Item {
+        id: debugLoggingSwitch
+        objectName: "debugLoggingSwitch"
+        width: parent.width
+        implicitHeight: Math.max(debugLoggingLabels.implicitHeight, debugLoggingToggle.implicitHeight)
+        enabled: !root.savingDebugLogging
+        activeFocusOnTab: true
+        opacity: enabled ? 1 : 0.45
+        Accessible.role: Accessible.CheckBox
+        Accessible.name: "Sign-in diagnostics"
+        Accessible.checked: root.debugLogging
+        Keys.onReturnPressed: root.saveDebugLogging(!root.debugLogging)
+        Keys.onEnterPressed: root.saveDebugLogging(!root.debugLogging)
+        Keys.onSpacePressed: root.saveDebugLogging(!root.debugLogging)
+        Column {
+          id: debugLoggingLabels
+          anchors.left: parent.left
+          anchors.right: debugLoggingToggle.left
+          anchors.rightMargin: Style.space(12)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(2)
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            text: "Sign-in diagnostics"
+            color: root.copyColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.body)
+            font.bold: true
+          }
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: root.debugLogging ? "On. OmaChat is keeping a Google Messages sign-in log." : "Off. Nothing is being logged."
+            color: root.mutedColor
+            font.family: root.fontFamily
+            font.pixelSize: fs(Style.font.caption)
+          }
+        }
+        ToggleSwitch {
+          id: debugLoggingToggle
+          objectName: "debugLoggingToggle"
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          checked: root.debugLogging
+          busy: root.savingDebugLogging
+          interactive: debugLoggingSwitch.enabled
+          hasCursor: debugLoggingSwitch.activeFocus
+          foreground: root.foreground
+          accent: root.accentColor
+          onToggled: root.saveDebugLogging(!root.debugLogging)
+        }
+      }
+
+      Repeater {
+        model: [
+          {heading: false, text: "Turn this on if Google Messages keeps asking you to pair again. While it's on, OmaChat keeps a log of Google Messages sign-in activity on this computer, so the cause can be found and fixed. It covers Google Messages only, and it's off unless you turn it on."},
+          {heading: true, text: "What it records"},
+          {heading: false, text: "• When Google rejects a sign-in or request: the time, which part of OmaChat was affected, the error message, and Google's full error response.\n• When OmaChat reads Google sign-in cookies from your browser: the browser profile name, and whether it worked.\n• Which Google sign-in cookies changed and when, both in OmaChat and in your browser. It records short fingerprints, not the cookies. A fingerprint is a one-way scramble: it shows when a cookie changes, but the cookie can't be recovered from it.\n• Connection and pairing changes, such as connecting, disconnected or needing to pair again, with the status messages OmaChat shows.\n• Some file locations, which include your user name."},
+          {heading: true, text: "It also watches your browser"},
+          {heading: false, text: "While this is on and Google Messages is paired, OmaChat checks your selected browser profile every few minutes to see when Google renewed your sign-in cookies. It reads only their dates, sizes and scrambled fingerprints. It doesn't unlock your keyring, doesn't decrypt anything, and doesn't use what it reads."},
+          {heading: true, text: "What it never records"},
+          {heading: false, text: "Your messages, contacts, phone numbers, passwords, or the cookies themselves."},
+          {heading: true, text: "Where it's kept"},
+          {heading: false, text: "In the log file shown below. Only your user account can open it, though programs running as you, and the system administrator, can too. It is limited to about 2 MB and replaces its oldest entries as it grows."},
+          {heading: true, text: "Before sharing it"},
+          {heading: false, text: "Google's error responses are saved as received. Some are web pages that can include your IP address, and occasionally one may name your account. Read the log before posting it anywhere public."},
+          {heading: false, text: "Turning this off stops logging immediately. Your existing log stays until you choose Delete log."}
+        ]
+        Text {
+          required property var modelData
+          textFormat: Text.PlainText
+          width: debugSection.width
+          wrapMode: Text.Wrap
+          text: modelData.text
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+          font.bold: modelData.heading === true
+          lineHeight: modelData.heading === true ? 1 : 1.25
+        }
+      }
+
+      Text {
+        objectName: "debugLogPath"
+        textFormat: Text.PlainText
+        width: parent.width
+        wrapMode: Text.WrapAnywhere
+        text: "Log file: " + root.debugLogPath
+        color: root.mutedColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.caption)
+      }
+
+      Flow {
+        width: parent.width
+        spacing: Style.space(8)
+
+        Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          objectName: "deleteDebugLogBtn"
+          visible: !root.deleteDebugLogConfirmOpen
+          enabled: !root.deletingDebugLog
+          text: root.deletingDebugLog ? "Deleting..." : "Delete log"
+          bordered: true
+          foreground: root.urgentColor
+          fontFamily: root.fontFamily
+          onClicked: { root.debugStatusText = ""; root.deleteDebugLogConfirmOpen = true }
+        }
+
+        Text {
+          objectName: "deleteDebugLogPrompt"
+          visible: root.deleteDebugLogConfirmOpen
+          textFormat: Text.PlainText
+          text: "Delete the sign-in log? This can't be undone."
+          color: root.copyColor
+          font.family: root.fontFamily
+          font.pixelSize: fs(Style.font.body)
+        }
+
+        Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          objectName: "confirmDeleteDebugLogBtn"
+          visible: root.deleteDebugLogConfirmOpen
+          text: "Delete"
+          bordered: true
+          foreground: root.urgentColor
+          fontFamily: root.fontFamily
+          onClicked: root.deleteDebugLog()
+        }
+
+        Button {
+          focusable: true
+          Accessible.role: Accessible.Button
+          Accessible.name: text
+          objectName: "cancelDeleteDebugLogBtn"
+          visible: root.deleteDebugLogConfirmOpen
+          text: "Cancel"
+          bordered: true
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          onClicked: root.deleteDebugLogConfirmOpen = false
+        }
+      }
+
+      Text {
+        objectName: "debugStatusText"
+        textFormat: Text.PlainText
+        width: parent.width
+        visible: root.debugStatusText !== ""
+        wrapMode: Text.Wrap
+        text: root.debugStatusText
+        color: root.debugStatusIsError ? root.urgentColor : root.accentColor
+        font.family: root.fontFamily
+        font.pixelSize: fs(Style.font.body)
+      }
+    }
+
+    Rectangle {
+      width: parent.width
+      height: 1
+      color: Commons.Color.popups.border
+    }
+
     // Section 6: Upstream Credits and Honest Attribution
     Column {
       id: creditsSection
+      objectName: "creditsSection"
       width: parent.width
       spacing: Style.space(10)
 

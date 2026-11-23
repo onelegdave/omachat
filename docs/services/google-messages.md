@@ -40,13 +40,38 @@ break when Google changes its service.
 ## Recovery and removal
 
 For missing cookies, open Messages for web in the selected profile again.
-Check the keyring and cookie tools if browser access fails. For an invalidated
-session, explicitly choose **Pair with Google** again; recovery never starts
-pairing automatically. A reconnect stays Connecting until authentication succeeds.
+Check the keyring and cookie tools if browser access fails.
+
+Keep the browser profile you paired from: while a Google page is open there, it
+keeps renewing the sign-in cookie, and OmaChat reads the new one soon after each
+renewal. If Google still refuses the connection, OmaChat waits for a newer
+cookie from that profile and reconnects before asking you to pair. It tries this
+at most once every 10 minutes. While it cannot reach Google, it shows
+Disconnected and keeps retrying.
+
+If Google refuses requests or pings and the browser has no newer cookie,
+OmaChat keeps checking for up to a few minutes, then asks you to pair again
+rather than staying connected without working. Signing out of Google in the
+browser profile you paired from ends OmaChat's session too, since both use
+the same sign-in; OmaChat asks you to pair again within about two minutes.
+
+For an invalidated session, explicitly choose **Pair with Google** again;
+recovery never starts pairing automatically. A reconnect stays Connecting until
+authentication succeeds.
 
 Choose **Unpair this desktop** on the Google tab to remove local credentials
 and media and request remote revocation. If revocation fails, remove the device
 in **Google Messages > Device pairing** on your phone. Other services remain paired.
+
+## Diagnosing repeated re-pairing
+
+If Google Messages keeps asking you to pair again, turn on **Settings > Debug >
+Sign-in diagnostics**. Keep using OmaChat until the request to pair appears,
+then read `~/.local/state/omachat/auth.log` (and `auth.log.1` if present)
+before pairing again. The log records sign-in failures, Google's error
+responses, browser cookie refreshes, and fingerprints of the sign-in cookies,
+never their values; review it before sharing. Turn the setting off and choose
+**Delete log** when you are done. See [Security](../../SECURITY.md#sign-in-diagnostics).
 
 Credentials are stored in `~/.local/share/omachat/session.json` with mode 0600.
 Downloaded attachments use `~/.cache/omachat/media/`. Shared configuration is

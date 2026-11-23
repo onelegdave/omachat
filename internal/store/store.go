@@ -22,6 +22,9 @@ type Paths struct {
 	Data      string
 	Cache     string
 	Runtime   string
+	// State holds opt-in diagnostics. It is resolved but never created here;
+	// see DebugLogFile.
+	State string
 }
 
 func xdg(env, fallback string) (string, error) {
@@ -51,7 +54,11 @@ func NewPaths() (*Paths, error) {
 	if v := os.Getenv("XDG_RUNTIME_DIR"); v != "" {
 		runtime = filepath.Join(v, appDir)
 	}
-	p := &Paths{Data: data, Cache: cache, Runtime: runtime}
+	state, err := xdg("XDG_STATE_HOME", ".local/state")
+	if err != nil {
+		return nil, err
+	}
+	p := &Paths{Data: data, Cache: cache, Runtime: runtime, State: state}
 	for _, dir := range []string{p.Data, p.Cache, p.Runtime, p.MediaDir(), p.WhatsAppMediaDir(), p.TelegramMediaDir(), p.MessengerMediaDir(), p.SignalDataDir(), p.SignalMediaDir()} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("create %s: %w", dir, err)
@@ -67,6 +74,16 @@ func NewPaths() (*Paths, error) {
 		}
 	}
 	return p, nil
+}
+
+// DebugLogFile is the opt-in sign-in diagnostics log. An unset State is an
+// error rather than a relative path, so a partially built Paths can never
+// write diagnostics into the working directory.
+func (p *Paths) DebugLogFile() (string, error) {
+	if p == nil || p.State == "" || !filepath.IsAbs(p.State) {
+		return "", errors.New("diagnostics folder is not configured")
+	}
+	return filepath.Join(p.State, "auth.log"), nil
 }
 
 // SessionFile holds the paired-device credentials. Treat as a secret.

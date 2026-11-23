@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/onelegdave/omachat/internal/browser"
@@ -17,14 +18,14 @@ func (d *Daemon) ListProfiles() []wire.BrowserProfile {
 	selected := d.config.Get().BrowserProfile
 
 	var out []wire.BrowserProfile
-	for _, p := range browser.DiscoverProfiles() {
+	for _, p := range d.browserProfiles() {
 		entry := wire.BrowserProfile{
 			Name:     p.Name,
 			Browser:  p.BrowserName,
 			Selected: p.Name == selected,
 		}
 
-		cookies, err := browser.ExtractGoogleCookies(p)
+		cookies, err := d.readBrowserCookies(context.Background(), p)
 		switch {
 		case err != nil:
 			entry.Reason = err.Error()
@@ -50,7 +51,7 @@ func (d *Daemon) ListProfiles() []wire.BrowserProfile {
 func (d *Daemon) SetProfile(name string) error {
 	if name != "" {
 		found := false
-		for _, p := range browser.DiscoverProfiles() {
+		for _, p := range d.browserProfiles() {
 			if p.Name == name {
 				found = true
 				break
@@ -64,10 +65,11 @@ func (d *Daemon) SetProfile(name string) error {
 		return fmt.Errorf("save profile choice: %w", err)
 	}
 	d.log.Info().Str("profile", name).Msg("Browser profile selection changed")
+	d.diagEvent("profileSelected", logFields{"profile": name})
 
 	// Adopt the newly chosen profile's cookies immediately: the user picked it
 	// precisely because the current ones are not working.
-	d.refreshBrowserCookies(d.sessionContext())
+	d.refreshBrowserCookiesFor(d.sessionContext(), "setProfile", "")
 	return nil
 }
 
@@ -75,16 +77,51 @@ func (d *Daemon) SetProfile(name string) error {
 // A pinned profile that has since disappeared falls back to automatic rather
 // than leaving the daemon with nothing to read.
 func (d *Daemon) candidateProfiles() []browser.Profile {
-	all := browser.DiscoverProfiles()
+	all := d.browserProfiles()
 	selected := d.config.Get().BrowserProfile
 	if selected == "" {
 		return all
 	}
 	for _, p := range all {
 		if p.Name == selected {
+			d.cookies.mu.Lock()
+			d.cookies.missingWarned = ""
+			d.cookies.mu.Unlock()
 			return []browser.Profile{p}
 		}
 	}
-	d.log.Warn().Str("profile", selected).Msg("Selected browser profile not found; falling back to automatic")
+	// The cookie check asks every minute; warn once per missing profile.
+	d.cookies.mu.Lock()
+	warn := d.cookies.missingWarned != selected
+	d.cookies.missingWarned = selected
+	d.cookies.mu.Unlock()
+	if warn {
+		d.log.Warn().Str("profile", selected).Msg("Selected browser profile not found; falling back to automatic")
+	}
 	return all
+}
+
+// The real browser access, as package variables so the package's tests can
+// switch all of it off (see TestMain) and never read the browser or keyring of
+// the machine running them.
+var (
+	discoverBrowserProfiles = browser.DiscoverProfiles
+	extractBrowserCookies   = browser.ExtractGoogleCookiesContext
+	browserSQLite           = browser.DefaultSQLiteRunner
+)
+
+// browserProfiles lists the installed browser profiles.
+func (d *Daemon) browserProfiles() []browser.Profile {
+	if d.discoverProfiles != nil {
+		return d.discoverProfiles()
+	}
+	return discoverBrowserProfiles()
+}
+
+// readBrowserCookies reads and decrypts a profile's Google cookies.
+func (d *Daemon) readBrowserCookies(ctx context.Context, p browser.Profile) (map[string]string, error) {
+	if d.extractCookies != nil {
+		return d.extractCookies(ctx, p)
+	}
+	return extractBrowserCookies(ctx, p)
 }

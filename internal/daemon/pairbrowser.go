@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/onelegdave/omachat/internal/browser"
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
@@ -40,7 +39,10 @@ func (d *Daemon) pairFromBrowser(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		cookies, err := browser.ExtractGoogleCookiesContext(ctx, p)
+		// What the browser's renewed cookie looks like before the read: the
+		// cookie check's baseline if this profile is used (cookiefollow.go).
+		base := d.follow.snapshot(ctx, p)
+		cookies, err := d.readBrowserCookies(ctx, p)
 		if err != nil {
 			readErrs = append(readErrs, p.Name+": "+err.Error())
 			continue
@@ -53,7 +55,15 @@ func (d *Daemon) pairFromBrowser(ctx context.Context) error {
 				d.status.Profile = p.Name
 				d.mu.Unlock()
 			})
-			return d.startGaiaPairing(ctx, cookies)
+			if err := d.startGaiaPairing(ctx, cookies); err != nil {
+				return err
+			}
+			// Follow this profile's renewals from the copy pairing uses.
+			d.cookies.mu.Lock()
+			d.cookies.lastProfile = p.Name
+			d.cookies.mu.Unlock()
+			d.follow.setBaseline(p, base)
+			return nil
 		}
 		// Track the closest profile so the hint can name it.
 		if bestCookies == nil || len(missing) < len(bestMissing) {
@@ -87,10 +97,12 @@ func (d *Daemon) setPairErrorFor(ctx context.Context, msg, hint string) {
 		return
 	}
 	d.mu.Lock()
+	fromState, fromMsg := d.status.State, d.status.Error
 	d.status.State = wire.StateError
 	d.status.Error = msg
 	d.status.Hint = hint
 	st := d.status
 	d.mu.Unlock()
+	d.diagStateChange("pairFromBrowser", fromState, fromMsg, wire.StateError, msg+" "+hint)
 	d.publish(wire.EventStatus, st)
 }

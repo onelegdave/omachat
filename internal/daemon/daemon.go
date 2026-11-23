@@ -14,6 +14,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/events"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
+	"github.com/onelegdave/omachat/internal/browser"
 	"github.com/onelegdave/omachat/internal/messenger"
 	signalbackend "github.com/onelegdave/omachat/internal/signal"
 	"github.com/onelegdave/omachat/internal/store"
@@ -25,6 +26,10 @@ import (
 // convListLimit caps how many conversations we hold and serve. The panel is a
 // bar popup, not an archive browser.
 const convListLimit = 50
+
+// startupCookieReadTimeout bounds the browser read before the first connect,
+// so a slow keyring cannot hold up startup.
+const startupCookieReadTimeout = 5 * time.Second
 
 // Daemon owns the libgm client and the cached view of the account.
 type Daemon struct {
@@ -70,7 +75,38 @@ type Daemon struct {
 	reactionOrder []string
 
 	cookies cookieRefresher
+	timing  authTimings
 	syncing bool // guarded by sessionMu
+
+	// follow notices when the browser renews its sign-in cookie; see
+	// cookiefollow.go.
+	follow *cookieFollower
+	// listenRecoveryAt is when OmaChat last tried to recover a refused long
+	// poll in place, and listenRecovering whether that recovery is still
+	// running; listenRecoveryGen tells one recovery from the next. All
+	// guarded by sessionMu.
+	listenRecoveryAt  time.Time
+	listenRecovering  bool
+	listenRecoveryGen int
+	// check is the session check settling a refusal; see sessioncheck.go.
+	// gen tells one check from the next, so a check left over from an
+	// earlier session never clears a newer one's state.
+	check struct {
+		mu            sync.Mutex
+		running       bool
+		client        *libgm.Client
+		gen           int
+		pingRefusedAt time.Time
+	}
+
+	// Test seams. Nil means the real browser and libgm calls.
+	discoverProfiles func() []browser.Profile
+	extractCookies   func(ctx context.Context, p browser.Profile) (map[string]string, error)
+	reconnectClient  func(c *libgm.Client) error
+	disconnectClient func(c *libgm.Client)
+
+	// diag is the opt-in sign-in diagnostics log (Settings > Debug).
+	diag *authDiag
 
 	// Maintenance starts either after a stored session connects or after a
 	// fresh pairing, whichever happens first, and must run exactly once. It is
@@ -114,6 +150,9 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		previews:  newPreviewCache(paths),
 		config:    store.NewConfigStore(paths.ConfigFile()),
 		reactions: make(map[string][]reactionRecord),
+		diag:      newAuthDiag(paths),
+		follow:    newCookieFollower(),
+		timing:    defaultAuthTimings(),
 		// PhoneOK starts true: it is only ever falsified by an explicit
 		// PhoneNotResponding event. Starting false meant the bar read
 		// "Phone not responding" forever, because the event that clears it
@@ -171,6 +210,11 @@ func (d *Daemon) Start(ctx context.Context) error {
 	// daemon instead of outliving it.
 	d.maintCtx, d.maintCancel = context.WithCancel(ctx)
 	d.sessionCtx, d.sessionCancel = context.WithCancel(d.maintCtx)
+	if d.config.Get().DebugLogging {
+		if err := d.applyDebugLogging(true, "helperStart"); err != nil {
+			d.log.Warn().Err(err).Msg("Sign-in diagnostics could not start")
+		}
+	}
 
 	// Independent network start: start WhatsApp and Telegram regardless of Google session status
 	if d.wa != nil && d.serviceEnabled(wire.NetworkWhatsApp) {
@@ -215,6 +259,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 		d.setState(wire.StateDisconnected, "load session: "+err.Error())
 		return nil
 	}
+	d.attachAuthObservers(auth)
 	d.mu.Lock()
 	d.auth = auth
 	d.client = libgm.NewClient(auth, nil, d.log.With().Str("component", "libgm").Logger())
@@ -233,7 +278,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.mu.Unlock()
 
 	d.setState(wire.StateConnecting, "")
+	d.readBrowserBeforeConnect(d.sessionCtx)
 	if err := d.client.Connect(); err != nil {
+		d.diagStartupConnectFailed(err)
 		// A failed connect is recoverable (phone offline, token expired), so
 		// surface it rather than exiting; the plugin shows a retry affordance.
 		if isAuthError(err) {
@@ -247,6 +294,20 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go d.initialSync(d.sessionContext())
 	d.startMaintenance()
 	return nil
+}
+
+// readBrowserBeforeConnect reads a Google account session's cookies from the
+// browser before the first connect. The browser may have renewed its cookie
+// while OmaChat was not running, and a long poll that connects with an
+// outdated copy is refused at once. If the browser cannot be read, OmaChat
+// connects with the saved copy.
+func (d *Daemon) readBrowserBeforeConnect(parent context.Context) {
+	if !d.followsBrowser() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(parent, startupCookieReadTimeout)
+	defer cancel()
+	d.refreshSameAccount(ctx, "startup")
 }
 
 // startMaintenance launches the credential upkeep loop at most once.
@@ -310,6 +371,7 @@ func (d *Daemon) canSyncLocked() bool {
 
 // Stop disconnects cleanly and persists the session.
 func (d *Daemon) Stop() {
+	d.stopDiagnostics()
 	d.sessionMu.Lock()
 	if d.maintCancel != nil {
 		d.maintCancel()
@@ -359,7 +421,9 @@ func (d *Daemon) saveSessionLocked() {
 	}
 	if err := d.paths.SaveSession(auth); err != nil {
 		d.log.Error().Err(err).Msg("Failed to save session")
+		return
 	}
+	d.diagSessionSaved(auth)
 }
 
 // --- event fan-out ---
@@ -400,6 +464,7 @@ func (d *Daemon) publish(name string, data any) {
 
 func (d *Daemon) setState(state wire.ConnState, errMsg string) {
 	d.mu.Lock()
+	fromState, fromMsg := d.status.State, d.status.Error
 	d.status.State = state
 	d.status.Error = errMsg
 	// Hint belongs to the error it was set with; a new state invalidates it.
@@ -413,6 +478,7 @@ func (d *Daemon) setState(state wire.ConnState, errMsg string) {
 	d.status.Unread = d.unreadCountLocked()
 	st := d.status
 	d.mu.Unlock()
+	d.diagStateChange("setState", fromState, fromMsg, state, errMsg)
 	d.publish(wire.EventStatus, st)
 }
 
@@ -500,6 +566,16 @@ func (d *Daemon) handleEvent(raw any) {
 		d.mu.Unlock()
 		d.publishStatus()
 
+	case *events.PingFailed:
+		// A refused ping is the earliest sign that the cookies are out of
+		// date, well before the long poll is refused. It starts a session
+		// check, which reads the browser at once and then settles whether
+		// the session still works; while one runs, it watches these pings.
+		if evt.Error != nil && isAuthError(evt.Error) && d.canSyncLocked() && d.followsBrowser() {
+			d.notePingRefused()
+			d.startSessionCheck(d.sessionContext(), "ping", d.refusedCookie())
+		}
+
 	case *events.ListenTemporaryError:
 		if d.canSyncLocked() {
 			d.setState(wire.StateDisconnected, "connection interrupted")
@@ -518,7 +594,11 @@ func (d *Daemon) handleEvent(raw any) {
 		}
 		// A fatal listener has stopped. Never start an interactive pairing
 		// from its callback or allow a later event to clear this failure.
+		// A Google account session gets one attempt to recover first.
 		if isAuthError(evt.Error) {
+			if d.startListenRecoveryLocked() {
+				return
+			}
 			d.requirePairingLocked()
 		} else {
 			d.setState(wire.StateError, fmt.Sprintf("%v", evt.Error))

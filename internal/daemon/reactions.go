@@ -118,7 +118,7 @@ func (d *Daemon) React(ctx context.Context, p wire.ReactParams) error {
 		Action:       action,
 	}
 
-	resp, err := withAuthRetry(ctx, d, func() (*gmproto.SendReactionResponse, error) {
+	resp, err := withAuthRetryAt(ctx, d, "rpc:react", func() (*gmproto.SendReactionResponse, error) {
 		return c.SendReaction(ctx, req)
 	})
 	if err != nil {

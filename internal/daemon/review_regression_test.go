@@ -17,6 +17,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/events"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
+	"github.com/onelegdave/omachat/internal/browser"
 	"github.com/onelegdave/omachat/internal/store"
 	"github.com/onelegdave/omachat/internal/wire"
 )
@@ -62,6 +63,20 @@ func newTestDaemon(t *testing.T) (*Daemon, *store.Paths) {
 		t.Fatal(err)
 	}
 	d := New(zerolog.Nop(), paths)
+	// Tests never touch the real browser or keyring on the machine running
+	// them. Tests that need a browser install a fake one.
+	d.discoverProfiles = func() []browser.Profile { return nil }
+	d.extractCookies = func(context.Context, browser.Profile) (map[string]string, error) {
+		return nil, errors.New("browser access disabled in tests")
+	}
+	d.follow.stat = func(string) (time.Time, error) { return time.Time{}, errors.New("browser access disabled in tests") }
+	d.follow.read = func(context.Context, browser.Profile) ([]browser.CookieMeta, error) {
+		return nil, errors.New("browser access disabled in tests")
+	}
+	d.diag.discover = func() []browser.Profile { return nil }
+	d.diag.sqlite = func(context.Context, string, string) ([]byte, error) {
+		return nil, errors.New("sqlite3 disabled in tests")
+	}
 	ctx := context.Background()
 	d.maintCtx, d.maintCancel = context.WithCancel(ctx)
 	d.sessionCtx, d.sessionCancel = context.WithCancel(d.maintCtx)

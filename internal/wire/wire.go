@@ -122,6 +122,8 @@ const (
 	MethodSetKeyboardShortcuts      = "setKeyboardShortcuts"
 	MethodSetEmojiSearchPreference  = "setEmojiSearchPreference"
 	MethodSetUnifiedInboxPreference = "setUnifiedInboxPreference"
+	MethodSetDebugLogging           = "setDebugLogging"
+	MethodDeleteDebugLog            = "deleteDebugLog"
 	MethodSetWhatsAppHistoryCache   = "setWhatsAppHistoryCache"
 	MethodSetNotifications          = "setNotifications"
 	MethodNotifyMessage             = "notifyMessage"
@@ -503,6 +505,8 @@ type ConfigResult struct {
 	KeepPreviousEmojiSearchText bool              `json:"keepPreviousEmojiSearchText"`
 	UnifiedInboxEnabled         bool              `json:"unifiedInboxEnabled"`
 	WhatsAppHistoryCacheMB      int               `json:"whatsappHistoryCacheMB"`
+	DebugLogging                bool              `json:"debugLogging"`
+	DebugLogPath                string            `json:"debugLogPath,omitempty"`
 }
 
 type SetEnabledServicesParams struct {
@@ -515,6 +519,12 @@ type SetUiScaleParams struct {
 
 type SetUnifiedInboxPreferenceParams struct {
 	Enabled bool `json:"enabled"`
+}
+
+// SetDebugLoggingParams requires an explicit value so a malformed request
+// can never switch diagnostics on.
+type SetDebugLoggingParams struct {
+	Enabled *bool `json:"enabled"`
 }
 
 type SetChatViewParams struct {

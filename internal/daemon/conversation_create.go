@@ -18,6 +18,7 @@ func (d *Daemon) ConversationTargets(ctx context.Context) ([]wire.ConversationTa
 	}
 	resp, err := client.ListContacts(ctx)
 	if err != nil {
+		d.diagObserveAuthError("rpc:listContacts", err)
 		return nil, err
 	}
 	targets := make([]wire.ConversationTarget, 0, len(resp.GetContacts()))
@@ -59,6 +60,7 @@ func (d *Daemon) CreateConversation(ctx context.Context, p wire.CreateConversati
 	}
 	created, err := getOrCreateGoogleConversation(ctx, numbers, strings.TrimSpace(p.Name), client.GetOrCreateConversation)
 	if err != nil {
+		d.diagObserveAuthError("rpc:getOrCreateConversation", err)
 		return wire.Conversation{}, err
 	}
 	d.sessionMu.Lock()

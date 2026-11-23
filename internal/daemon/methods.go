@@ -78,7 +78,7 @@ func (d *Daemon) Messages(ctx context.Context, p wire.MessagesParams) (*wire.Mes
 	if p.CursorID != "" {
 		cursor = &gmproto.Cursor{LastItemID: p.CursorID, LastItemTimestamp: p.CursorTime}
 	}
-	resp, err := withAuthRetry(ctx, d, func() (*gmproto.ListMessagesResponse, error) {
+	resp, err := withAuthRetryAt(ctx, d, "rpc:listMessages", func() (*gmproto.ListMessagesResponse, error) {
 		return c.FetchMessages(ctx, p.ConversationID, p.Count, cursor)
 	})
 	if err != nil {
@@ -154,7 +154,7 @@ func (d *Daemon) Send(ctx context.Context, p wire.SendParams) (*wire.Message, er
 		req.Reply = &gmproto.ReplyPayload{MessageID: p.ReplyToID}
 	}
 
-	resp, err := withAuthRetry(ctx, d, func() (*gmproto.SendMessageResponse, error) {
+	resp, err := withAuthRetryAt(ctx, d, "rpc:send", func() (*gmproto.SendMessageResponse, error) {
 		return c.SendMessage(ctx, req)
 	})
 	if err != nil {
@@ -184,6 +184,7 @@ func (d *Daemon) MarkRead(ctx context.Context, p wire.MarkReadParams) error {
 		return err
 	}
 	if err := c.MarkRead(ctx, p.ConversationID, p.MessageID); err != nil {
+		d.diagObserveAuthError("rpc:markRead", err)
 		return fmt.Errorf("mark read: %w", err)
 	}
 	d.sessionMu.Lock()
@@ -223,7 +224,7 @@ func (d *Daemon) Refresh(ctx context.Context) error {
 	d.mu.RUnlock()
 	d.sessionMu.Unlock()
 	ctx = sessionBoundContext{Context: ctx, session: session}
-	resp, err := withAuthRetry(ctx, d, func() (*gmproto.ListConversationsResponse, error) {
+	resp, err := withAuthRetryAt(ctx, d, "rpc:listConversations", func() (*gmproto.ListConversationsResponse, error) {
 		return c.ListConversations(ctx, convListLimit, gmproto.ListConversationsRequest_INBOX)
 	})
 	if err != nil {
@@ -288,15 +289,19 @@ func (d *Daemon) StartPairing() (string, error) {
 		return "", parent.Err()
 	}
 	if err != nil {
+		d.diagEvent("pairingFailed", logFields{"method": "qr", "error": describeAuthError(err)})
 		d.setState(wire.StateError, err.Error())
 		return "", fmt.Errorf("start pairing: %w", err)
 	}
 	d.mu.Lock()
+	fromState, fromMsg := d.status.State, d.status.Error
 	d.status.State = wire.StatePairing
 	d.status.QRURL = qr
 	d.status.Error = ""
 	st := d.status
 	d.mu.Unlock()
+	d.diagStateChange("qrPairing", fromState, fromMsg, wire.StatePairing, "")
+	d.diagEvent("pairingStarted", logFields{"method": "qr"})
 	d.publish(wire.EventStatus, st)
 	d.publish(wire.EventQR, map[string]string{"url": qr})
 
@@ -385,6 +390,7 @@ func (d *Daemon) unpair(ctx context.Context, revoke func(context.Context, *libgm
 	old, localErr := d.resetSessionLocked()
 	replacement := d.sessionContext()
 	d.sessionMu.Unlock()
+	d.diagEvent("sessionCleared", logFields{"reason": "unpair", "clearError": errText(localErr)})
 
 	var remoteErr error
 	if old != nil {

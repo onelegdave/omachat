@@ -33,6 +33,33 @@ class ProductClaimsTest(unittest.TestCase):
         self.assertIn("uses them only to connect directly to Telegram", settings)
         self.assertNotIn("never transmitted elsewhere", settings)
 
+    def test_sign_in_diagnostics_claims_match_the_code(self):
+        settings = (ROOT / "SettingsView.qml").read_text()
+        security = (ROOT / "SECURITY.md").read_text()
+        guide = (ROOT / "docs/services/google-messages.md").read_text()
+        config = (ROOT / "internal/store/config.go").read_text()
+        signin = (ROOT / "internal/browser/signin.go").read_text()
+        authlog = (ROOT / "internal/daemon/authlog.go").read_text()
+        # Off by default, everywhere it is described.
+        self.assertIn('DebugLogging bool `json:"debugLogging,omitempty"`', config)
+        self.assertIn("property bool debugLogging: false", settings)
+        self.assertIn("it's off unless you turn it on", settings)
+        self.assertIn("is off by default", security)
+        # The browser check is keyless, read-only and in place, as the text says.
+        self.assertIn("It doesn't unlock your keyring, doesn't decrypt anything", settings)
+        self.assertIn("never runs `secret-tool`, never decrypts", security)
+        self.assertNotIn("secret-tool", signin.replace("it never runs secret-tool", ""))
+        self.assertNotIn("decrypt", signin.replace("never decrypts", "").replace("never decrypted", ""))
+        self.assertIn('"?mode=ro&immutable=1"', signin)
+        # Size and location claims match the implementation.
+        self.assertIn("authLogMaxBytes  = 1 << 20", authlog)
+        self.assertIn("about 2 MB", settings)
+        self.assertIn("about 2 MB", security)
+        self.assertIn("authLogBodyCap   = 64 << 10", authlog)
+        self.assertIn("up to 64 KiB", security)
+        for text in (security, guide):
+            self.assertIn("~/.local/state/omachat/auth.log", text)
+
 
 if __name__ == "__main__":
     unittest.main()
