@@ -180,8 +180,11 @@ func (d *Daemon) followBrowserCookies(ctx context.Context) {
 	}
 	// A successful read records new baselines itself. Otherwise the old ones
 	// stay, so a later check tries again: the next one after a throttled
-	// read, or after cookieFollowRetry after a failed one.
-	if d.refreshSameAccount(ctx, "browserRenewed") == refreshFailed {
+	// read, or after cookieFollowRetry after a failed one. A sign-in that no
+	// profile holds any more is left to the pings: Google refuses them if
+	// the session has really ended, and the session check that starts then
+	// asks the user to pair again.
+	if got := d.refreshSameAccount(ctx, "browserRenewed"); got == refreshFailed || got == refreshSignedOut {
 		f.mu.Lock()
 		f.retryAfter = time.Now().Add(cookieFollowRetry)
 		f.mu.Unlock()

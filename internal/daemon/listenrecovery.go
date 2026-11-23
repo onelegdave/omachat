@@ -44,30 +44,40 @@ func (d *Daemon) startListenRecoveryLocked() bool {
 	// The long poll was refused with the cookie the session holds now,
 	// unless a read replaced it moments ago: then the refused poll was most
 	// likely sent with the one that read replaced.
-	refused := d.sessionRenewedCookie()
-	d.cookies.mu.Lock()
-	if time.Since(d.cookies.installedAt) < recentInstall && d.cookies.replaced != "" {
-		refused = d.cookies.replaced
-	}
-	d.cookies.mu.Unlock()
+	refused := d.refusedCookie()
 	d.listenRecoveryAt = time.Now()
+	d.listenRecovering = true
+	d.listenRecoveryGen++
+	gen := d.listenRecoveryGen
 	d.diagEvent("listenRecovery", logFields{"result": "started"})
 	d.setState(wire.StateConnecting, "")
-	go d.recoverListen(ctx, c, refused)
+	go d.recoverListen(ctx, c, refused, gen)
 	return true
 }
 
 // recoverListen waits for the session to hold a cookie other than the
 // refused one, reading the browser as needed (a successful read also saves
 // the session), and then reconnects the same client in place.
-func (d *Daemon) recoverListen(ctx context.Context, c *libgm.Client, refused string) {
-	fresh := d.ensureNewCookie(ctx, refused, d.timing.recoveryFreshWait, true, func(ctx context.Context) refreshOutcome {
+func (d *Daemon) recoverListen(ctx context.Context, c *libgm.Client, refused string, gen int) {
+	defer func() {
+		// A later recovery may have started meanwhile; leave its flag alone.
+		d.sessionMu.Lock()
+		if d.listenRecoveryGen == gen {
+			d.listenRecovering = false
+		}
+		d.sessionMu.Unlock()
+	}()
+	got := d.ensureNewCookie(ctx, refused, d.timing.recoveryFreshWait, true, func(ctx context.Context) refreshOutcome {
 		return d.refreshSameAccount(ctx, "listenFatal")
 	})
 	if ctx.Err() != nil {
 		return
 	}
-	if !fresh {
+	switch got {
+	case signedOut:
+		d.endListenRecovery(ctx, c, "signedOut", nil)
+		return
+	case noNewCookie:
 		d.endListenRecovery(ctx, c, "notRefreshed", nil)
 		return
 	}

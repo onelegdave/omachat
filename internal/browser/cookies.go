@@ -50,6 +50,12 @@ var googleWantedHosts = map[string]string{
 // ErrNoProfile means no supported browser profile was found on disk.
 var ErrNoProfile = errors.New("no Chrome, Chromium, or Brave profile found")
 
+// ErrNotSignedIn means the profile's cookie database was read and holds no
+// Google sign-in cookie (SID) at all: the profile is signed out of Google, or
+// never signed in. It is decided from the database alone, before the keyring
+// is asked for anything, so a locked keyring never produces it.
+var ErrNotSignedIn = errors.New("this browser profile is not signed in to Google")
+
 // DiscoverProfiles lists every browser profile on this machine that has a
 // cookie database.
 //
@@ -223,6 +229,9 @@ func ExtractGoogleCookiesContext(ctx context.Context, p Profile) (map[string]str
 	if err != nil {
 		return nil, fmt.Errorf("query cookie database: %w", err)
 	}
+	if !hasGoogleSignIn(string(out)) {
+		return nil, ErrNotSignedIn
+	}
 
 	keyV11, keyV10 := decryptionKey(ctx, p)
 	if err := ctx.Err(); err != nil {
@@ -260,6 +269,18 @@ func ExtractGoogleCookiesContext(ctx context.Context, p Profile) (map[string]str
 		return nil, errors.New("no Google cookies could be read (is the login keyring unlocked, and are you signed in?)")
 	}
 	return cookies, nil
+}
+
+// hasGoogleSignIn reports whether the cookie query's output has a SID row for
+// .google.com, encrypted or not.
+func hasGoogleSignIn(out string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), "|", 3)
+		if len(parts) == 3 && parts[0] == "SID" && parts[1] == googleWantedHosts["SID"] && parts[2] != "" {
+			return true
+		}
+	}
+	return false
 }
 
 var messengerWantedHosts = map[string]string{

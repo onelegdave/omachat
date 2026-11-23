@@ -49,6 +49,12 @@ cookie from that profile and reconnects before asking you to pair. It tries this
 at most once every 10 minutes. While it cannot reach Google, it shows
 Disconnected and keeps retrying.
 
+If Google refuses requests or pings and the browser has no newer cookie,
+OmaChat keeps checking for up to a few minutes, then asks you to pair again
+rather than staying connected without working. Signing out of Google in the
+browser profile you paired from ends OmaChat's session too, since both use
+the same sign-in; OmaChat asks you to pair again within about two minutes.
+
 For an invalidated session, explicitly choose **Pair with Google** again;
 recovery never starts pairing automatically. A reconnect stays Connecting until
 authentication succeeds.

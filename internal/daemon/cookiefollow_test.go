@@ -25,15 +25,18 @@ type fakeCookieStore struct {
 	profiles []browser.Profile
 	cookies  map[string]map[string]string // profile name -> cookies
 	errs     map[string]error
-	reads    []string
-	readCh   chan string
-	mod      time.Time
-	fp       string
-	metaRead int
+	// undecryptable profiles are signed in, but their SID and SSID do not
+	// decrypt, so a read returns the rest without them.
+	undecryptable map[string]bool
+	reads         []string
+	readCh        chan string
+	mod           time.Time
+	fp            string
+	metaRead      int
 }
 
 func newFakeCookieStore(names ...string) *fakeCookieStore {
-	b := &fakeCookieStore{cookies: map[string]map[string]string{}, errs: map[string]error{}, readCh: make(chan string, 16), mod: time.Unix(1000, 0), fp: "fp-1"}
+	b := &fakeCookieStore{cookies: map[string]map[string]string{}, errs: map[string]error{}, undecryptable: map[string]bool{}, readCh: make(chan string, 16), mod: time.Unix(1000, 0), fp: "fp-1"}
 	for _, n := range names {
 		b.profiles = append(b.profiles, browser.Profile{Name: n, CookieDB: "/fake/" + n + "/Cookies"})
 		b.cookies[n] = fullCookies("browser-" + n + "-1")
@@ -86,6 +89,7 @@ func (b *fakeCookieStore) install(d *Daemon) {
 		b.mu.Lock()
 		b.reads = append(b.reads, p.Name)
 		err := b.errs[p.Name]
+		undecryptable := b.undecryptable[p.Name]
 		c := map[string]string{}
 		for k, v := range b.cookies[p.Name] {
 			c[k] = v
@@ -94,6 +98,16 @@ func (b *fakeCookieStore) install(d *Daemon) {
 		b.readCh <- p.Name
 		if err != nil {
 			return nil, err
+		}
+		if undecryptable {
+			delete(c, "SID")
+			delete(c, "SSID")
+			return c, nil
+		}
+		// As the real extractor: a profile with no SID at all is not
+		// signed in to Google.
+		if c["SID"] == "" {
+			return nil, browser.ErrNotSignedIn
 		}
 		return c, nil
 	}
@@ -133,6 +147,7 @@ func newGoogleAccountDaemon(t *testing.T, b *fakeCookieStore) *Daemon {
 func shortenRecoveryTimings(d *Daemon) {
 	d.timing.recoveryDelay = 0
 	d.timing.reconnectBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+	d.timing.sessionCheckPoll = 5 * time.Millisecond
 }
 
 func currentPSIDTS(d *Daemon) string {
@@ -603,9 +618,9 @@ func TestRefusedRequestIsRetriedWithBrowserCookies(t *testing.T) {
 	}
 }
 
-// For a Google account session a refused request no longer requires
-// pairing: the long poll and its recovery decide that.
-func TestRefusedRequestLeavesPairingToLongPoll(t *testing.T) {
+// For a Google account session a refused request does not require pairing
+// at once: it starts a session check, which decides (sessioncheck_test.go).
+func TestRefusedRequestDoesNotEndPairingAtOnce(t *testing.T) {
 	b := newFakeCookieStore("Chromium")
 	b.errs["Chromium"] = errors.New("keyring locked")
 	d := newGoogleAccountDaemon(t, b)
@@ -663,26 +678,6 @@ func TestNonAuthErrorIsNotRetried(t *testing.T) {
 	}
 }
 
-func TestRefusedPingsReadBrowserAtMostEveryFiveMinutes(t *testing.T) {
-	b := newFakeCookieStore("Chromium")
-	d := newGoogleAccountDaemon(t, b)
-	handler := d.clientEventHandler(d.client, d.sessionContext())
-	ping := &events.PingFailed{Error: errors.New("HTTP 401"), ErrorCount: 1}
-	handler(ping)
-	waitRead(t, b)
-	d.cookies.last = time.Now().Add(-time.Hour) // past the general throttle
-	handler(ping)
-	time.Sleep(50 * time.Millisecond)
-	if n := b.readCount(); n != 1 {
-		t.Fatalf("a second refused ping a minute later read the browser (%d reads)", n)
-	}
-	d.sessionMu.Lock()
-	d.pingRefreshAt = time.Now().Add(-pingRefreshInterval)
-	d.sessionMu.Unlock()
-	handler(ping)
-	waitRead(t, b)
-}
-
 func TestAutomaticReadsSkipOtherGoogleSignIns(t *testing.T) {
 	b := newFakeCookieStore("Other account", "Mine")
 	b.cookies["Other account"]["SID"] = "another-sid"
@@ -716,7 +711,7 @@ func TestAutomaticReadsNeverSwapAccounts(t *testing.T) {
 
 // A request refused right after a read failed does not wait out the
 // throttle: it fails, but leaves a Google account pairing in place for the
-// cookie check and recovery to fix.
+// cookie check, the session check and recovery to fix.
 func TestRefusedRequestInsideThrottleFailsWithoutEndingPairing(t *testing.T) {
 	b := newFakeCookieStore("Chromium")
 	d := newGoogleAccountDaemon(t, b)

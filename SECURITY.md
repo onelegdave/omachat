@@ -14,7 +14,9 @@ the Google sign-in cookie metadata read-only and in place, without decrypting
 it, and only a changed `__Secure-1PSIDTS` leads to a full read. For a Google
 account pairing, every full read except when pairing or after you choose a
 profile decrypts the profile the session came from first, then other profiles
-until one has the same Google sign-in, and takes cookies only from that one.
+until one has the same Google sign-in, and takes cookies only from that one. A
+profile with no Google sign-in cookie at all is recognised from its cookie
+database before the keyring is asked for anything, and is not decrypted.
 
 Only while the opt-in sign-in diagnostics are on, it also logs Google sign-in
 cookie metadata in the selected browser profile without decrypting it. WhatsApp

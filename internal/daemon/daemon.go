@@ -31,9 +31,6 @@ const convListLimit = 50
 // so a slow keyring cannot hold up startup.
 const startupCookieReadTimeout = 5 * time.Second
 
-// pingRefreshInterval limits how often a refused ping reads the browser.
-const pingRefreshInterval = 5 * time.Minute
-
 // Daemon owns the libgm client and the cached view of the account.
 type Daemon struct {
 	// Order configuration snapshots and their socket writes across all panels.
@@ -85,10 +82,22 @@ type Daemon struct {
 	// cookiefollow.go.
 	follow *cookieFollower
 	// listenRecoveryAt is when OmaChat last tried to recover a refused long
-	// poll in place, and pingRefreshAt when a refused ping last read the
-	// browser. Both guarded by sessionMu.
-	listenRecoveryAt time.Time
-	pingRefreshAt    time.Time
+	// poll in place, and listenRecovering whether that recovery is still
+	// running; listenRecoveryGen tells one recovery from the next. All
+	// guarded by sessionMu.
+	listenRecoveryAt  time.Time
+	listenRecovering  bool
+	listenRecoveryGen int
+	// check is the session check settling a refusal; see sessioncheck.go.
+	// gen tells one check from the next, so a check left over from an
+	// earlier session never clears a newer one's state.
+	check struct {
+		mu            sync.Mutex
+		running       bool
+		client        *libgm.Client
+		gen           int
+		pingRefusedAt time.Time
+	}
 
 	// Test seams. Nil means the real browser and libgm calls.
 	discoverProfiles func() []browser.Profile
@@ -559,20 +568,12 @@ func (d *Daemon) handleEvent(raw any) {
 
 	case *events.PingFailed:
 		// A refused ping is the earliest sign that the cookies are out of
-		// date, well before the long poll is refused, so read the browser
-		// again. Pings repeat every minute while refused, so allow one read
-		// per pingRefreshInterval in case the browser's cookies do not help.
-		// The read runs outside sessionMu, which it takes.
-		if evt.Error != nil && isAuthError(evt.Error) && d.canSyncLocked() && d.followsBrowser() &&
-			time.Since(d.pingRefreshAt) >= pingRefreshInterval {
-			d.pingRefreshAt = time.Now()
-			ctx := d.sessionContext()
-			go func() {
-				// A throttled read did not use the allowance.
-				if d.refreshSameAccount(ctx, "pingFailed") == refreshThrottled {
-					d.inSession(ctx, func() { d.pingRefreshAt = time.Time{} })
-				}
-			}()
+		// date, well before the long poll is refused. It starts a session
+		// check, which reads the browser at once and then settles whether
+		// the session still works; while one runs, it watches these pings.
+		if evt.Error != nil && isAuthError(evt.Error) && d.canSyncLocked() && d.followsBrowser() {
+			d.notePingRefused()
+			d.startSessionCheck(d.sessionContext(), "ping", d.refusedCookie())
 		}
 
 	case *events.ListenTemporaryError:

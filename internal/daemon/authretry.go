@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"sort"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"go.mau.fi/mautrix-gmessages/pkg/libgm"
 
+	"github.com/onelegdave/omachat/internal/browser"
 	"github.com/onelegdave/omachat/internal/wire"
 )
 
@@ -39,6 +41,11 @@ type authTimings struct {
 	// step repeats for as long as the session lasts.
 	recoveryDelay    time.Duration
 	reconnectBackoff []time.Duration
+	// sessionCheckWait is how long a session check waits for a refused ping
+	// once it has waited recoveryFreshWait for a newer cookie in vain, and
+	// sessionCheckPoll how often it looks.
+	sessionCheckWait time.Duration
+	sessionCheckPoll time.Duration
 }
 
 func defaultAuthTimings() authTimings {
@@ -48,6 +55,8 @@ func defaultAuthTimings() authTimings {
 		recoveryFreshWait: 90 * time.Second,
 		recoveryDelay:     time.Second,
 		reconnectBackoff:  []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, time.Minute, 2 * time.Minute},
+		sessionCheckWait:  150 * time.Second,
+		sessionCheckPoll:  time.Second,
 	}
 }
 
@@ -87,6 +96,15 @@ const (
 	// refreshThrottled: another read is running or ran moments ago.
 	refreshThrottled
 	refreshFailed
+	// refreshSignedOut: every browser profile was read, and none holds the
+	// session's Google sign-in: each is signed out of Google, never signed
+	// in, or signed in to another sign-in. Only reads that take cookies from
+	// the session's own sign-in report it; a profile that could not be read
+	// in full makes the read refreshFailed instead. On its own it is not
+	// proof the session has ended (cookies pasted at pairing never came from
+	// these profiles), so it only ever ends a session together with a
+	// refusal from Google.
+	refreshSignedOut
 )
 
 // changedCookies names the cookies whose values differ. Names only: the values
@@ -230,6 +248,9 @@ func (d *Daemon) refreshFromBrowser(ctx context.Context, trigger, callID string,
 		})
 	}
 	var attempts []logFields
+	// unsure is set by any profile that might still hold the session's
+	// sign-in: one that could not be read, or one whose read was incomplete.
+	unsure := false
 	for _, p := range profiles {
 		if ctx.Err() != nil {
 			return ended("canceled")
@@ -239,10 +260,29 @@ func (d *Daemon) refreshFromBrowser(ctx context.Context, trigger, callID string,
 		base := d.follow.snapshot(ctx, p)
 		cookies, err := d.readBrowserCookies(ctx, p)
 		if err != nil {
+			// A profile known to hold no Google sign-in at all cannot hold
+			// the session's; any other failure leaves that open.
+			if !errors.Is(err, browser.ErrNotSignedIn) {
+				unsure = true
+			}
 			attempts = append(attempts, logFields{"profile": p.Name, "error": err.Error()})
 			continue
 		}
+		if sameAccount {
+			switch d.sessionSignIn(cookies) {
+			case otherSignIn:
+				attempts = append(attempts, logFields{"profile": p.Name, "skipped": "otherSignIn"})
+				continue
+			case signInUnknown:
+				// SID or SSID did not come through, as when one cookie
+				// fails to decrypt: this may still be the session's.
+				unsure = true
+				attempts = append(attempts, logFields{"profile": p.Name, "skipped": "signInUnreadable"})
+				continue
+			}
+		}
 		if missing := wire.MissingGaiaCookies(cookies); len(missing) > 0 {
+			unsure = true
 			attempts = append(attempts, logFields{"profile": p.Name, "missing": missing})
 			continue
 		}
@@ -258,9 +298,17 @@ func (d *Daemon) refreshFromBrowser(ctx context.Context, trigger, callID string,
 			d.sessionMu.Unlock()
 			return ended("noSession")
 		}
-		if sameAccount && (cookies[followedCookie] == "" || !sameGoogleSignIn(auth, cookies)) {
+		if sameAccount && !sameGoogleSignIn(auth, cookies) {
 			d.sessionMu.Unlock()
 			attempts = append(attempts, logFields{"profile": p.Name, "skipped": "otherSignIn"})
+			continue
+		}
+		if sameAccount && cookies[followedCookie] == "" {
+			// The same sign-in without the renewed cookie: most likely a
+			// cookie file caught mid-write.
+			d.sessionMu.Unlock()
+			unsure = true
+			attempts = append(attempts, logFields{"profile": p.Name, "skipped": "noRenewedCookie"})
 			continue
 		}
 		changed := changedCookies(auth, cookies)
@@ -294,9 +342,42 @@ func (d *Daemon) refreshFromBrowser(ctx context.Context, trigger, callID string,
 		return refreshOK
 	}
 
+	if sameAccount && len(profiles) > 0 && !unsure {
+		d.log.Warn().Msg("No browser profile holds the session's Google sign-in")
+		result = "signedOut"
+		d.diagCookieRefresh(logFields{"trigger": trigger, "callID": callID, "result": "signedOut", "profiles": attempts})
+		return refreshSignedOut
+	}
 	d.log.Warn().Msg("Could not refresh cookies from any browser profile")
 	d.diagCookieRefresh(logFields{"trigger": trigger, "callID": callID, "result": "noUsableProfile", "profiles": attempts})
 	return refreshFailed
+}
+
+type signInMatch int
+
+const (
+	sameSignIn signInMatch = iota
+	otherSignIn
+	signInUnknown
+)
+
+// sessionSignIn compares a profile's sign-in with the session's. Only a SID
+// and SSID that were both read and differ count as another sign-in. Without a
+// session it reports sameSignIn and leaves the caller to notice.
+func (d *Daemon) sessionSignIn(cookies map[string]string) signInMatch {
+	d.mu.RLock()
+	auth := d.auth
+	d.mu.RUnlock()
+	switch {
+	case auth == nil:
+		return sameSignIn
+	case cookies["SID"] == "" || cookies["SSID"] == "":
+		return signInUnknown
+	case sameGoogleSignIn(auth, cookies):
+		return sameSignIn
+	default:
+		return otherSignIn
+	}
 }
 
 // ensureNewCookie makes sure the session holds a __Secure-1PSIDTS other than
@@ -312,43 +393,62 @@ func (d *Daemon) refreshFromBrowser(ctx context.Context, trigger, callID string,
 // failed read may be a torn copy of a file being written.
 //
 // A session with no __Secure-1PSIDTS at all counts any successful read as
-// fresh, as before this cookie was tracked.
-func (d *Daemon) ensureNewCookie(ctx context.Context, used string, wait time.Duration, persistent bool, read func(context.Context) refreshOutcome) bool {
+// fresh, as before this cookie was tracked. A read that finds no profile with
+// the session's sign-in ends the wait at once: nothing newer can come.
+func (d *Daemon) ensureNewCookie(ctx context.Context, used string, wait time.Duration, persistent bool, read func(context.Context) refreshOutcome) cookieResult {
 	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	renewed := func() bool {
 		v := d.sessionRenewedCookie()
 		return v != "" && v != used
 	}
+	result := func() cookieResult {
+		if renewed() {
+			return newCookie
+		}
+		return noNewCookie
+	}
 	for {
 		if renewed() {
-			return true
+			return newCookie
 		}
 		switch read(ctx) {
 		case refreshOK:
 			if renewed() || used == "" {
-				return true
+				return newCookie
 			}
 			if !persistent {
-				return false
+				return noNewCookie
 			}
+		case refreshSignedOut:
+			return signedOut
 		case refreshFailed:
 			if renewed() {
-				return true
+				return newCookie
 			}
 			if !persistent || ctx.Err() != nil {
-				return false
+				return noNewCookie
 			}
 		case refreshThrottled:
 			if !persistent && !d.readRunning() {
-				return renewed()
+				return result()
 			}
 		}
 		if !d.waitForNextRead(ctx) {
-			return renewed()
+			return result()
 		}
 	}
 }
+
+// cookieResult is how a wait for a newer __Secure-1PSIDTS ended.
+type cookieResult int
+
+const (
+	newCookie cookieResult = iota
+	noNewCookie
+	// signedOut: no browser profile holds the session's sign-in any more.
+	signedOut
+)
 
 func (d *Daemon) readRunning() bool {
 	d.cookies.mu.Lock()
@@ -375,8 +475,9 @@ func (d *Daemon) waitForNextRead(ctx context.Context) bool {
 }
 
 // withAuthRetry runs op and, on an authentication failure, tries to restore
-// access by refreshing browser cookies and retrying once. It never initiates
-// re-pairing automatically; re-pairing requires explicit user action.
+// access by refreshing browser cookies and retrying once. It may ask the user
+// to pair again, but never starts a pairing itself; that takes the user's
+// explicit action.
 func withAuthRetry[T any](ctx context.Context, d *Daemon, op func() (T, error)) (T, error) {
 	return withAuthRetryAt(ctx, d, "rpc", op)
 }
@@ -385,10 +486,11 @@ func withAuthRetry[T any](ctx context.Context, d *Daemon, op func() (T, error)) 
 // log. The name does not affect what it does.
 //
 // For a session that follows the browser (a Google account pairing), a
-// request that stays refused no longer requires pairing: the long poll
-// decides that, after its own recovery attempt (listenrecovery.go). A refused
-// request is far weaker evidence, and a burst of them during a renewal would
-// otherwise end a session that recovery could save.
+// request that stays refused does not require pairing at once: a burst of
+// refusals during a renewal would otherwise end a session that a newer cookie
+// saves, and a refused request can be about that request alone, such as an
+// expired attachment. It starts a session check instead (sessioncheck.go),
+// which settles it.
 func withAuthRetryAt[T any](ctx context.Context, d *Daemon, where string, op func() (T, error)) (T, error) {
 	if err := ctx.Err(); err != nil {
 		var zero T
@@ -410,9 +512,10 @@ func withAuthRetryAt[T any](ctx context.Context, d *Daemon, where string, op fun
 	d.log.Warn().Err(err).Msg("Request failed authentication; refreshing cookies")
 	// A session that follows the browser takes cookies only from a profile
 	// with its own Google sign-in, as the automatic reads do.
-	refreshed := d.ensureNewCookie(ctx, used, d.timing.rpcFreshWait, false, func(ctx context.Context) refreshOutcome {
+	got := d.ensureNewCookie(ctx, used, d.timing.rpcFreshWait, false, func(ctx context.Context) refreshOutcome {
 		return d.refreshFromBrowser(ctx, where, callID, follows)
 	})
+	refreshed := got == newCookie
 	retried := false
 	if refreshed {
 		if err := ctx.Err(); err != nil {
@@ -423,12 +526,22 @@ func withAuthRetryAt[T any](ctx context.Context, d *Daemon, where string, op fun
 		result, err = op()
 		retried = true
 	}
+	// A request that stays refused starts a session check, which ends with
+	// the session working again or with pairing required (sessioncheck.go).
 	needsPairing := isAuthError(err) && !follows
 	if needsPairing {
 		d.requirePairing(ctx)
+	} else if isAuthError(err) {
+		refused := used
+		if retried {
+			refused = d.sessionRenewedCookie()
+		}
+		// The check outlives this request, so it runs in the session.
+		d.startSessionCheck(d.sessionContext(), "request", refused)
 	}
 	if callID != "" {
-		outcome := logFields{"refresh": map[bool]string{true: "ok", false: "notRefreshed"}[refreshed], "retried": retried, "requirePairing": needsPairing}
+		refresh := map[cookieResult]string{newCookie: "ok", noNewCookie: "notRefreshed", signedOut: "signedOut"}[got]
+		outcome := logFields{"refresh": refresh, "retried": retried, "requirePairing": needsPairing}
 		if retried {
 			if err != nil {
 				outcome["retry"] = describeAuthError(err)
