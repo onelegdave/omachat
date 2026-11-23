@@ -101,6 +101,9 @@ func (d *Daemon) resetSessionLocked() (*libgm.Client, error) {
 	d.cookies.mu.Lock()
 	d.cookies.last = time.Time{}
 	d.cookies.mu.Unlock()
+	d.follow.reset()
+	d.listenRecoveryAt = time.Time{}
+	d.pingRefreshAt = time.Time{}
 	d.media.reset()
 	d.avatars.reset()
 	d.reactMu.Lock()

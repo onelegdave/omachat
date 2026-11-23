@@ -360,7 +360,11 @@ with the bar, quickshell, and media tags.
   after an explicit user action. The terminal asks for consent before `sudo`,
   and pacman retains its own transaction prompt. This is a privilege and package
   management capability, even though it is optional.
-- Google pairing reads browser cookies and may refresh them while paired.
+- Google pairing reads browser cookies and refreshes them while paired: at
+  startup, after the browser renews its sign-in cookie, and after Google
+  refuses a request, ping or connection. To notice renewals it checks the
+  cookie file's modification time every minute, and reads metadata read-only
+  and in place with `sqlite3` only when the file changed.
 - Opt-in sign-in diagnostics (Settings > Debug, off by default) write
   `~/.local/state/omachat/auth.log` (0600). While on and paired, the helper
   runs `sqlite3` read-only and in place (`immutable=1`) on the selected browser

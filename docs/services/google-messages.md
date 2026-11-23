@@ -40,9 +40,18 @@ break when Google changes its service.
 ## Recovery and removal
 
 For missing cookies, open Messages for web in the selected profile again.
-Check the keyring and cookie tools if browser access fails. For an invalidated
-session, explicitly choose **Pair with Google** again; recovery never starts
-pairing automatically. A reconnect stays Connecting until authentication succeeds.
+Check the keyring and cookie tools if browser access fails.
+
+Keep the browser profile you paired from: while a Google page is open there, it
+keeps renewing the sign-in cookie, and OmaChat reads the new one soon after each
+renewal. If Google still refuses the connection, OmaChat waits for a newer
+cookie from that profile and reconnects before asking you to pair. It tries this
+at most once every 10 minutes. While it cannot reach Google, it shows
+Disconnected and keeps retrying.
+
+For an invalidated session, explicitly choose **Pair with Google** again;
+recovery never starts pairing automatically. A reconnect stays Connecting until
+authentication succeeds.
 
 Choose **Unpair this desktop** on the Google tab to remove local credentials
 and media and request remote revocation. If revocation fails, remove the device

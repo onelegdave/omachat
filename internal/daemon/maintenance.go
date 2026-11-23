@@ -7,25 +7,25 @@ import (
 
 // Why this exists.
 //
-// Two credentials keep a paired session alive, and only one looks after itself:
+// Two credentials keep a paired session alive:
 //
 //   - The tachyon auth token refreshes on its own. libgm signs a refresh with
 //     the stored ECDSA key roughly an hour before expiry, needing no cookies.
 //
-//   - The Google cookies are kept current by libgm itself, which applies the
-//     Set-Cookie headers Google returns on every request.
+//   - The Google cookies of a Google account pairing come from the browser.
+//     libgm applies the Set-Cookie headers Google returns, but Google only
+//     ever sends SIDCC that way, never a new __Secure-1PSIDTS. Meanwhile the
+//     browser renews its own __Secure-1PSIDTS about every 10 minutes, and
+//     Google refuses OmaChat's copy roughly two renewals later. Once the long
+//     poll is refused, the session is gone unless OmaChat recovers it.
 //
-// This deliberately does NOT re-sync cookies from the browser on a timer.
-// That was tried and it made things worse: __Secure-1PSIDTS is a *rotating*
-// token, and the browser and the daemon each rotate their own copy. Copying
-// the browser's copy over the daemon's freshly-rotated one hands Google a
-// stale token, which it answers with SESSION_COOKIE_INVALID — killing the very
-// session the sync was meant to preserve. The observed pattern was a cookie
-// sync every 15 minutes followed by an invalidation roughly every 20.
-//
-// Reading the browser's cookies is therefore reactive only: on an actual
-// authentication failure (see authretry.go), where our copy is known bad and
-// the browser's is the only other source.
+// So OmaChat follows the browser (cookiefollow.go): it reads the cookies again
+// soon after each renewal, which keeps its copy at most one renewal behind.
+// It also reads them at startup, after a refused request or ping, and before
+// recovering a refused long poll (authretry.go, daemon.go). Reading on a fixed
+// timer is not enough on its own: a copy taken just before a renewal goes out
+// of date about 10 minutes later, so the timer would need to be well under
+// that, and it would decrypt the cookies far more often than needed.
 
 const (
 	// sessionSaveInterval captures the token and cookie updates libgm applies
@@ -34,10 +34,13 @@ const (
 )
 
 // runMaintenance persists the session periodically so refreshed credentials
-// survive a restart.
+// survive a restart, and keeps a Google account session's cookies in step
+// with the browser.
 func (d *Daemon) runMaintenance(ctx context.Context) {
 	saveTicker := time.NewTicker(sessionSaveInterval)
 	defer saveTicker.Stop()
+	followTicker := time.NewTicker(d.follow.interval)
+	defer followTicker.Stop()
 
 	for {
 		select {
@@ -45,6 +48,8 @@ func (d *Daemon) runMaintenance(ctx context.Context) {
 			return
 		case <-saveTicker.C:
 			d.saveSession()
+		case <-followTicker.C:
+			d.followBrowserCookies(d.sessionContext())
 		}
 	}
 }

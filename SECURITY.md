@@ -3,10 +3,23 @@
 This Native Omarchy Plugin talks to Google Messages, WhatsApp, Telegram,
 Messenger, and, when explicitly enabled, the external `signal-cli` process. It
 reads browser cookies while checking pairing profiles, pairing, changing the
-selected profile, and recovering from authentication failures. Only while the
-opt-in sign-in diagnostics are on, it also checks Google sign-in cookie
-metadata in the selected browser profile without decrypting it. WhatsApp and
-Telegram use their QR flows. Message content and credentials are cached locally.
+selected profile, starting a Google account session, recovering from
+authentication failures, and after the browser renews its Google sign-in
+cookie.
+
+To notice that renewal, a Google account pairing checks the modification time of
+the cookie file of the browser profile it was paired from every minute (of every
+profile, until it knows which one that is). When a file changed, `sqlite3` reads
+the Google sign-in cookie metadata read-only and in place, without decrypting
+it, and only a changed `__Secure-1PSIDTS` leads to a full read. For a Google
+account pairing, every full read except when pairing or after you choose a
+profile decrypts the profile the session came from first, then other profiles
+until one has the same Google sign-in, and takes cookies only from that one.
+
+Only while the opt-in sign-in diagnostics are on, it also logs Google sign-in
+cookie metadata in the selected browser profile without decrypting it. WhatsApp
+and Telegram use their QR flows. Message content and credentials are cached
+locally.
 
 ## Report a vulnerability
 
@@ -145,7 +158,8 @@ changed, `sqlite3` reads the live file read-only (`mode=ro&immutable=1`, no
 copy) and returns, for the listed Google sign-in cookies on `.google.com` and
 `messages.google.com` only, their dates, sizes, and a SHA3 hash of the
 still-encrypted value. It never runs `secret-tool`, never decrypts, and never
-uses what it reads. The log is restricted to your account; root and programs
+uses what it reads. This logging check is separate from the renewal check
+described at the top, which does act on what it reads. The log is restricted to your account; root and programs
 running as you can still read it.
 
 Revoke the paired device on your phone when you stop using this machine.

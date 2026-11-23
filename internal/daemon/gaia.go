@@ -66,6 +66,14 @@ func (d *Daemon) startGaiaPairing(parent context.Context, cookies map[string]str
 	d.mu.Unlock()
 	d.bindClient(c, session)
 	d.syncing = false
+	d.listenRecoveryAt = time.Time{}
+	d.pingRefreshAt = time.Time{}
+	// A new pairing's cookies may come from another profile, or be pasted;
+	// forget what the cookie check knew. pairFromBrowser sets it again.
+	d.follow.reset()
+	d.cookies.mu.Lock()
+	d.cookies.lastProfile = ""
+	d.cookies.mu.Unlock()
 	if old != nil {
 		go old.Disconnect()
 	}

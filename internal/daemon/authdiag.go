@@ -46,9 +46,11 @@ type authDiag struct {
 func newAuthDiag(paths *store.Paths) *authDiag {
 	path, err := paths.DebugLogFile()
 	return &authDiag{
-		log:      newAuthLog(path, err),
-		sqlite:   browser.DefaultSQLiteRunner,
-		discover: browser.DiscoverProfiles,
+		log: newAuthLog(path, err),
+		sqlite: func(ctx context.Context, dbURI, query string) ([]byte, error) {
+			return browserSQLite(ctx, dbURI, query)
+		},
+		discover: func() []browser.Profile { return discoverBrowserProfiles() },
 		watcher:  newCookieWatcher(),
 	}
 }

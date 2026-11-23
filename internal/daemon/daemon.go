@@ -14,6 +14,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/events"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
+	"github.com/onelegdave/omachat/internal/browser"
 	"github.com/onelegdave/omachat/internal/messenger"
 	signalbackend "github.com/onelegdave/omachat/internal/signal"
 	"github.com/onelegdave/omachat/internal/store"
@@ -25,6 +26,13 @@ import (
 // convListLimit caps how many conversations we hold and serve. The panel is a
 // bar popup, not an archive browser.
 const convListLimit = 50
+
+// startupCookieReadTimeout bounds the browser read before the first connect,
+// so a slow keyring cannot hold up startup.
+const startupCookieReadTimeout = 5 * time.Second
+
+// pingRefreshInterval limits how often a refused ping reads the browser.
+const pingRefreshInterval = 5 * time.Minute
 
 // Daemon owns the libgm client and the cached view of the account.
 type Daemon struct {
@@ -70,7 +78,23 @@ type Daemon struct {
 	reactionOrder []string
 
 	cookies cookieRefresher
+	timing  authTimings
 	syncing bool // guarded by sessionMu
+
+	// follow notices when the browser renews its sign-in cookie; see
+	// cookiefollow.go.
+	follow *cookieFollower
+	// listenRecoveryAt is when OmaChat last tried to recover a refused long
+	// poll in place, and pingRefreshAt when a refused ping last read the
+	// browser. Both guarded by sessionMu.
+	listenRecoveryAt time.Time
+	pingRefreshAt    time.Time
+
+	// Test seams. Nil means the real browser and libgm calls.
+	discoverProfiles func() []browser.Profile
+	extractCookies   func(ctx context.Context, p browser.Profile) (map[string]string, error)
+	reconnectClient  func(c *libgm.Client) error
+	disconnectClient func(c *libgm.Client)
 
 	// diag is the opt-in sign-in diagnostics log (Settings > Debug).
 	diag *authDiag
@@ -118,6 +142,8 @@ func New(log zerolog.Logger, paths *store.Paths) *Daemon {
 		config:    store.NewConfigStore(paths.ConfigFile()),
 		reactions: make(map[string][]reactionRecord),
 		diag:      newAuthDiag(paths),
+		follow:    newCookieFollower(),
+		timing:    defaultAuthTimings(),
 		// PhoneOK starts true: it is only ever falsified by an explicit
 		// PhoneNotResponding event. Starting false meant the bar read
 		// "Phone not responding" forever, because the event that clears it
@@ -243,6 +269,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.mu.Unlock()
 
 	d.setState(wire.StateConnecting, "")
+	d.readBrowserBeforeConnect(d.sessionCtx)
 	if err := d.client.Connect(); err != nil {
 		d.diagStartupConnectFailed(err)
 		// A failed connect is recoverable (phone offline, token expired), so
@@ -258,6 +285,20 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go d.initialSync(d.sessionContext())
 	d.startMaintenance()
 	return nil
+}
+
+// readBrowserBeforeConnect reads a Google account session's cookies from the
+// browser before the first connect. The browser may have renewed its cookie
+// while OmaChat was not running, and a long poll that connects with an
+// outdated copy is refused at once. If the browser cannot be read, OmaChat
+// connects with the saved copy.
+func (d *Daemon) readBrowserBeforeConnect(parent context.Context) {
+	if !d.followsBrowser() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(parent, startupCookieReadTimeout)
+	defer cancel()
+	d.refreshSameAccount(ctx, "startup")
 }
 
 // startMaintenance launches the credential upkeep loop at most once.
@@ -516,6 +557,24 @@ func (d *Daemon) handleEvent(raw any) {
 		d.mu.Unlock()
 		d.publishStatus()
 
+	case *events.PingFailed:
+		// A refused ping is the earliest sign that the cookies are out of
+		// date, well before the long poll is refused, so read the browser
+		// again. Pings repeat every minute while refused, so allow one read
+		// per pingRefreshInterval in case the browser's cookies do not help.
+		// The read runs outside sessionMu, which it takes.
+		if evt.Error != nil && isAuthError(evt.Error) && d.canSyncLocked() && d.followsBrowser() &&
+			time.Since(d.pingRefreshAt) >= pingRefreshInterval {
+			d.pingRefreshAt = time.Now()
+			ctx := d.sessionContext()
+			go func() {
+				// A throttled read did not use the allowance.
+				if d.refreshSameAccount(ctx, "pingFailed") == refreshThrottled {
+					d.inSession(ctx, func() { d.pingRefreshAt = time.Time{} })
+				}
+			}()
+		}
+
 	case *events.ListenTemporaryError:
 		if d.canSyncLocked() {
 			d.setState(wire.StateDisconnected, "connection interrupted")
@@ -534,7 +593,11 @@ func (d *Daemon) handleEvent(raw any) {
 		}
 		// A fatal listener has stopped. Never start an interactive pairing
 		// from its callback or allow a later event to clear this failure.
+		// A Google account session gets one attempt to recover first.
 		if isAuthError(evt.Error) {
+			if d.startListenRecoveryLocked() {
+				return
+			}
 			d.requirePairingLocked()
 		} else {
 			d.setState(wire.StateError, fmt.Sprintf("%v", evt.Error))
