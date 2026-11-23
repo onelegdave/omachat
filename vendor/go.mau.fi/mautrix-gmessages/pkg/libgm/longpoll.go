@@ -317,7 +317,7 @@ func (c *Client) doLongPoll(loggedIn, background bool, onFirstConnect func()) bo
 	}
 
 	errorCount := 1
-	for c.listenID == listenID {
+	for c.listenID == listenID && !c.stopped.Load() { // OmaChat: see Client.stopped
 		err := c.refreshAuthToken(nil)
 		if err != nil {
 			if exhttp.IsNetworkError(err) {
@@ -405,6 +405,14 @@ func (c *Client) doLongPoll(loggedIn, background bool, onFirstConnect func()) bo
 				Msg("Error in long polling, retrying in a while")
 			time.Sleep(time.Duration(sleepSeconds) * time.Second)
 			continue
+		}
+		// OmaChat: a Disconnect while this request was in flight found no
+		// connection to close (see Client.stopped), and a newer loop may have
+		// started since. Stop now rather than after the response has streamed
+		// for minutes, before announcing anything or taking the connection.
+		if c.stopped.Load() || c.listenID != listenID {
+			_ = resp.Body.Close()
+			break
 		}
 		if errorCount > 0 {
 			errorCount = 0

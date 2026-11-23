@@ -168,6 +168,10 @@ type Client struct {
 	listenID        int
 	skipCount       int
 	disconnecting   bool
+	// OmaChat: set by Disconnect and cleared by Connect. The long-poll loop
+	// checks it, so a Disconnect that lands before the first poll response
+	// (when longPollingConn is still nil) still stops the loop.
+	stopped atomic.Bool
 
 	pingInterval             time.Duration
 	alertTimeoutCount        int
@@ -275,6 +279,7 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("not logged in")
 	}
 
+	c.stopped.Store(false) // OmaChat: see Client.stopped
 	err := c.refreshAuthToken(nil)
 	if err != nil {
 		return fmt.Errorf("failed to refresh auth token: %w", err)
@@ -297,6 +302,7 @@ func (c *Client) ConnectBackground() error {
 	} else if c.AuthData.Browser == nil {
 		return fmt.Errorf("not logged in")
 	}
+	c.stopped.Store(false) // OmaChat: see Client.stopped
 	cleanExit := c.doLongPoll(true, true, nil)
 	c.sessionHandler.sendAckRequest()
 	if !cleanExit {
@@ -350,6 +356,7 @@ func (c *Client) postConnect() {
 }
 
 func (c *Client) Disconnect() {
+	c.stopped.Store(true) // OmaChat: see Client.stopped
 	c.closeLongPolling()
 	// Fail any requests that are still waiting for a response from the phone:
 	// the responses are delivered over the long polling connection, so they can

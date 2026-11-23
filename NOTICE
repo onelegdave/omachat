@@ -35,6 +35,15 @@ does not change how cookies are stored. OmaChat's opt-in sign-in diagnostics use
 it. The patch and its tests (cookie_observer_backport_test.go) must be preserved
 when updating the vendored dependency.
 
+It also includes a local patch in pkg/libgm/client.go and longpoll.go: Client has
+a stopped flag that Disconnect sets and Connect and ConnectBackground clear, and
+the long-poll loop checks it, including right after a poll response arrives
+(where it also stops if a newer loop has started). Without it, a
+Disconnect made while the first poll request is still in flight closes nothing,
+and the loop keeps polling. OmaChat relies on it when it reconnects a session in
+place. The patch and its tests (disconnect_backport_test.go) must be preserved
+when updating the vendored dependency.
+
 WhatsApp support vendors go.mau.fi/whatsmeow and related go.mau.fi modules
 under the Mozilla Public License 2.0. Those files remain MPL-2.0; this plugin
 does not relicense them. github.com/mattn/go-sqlite3 is MIT and is linked
