@@ -220,6 +220,8 @@ func TestRefusedRequestWithSignedOutBrowserRequiresPairingOnRefusedPing(t *testi
 	b := newFakeCookieStore("Chromium")
 	signOut(b, "Chromium")
 	d := newGoogleAccountDaemon(t, b)
+	// The check reads again once the request's read is past the throttle.
+	d.timing.refreshInterval = 20 * time.Millisecond
 	d.timing.recoveryFreshWait = time.Hour
 	d.timing.sessionCheckWait = time.Hour
 	_, err := withAuthRetryAt(context.Background(), d, "rpc:test", func() (string, error) {

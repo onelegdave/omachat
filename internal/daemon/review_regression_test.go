@@ -73,9 +73,6 @@ func newTestDaemon(t *testing.T) (*Daemon, *store.Paths) {
 	d.follow.read = func(context.Context, browser.Profile) ([]browser.CookieMeta, error) {
 		return nil, errors.New("browser access disabled in tests")
 	}
-	// A refused request inside the read throttle waits it out before
-	// reading again; keep that wait short. Tests that need another set their own.
-	d.timing.refreshInterval = 250 * time.Millisecond
 	d.diag.discover = func() []browser.Profile { return nil }
 	d.diag.sqlite = func(context.Context, string, string) ([]byte, error) {
 		return nil, errors.New("sqlite3 disabled in tests")
